@@ -117,7 +117,7 @@ func main() {
 	}
 	srv := api.NewServer(db, asynqClient, s3Store, streamSub, apiCache, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
 	handler := cors.New(cors.Options{
-		AllowAllOrigins:  true,
+		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: false,
