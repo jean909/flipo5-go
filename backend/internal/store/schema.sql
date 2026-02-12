@@ -79,3 +79,38 @@ UPDATE jobs SET name = array_to_string(
   (regexp_split_to_array(trim(COALESCE(input->>'prompt','')), E'\\s+'))[1:4],
   ' '
 ) WHERE type IN ('image','video') AND (name IS NULL OR name = '') AND input->>'prompt' IS NOT NULL AND trim(COALESCE(input->>'prompt','')) != '';
+
+-- Edit Studio: projects (user's editing sessions)
+CREATE TABLE IF NOT EXISTS projects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL DEFAULT 'Untitled',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at DESC);
+
+-- Project items: images/videos in a project (source from content or upload)
+CREATE TABLE IF NOT EXISTS projects_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('image', 'video')),
+    source_url TEXT NOT NULL,
+    job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_projects_items_project ON projects_items(project_id);
+
+-- Project items versions: each edit creates a new version
+CREATE TABLE IF NOT EXISTS projects_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id UUID NOT NULL REFERENCES projects_items(id) ON DELETE CASCADE,
+    version_num INT NOT NULL,
+    url TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_projects_versions_item ON projects_versions(item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_versions_item_num ON projects_versions(item_id, version_num);

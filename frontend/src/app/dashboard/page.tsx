@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
-import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, type User, type Job, type Thread } from '@/lib/api';
+import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, type User, type Job, type Thread } from '@/lib/api';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
+import { getOutputUrls } from '@/lib/jobOutput';
 import { JobCard } from './components/JobCard';
 import { ImageSettingsRow, type ImageSettings } from './components/ImageSettingsRow';
 import { VideoSettingsRow, type VideoSettings } from './components/VideoSettingsRow';
@@ -44,6 +46,9 @@ export default function DashboardPage() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [showPromo, setShowPromo] = useState(true);
+  const [latestContent, setLatestContent] = useState<Array<Job & { outputUrls: string[] }>>([]);
+  const [contentTotal, setContentTotal] = useState(0);
+  const [newsIndex, setNewsIndex] = useState(0);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -120,6 +125,23 @@ export default function DashboardPage() {
       }
       setProfileLoaded(true);
     });
+  }, []);
+
+  useEffect(() => {
+    if (!profileLoaded || !user || hasStarted) return;
+    listContent({ page: 1, limit: 8 }).then((r) => {
+      const jobs = (r.jobs ?? []).map((j) => ({
+        ...j,
+        outputUrls: j.status === 'completed' && j.output ? getOutputUrls(j.output) : [],
+      }));
+      setLatestContent(jobs.filter((j) => j.outputUrls.length > 0).slice(0, 3));
+      setContentTotal(r.total ?? 0);
+    }).catch(() => {});
+  }, [profileLoaded, user, hasStarted]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNewsIndex((i) => (i + 1) % 5), 5000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -713,18 +735,60 @@ export default function DashboardPage() {
           </form>
           {error && <p className="mt-4 text-sm text-red-400">{error === 'rate' ? t(locale, 'error.rate') : error}</p>}
           {showPromo && (
-            <div className="mt-10 w-full max-w-xl mx-auto relative px-4 py-4 rounded-2xl bg-theme-bg-subtle text-center">
-              <button
-                type="button"
-                onClick={() => setShowPromo(false)}
-                className="absolute top-2 right-2 p-1 rounded-full text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
-                aria-label="Close"
-              >
-                <XIcon className="w-4 h-4" />
-              </button>
-              <p className="text-sm text-theme-fg-muted pr-6">
-                {t(locale, 'dashboard.promo')}
-              </p>
+            <div className="mt-10 w-full max-w-md mx-auto">
+              {contentTotal >= 5 ? (
+                <Link
+                  href="/dashboard/content"
+                  className="flex relative gap-3 px-3 py-2.5 rounded-xl bg-theme-bg-subtle border border-theme-border-subtle hover:border-theme-border-hover transition-colors items-center"
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPromo(false); }}
+                    className="absolute top-1.5 right-1.5 p-1 rounded-full text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors z-10"
+                    aria-label="Close"
+                  >
+                    <XIcon className="w-3 h-3" />
+                  </button>
+                  <div className="flex-1 min-w-0 pr-5">
+                    <p className="text-xs font-medium text-theme-fg truncate">
+                      {t(locale, 'dashboard.checkLatest')}
+                    </p>
+                    <p className="text-[11px] text-theme-fg-subtle/80 mt-0.5 truncate transition-opacity duration-300">
+                      {t(locale, `dashboard.news${newsIndex + 1}`)}
+                    </p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    {latestContent.map((job, i) => (
+                      <div
+                        key={job.id}
+                        className={`w-14 h-14 rounded-lg overflow-hidden border border-theme-border bg-theme-bg-elevated flex-shrink-0 relative ${i === latestContent.length - 1 ? "after:content-[''] after:absolute after:inset-0 after:bg-black/50" : ''}`}
+                      >
+                        {job.outputUrls[0] ? (
+                          job.type === 'video' ? (
+                            <video src={job.outputUrls[0]} className="w-full h-full object-cover" muted preload="metadata" playsInline />
+                          ) : (
+                            <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          )
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </Link>
+              ) : (
+                <div className="relative px-3 py-3 rounded-xl bg-theme-bg-subtle text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowPromo(false)}
+                    className="absolute top-1.5 right-1.5 p-1 rounded-full text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+                    aria-label="Close"
+                  >
+                    <XIcon className="w-3 h-3" />
+                  </button>
+                  <p className="text-xs text-theme-fg-muted pr-6">
+                    {t(locale, 'dashboard.promo')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

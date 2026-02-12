@@ -373,3 +373,128 @@ export function getJobStreamUrl(jobId: string, token: string | null): string {
   if (!token) return '';
   return `${API_URL}/api/jobs/${jobId}/stream?token=${encodeURIComponent(token)}`;
 }
+
+// --- Edit Studio (projects) ---
+
+export interface Project {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectItem {
+  id: string;
+  project_id: string;
+  type: 'image' | 'video';
+  source_url: string;
+  job_id?: string;
+  sort_order: number;
+  created_at: string;
+  latest_url?: string;
+  version_num?: number;
+}
+
+export async function listProjects(limit?: number): Promise<{ projects: Project[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const sp = limit ? `?limit=${limit}` : '';
+  const res = await fetch(`${API_URL}/api/projects${sp}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Failed to load projects');
+  return res.json();
+}
+
+export async function createProject(name?: string): Promise<{ id: string; name: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name: name || 'Untitled' }),
+  });
+  if (res.status === 409) throw new Error('name_exists');
+  if (!res.ok) throw new Error('Failed to create project');
+  return res.json();
+}
+
+export async function getProject(id: string): Promise<{ project: Project; items: ProjectItem[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Project not found');
+  return res.json();
+}
+
+export async function updateProject(id: string, name: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name }),
+  });
+  if (res.status === 409) throw new Error('name_exists');
+  if (!res.ok) throw new Error('Failed to update project');
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to delete project');
+}
+
+export async function addProjectItem(projectId: string, type: 'image' | 'video', sourceUrl: string, jobId?: string): Promise<{ id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/${projectId}/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ type, source_url: sourceUrl, job_id: jobId || undefined }),
+  });
+  if (!res.ok) throw new Error('Failed to add item');
+  return res.json();
+}
+
+export async function removeProjectItem(itemId: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/items/${itemId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to remove item');
+}
+
+/** Upload file to project (image/video from device). One request: upload + add item. */
+export async function uploadProjectItem(projectId: string, file: File): Promise<{ id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error('Upload failed');
+  return res.json();
+}
+
+/** Upload file as new version of project item. One request: upload + add version. */
+export async function uploadProjectVersion(itemId: string, file: File): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/api/projects/items/${itemId}/versions/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error('Upload failed');
+}

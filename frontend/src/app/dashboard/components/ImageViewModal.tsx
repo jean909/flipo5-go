@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import { downloadMediaUrl } from '@/lib/api';
+import { VideoPlayer } from './VideoPlayer';
+
+function isVideoUrl(u: string) {
+  return /\.(mp4|webm|mov)(\?|$)/i.test(u);
+}
 
 interface ImageViewModalProps {
   url: string;
@@ -17,6 +22,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
   const [idx, setIdx] = useState(() => Math.max(0, list.indexOf(url)));
   const safeIdx = Math.max(0, Math.min(idx, list.length - 1));
   const currentUrl = list[safeIdx];
+  const isVideo = isVideoUrl(currentUrl);
   const hasPrev = safeIdx > 0;
   const hasNext = safeIdx < list.length - 1;
 
@@ -37,15 +43,38 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
       window.removeEventListener('keydown', onKey);
     };
   }, [onClose, hasPrev, hasNext]);
+
+  const getExt = (blob: Blob, url: string) => {
+    if (blob.type.includes('video')) return blob.type.includes('webm') ? 'webm' : 'mp4';
+    if (blob.type.includes('png')) return 'png';
+    if (blob.type.includes('webp')) return 'webp';
+    if (blob.type.includes('gif')) return 'gif';
+    if (/\.(mp4|webm|mov)(\?|$)/i.test(url)) return url.toLowerCase().includes('webm') ? 'webm' : 'mp4';
+    if (/\.(png|webp|gif)(\?|$)/i.test(url)) return url.match(/\.(png|webp|gif)/i)?.[1]?.toLowerCase() ?? 'jpg';
+    return 'jpg';
+  };
+
   const handleSave = useCallback(async () => {
     try {
-      const blob = await downloadMediaUrl(currentUrl);
-      const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
+      let blob: Blob;
+      try {
+        blob = await downloadMediaUrl(currentUrl);
+      } catch {
+        const res = await fetch(currentUrl);
+        if (!res.ok) throw new Error('Fetch failed');
+        blob = await res.blob();
+      }
+      const ext = getExt(blob, currentUrl);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `flipo5-${Date.now()}.${ext}`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }, 100);
     } catch (_) {}
   }, [currentUrl]);
 
@@ -53,14 +82,12 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
     try {
       const res = await fetch(currentUrl);
       const blob = await res.blob();
-      const file = new File([blob], 'image.jpg', { type: blob.type });
+      const ext = getExt(blob, currentUrl);
+      const file = new File([blob], `flipo5.${ext}`, { type: blob.type });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'Flipo5',
-        });
+        await navigator.share({ files: [file], title: 'Flipo5' });
       } else {
-        await navigator.clipboard.writeText(url);
+        await navigator.clipboard.writeText(currentUrl);
       }
     } catch (_) {}
   }, [currentUrl]);
@@ -112,7 +139,11 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
               <ChevronLeftIcon className="w-5 h-5" />
             </button>
           )}
-          <img src={currentUrl} alt="" className="max-w-full max-h-[calc(90vh-80px)] object-contain" />
+          {isVideo ? (
+            <VideoPlayer src={currentUrl} className="max-w-full max-h-[calc(90vh-80px)]" autoPlay />
+          ) : (
+            <img src={currentUrl} alt="" className="max-w-full max-h-[calc(90vh-80px)] object-contain" />
+          )}
           {hasNext && (
             <button
               type="button"

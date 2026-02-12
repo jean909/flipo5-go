@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -73,6 +74,19 @@ func (s *Server) Routes() http.Handler {
 		r.Patch("/threads/{id}", s.patchThread)
 		r.Get("/jobs", s.listJobs)
 		r.Get("/content", s.listContent)
+		r.Route("/projects", func(r chi.Router) {
+			r.Get("/", s.listProjects)
+			r.Post("/", s.createProject)
+			r.Delete("/items/{itemId}", s.removeProjectItem)
+			r.Get("/items/{itemId}/versions", s.listProjectVersions)
+			r.Post("/items/{itemId}/versions", s.addProjectVersion)
+			r.Post("/items/{itemId}/versions/upload", s.uploadProjectVersion)
+			r.Get("/{id}", s.getProject)
+			r.Patch("/{id}", s.updateProject)
+			r.Delete("/{id}", s.deleteProject)
+			r.Post("/{id}/items", s.addProjectItem)
+			r.Post("/{id}/items/upload", s.uploadProjectItem)
+		})
 		r.Get("/jobs/{id}", s.getJob)
 		r.Get("/jobs/{id}/stream", s.jobStreamSSE)
 		r.Get("/download", s.downloadMedia)
@@ -947,4 +961,399 @@ func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// --- Edit Studio (projects) ---
+
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	list, err := s.DB.ListProjects(r.Context(), userID, limit)
+	if err != nil {
+		http.Error(w, `{"error":"list projects"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"projects": list})
+}
+
+func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil {
+		body.Name = "Untitled"
+	}
+	id, err := s.DB.CreateProject(r.Context(), userID, strings.TrimSpace(body.Name))
+	if err != nil {
+		if errors.Is(err, store.ErrProjectNameExists) {
+			http.Error(w, `{"error":"name exists"}`, http.StatusConflict)
+			return
+		}
+		http.Error(w, `{"error":"create project"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": id.String(), "name": body.Name})
+}
+
+func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	p, err := s.DB.GetProject(r.Context(), projectID, userID)
+	if err != nil || p == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	items, _ := s.DB.ListProjectItems(r.Context(), projectID, userID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"project": p, "items": items})
+}
+
+func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if err := s.DB.UpdateProject(r.Context(), projectID, userID, strings.TrimSpace(body.Name)); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, store.ErrProjectNameExists) {
+			http.Error(w, `{"error":"name exists"}`, http.StatusConflict)
+			return
+		}
+		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if err := s.DB.DeleteProject(r.Context(), projectID, userID); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) addProjectItem(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Type      string    `json:"type"` // image, video
+		SourceURL string    `json:"source_url"`
+		JobID     *uuid.UUID `json:"job_id,omitempty"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Type != "image" && body.Type != "video" {
+		body.Type = "image"
+	}
+	if !strings.HasPrefix(body.SourceURL, "https://") {
+		http.Error(w, `{"error":"invalid source_url"}`, http.StatusBadRequest)
+		return
+	}
+	itemID, err := s.DB.AddProjectItem(r.Context(), projectID, userID, body.Type, body.SourceURL, body.JobID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"add item failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": itemID.String()})
+}
+
+func (s *Server) uploadProjectItem(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.Store == nil {
+		http.Error(w, `{"error":"upload not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	const maxSize = 50 << 20 // 50 MB
+	if err := r.ParseMultipartForm(maxSize * 2); err != nil {
+		http.Error(w, `{"error":"multipart too large"}`, http.StatusBadRequest)
+		return
+	}
+	files := r.MultipartForm.File["file"]
+	if len(files) == 0 {
+		files = r.MultipartForm.File["files"]
+	}
+	if len(files) == 0 {
+		http.Error(w, `{"error":"no file"}`, http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	var itemType string
+	var itemID uuid.UUID
+	for _, fh := range files {
+		if fh.Size > maxSize {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(fh.Filename))
+		if ext == "" {
+			ext = ".bin"
+		}
+		contentType := fh.Header.Get("Content-Type")
+		if strings.HasPrefix(contentType, "video/") {
+			itemType = "video"
+		} else {
+			itemType = "image"
+		}
+		key := fmt.Sprintf("uploads/%s/%s%s", userID.String(), uuid.New().String(), ext)
+		file, err := fh.Open()
+		if err != nil {
+			continue
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		_, err = s.Store.Put(ctx, key, file, contentType)
+		file.Close()
+		if err != nil {
+			log.Printf("upload project item %s: %v", fh.Filename, err)
+			continue
+		}
+		url := s.Store.URL(key)
+		itemID, err = s.DB.AddProjectItem(ctx, projectID, userID, itemType, url, nil)
+		if err != nil {
+			http.Error(w, `{"error":"add item failed"}`, http.StatusInternalServerError)
+			return
+		}
+		break
+	}
+	if itemID == uuid.Nil {
+		http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": itemID.String()})
+}
+
+func (s *Server) removeProjectItem(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if err := s.DB.RemoveProjectItem(r.Context(), itemID, userID); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"remove failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) listProjectVersions(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	list, err := s.DB.ListProjectVersions(r.Context(), itemID, userID)
+	if err != nil {
+		http.Error(w, `{"error":"list versions"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"versions": list})
+}
+
+func (s *Server) addProjectVersion(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		URL      string          `json:"url"`
+		Metadata json.RawMessage `json:"metadata,omitempty"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if !strings.HasPrefix(body.URL, "https://") {
+		http.Error(w, `{"error":"invalid url"}`, http.StatusBadRequest)
+		return
+	}
+	if err := s.DB.AddProjectVersion(r.Context(), itemID, userID, body.URL, body.Metadata); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"add version failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) uploadProjectVersion(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.Store == nil {
+		http.Error(w, `{"error":"upload not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	const maxSize = 50 << 20
+	if err := r.ParseMultipartForm(maxSize * 2); err != nil {
+		http.Error(w, `{"error":"multipart too large"}`, http.StatusBadRequest)
+		return
+	}
+	files := r.MultipartForm.File["file"]
+	if len(files) == 0 {
+		files = r.MultipartForm.File["files"]
+	}
+	if len(files) == 0 {
+		http.Error(w, `{"error":"no file"}`, http.StatusBadRequest)
+		return
+	}
+	fh := files[0]
+	if fh.Size > maxSize {
+		http.Error(w, `{"error":"file too large"}`, http.StatusBadRequest)
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(fh.Filename))
+	if ext == "" {
+		ext = ".bin"
+	}
+	key := fmt.Sprintf("uploads/%s/%s%s", userID.String(), uuid.New().String(), ext)
+	file, err := fh.Open()
+	if err != nil {
+		http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+		return
+	}
+	contentType := fh.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	_, err = s.Store.Put(r.Context(), key, file, contentType)
+	file.Close()
+	if err != nil {
+		log.Printf("upload project version %s: %v", fh.Filename, err)
+		http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+		return
+	}
+	url := s.Store.URL(key)
+	if err := s.DB.AddProjectVersion(r.Context(), itemID, userID, url, nil); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"add version failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 }

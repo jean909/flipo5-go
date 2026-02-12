@@ -40,6 +40,7 @@ export default function DashboardLayout({
     <div className="h-screen bg-theme-bg text-theme-fg flex overflow-hidden">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 min-h-0 relative">
+        {!pathname.startsWith('/dashboard/studio') && (
         <div className="fixed top-4 right-4 z-10 flex items-center gap-2">
           <button
             type="button"
@@ -73,6 +74,7 @@ export default function DashboardLayout({
           </Link>
           <JobsInProgressButton />
         </div>
+        )}
         {children}
       </main>
     </div>

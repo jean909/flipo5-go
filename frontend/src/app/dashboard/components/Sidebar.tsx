@@ -37,6 +37,10 @@ export function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
+    if (pathname.startsWith('/dashboard/studio')) setCollapsed(true);
+  }, [pathname]);
+
+  useEffect(() => {
     if (sessionsExpanded && !collapsed) {
       setThreadsLoading(true);
       listThreads()
@@ -55,6 +59,7 @@ export function Sidebar() {
     { href: '/dashboard', labelKey: 'nav.dashboard', icon: DashboardIcon },
     { href: '/dashboard/jobs', labelKey: 'nav.jobs', icon: JobsIcon },
     { href: '/dashboard/content', labelKey: 'nav.content', icon: ContentIcon },
+    { href: '/dashboard/studio', labelKey: 'nav.studio', icon: StudioIcon },
   ];
 
   const displayName = user?.full_name?.trim() || user?.email || '';
@@ -102,12 +107,14 @@ export function Sidebar() {
         )}
       </div>
       <nav className="flex-1 p-3 flex flex-col gap-0.5 min-h-0 overflow-hidden">
-        {nav.map(({ href, labelKey, icon: Icon }) => (
+        {nav.map(({ href, labelKey, icon: Icon }) => {
+          const isActive = href === '/dashboard/studio' ? pathname.startsWith('/dashboard/studio') : pathname === href;
+          return (
           <Link
             key={href}
             href={href === '/dashboard' && pathname === '/dashboard' ? '/dashboard?new=1' : href}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
-              pathname === href ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
+              isActive ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
             }`}
             title={collapsed ? t(locale, labelKey) : undefined}
           >
@@ -126,7 +133,8 @@ export function Sidebar() {
               )}
             </AnimatePresence>
           </Link>
-        ))}
+          );
+        })}
         {!collapsed && (
           <div className="mt-1">
             <button
@@ -343,6 +351,13 @@ function ContentIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+    </svg>
+  );
+}
+function StudioIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.38 3.395a15.995 15.995 0 004.769-2.95m0 0a3 3 0 10-4.243-4.243m4.242 4.242a9 9 0 01-1.414-2.165m-1.414 1.414a9 9 0 01-2.167-1.415m1.414 1.414L11 3.828a9 9 0 0110.172 10.172z" />
     </svg>
   );
 }

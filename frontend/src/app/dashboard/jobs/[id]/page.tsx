@@ -7,6 +7,7 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { getJob, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from '../../components/ImageGallery';
+import { VideoPlayer } from '../../components/VideoPlayer';
 import { t, jobErrorDisplay } from '@/lib/i18n';
 
 export default function JobDetailPage() {
@@ -77,11 +78,13 @@ export default function JobDetailPage() {
           <div className="mt-4">
             {job.type === 'image' && validUrls.length > 0 ? (
               <ImageGallery urls={validUrls} variant="full" />
+            ) : job.type === 'video' && validUrls[0] ? (
+              <VideoPlayer src={validUrls[0]} className="max-w-2xl" />
             ) : (
               <div className="space-y-2">
                 {validUrls.map((url) =>
                   !url ? null : /\.(mp4|webm|mov)$/i.test(url) ? (
-                    <video key={url} src={url} controls className="max-w-full rounded border border-white/10" />
+                    <VideoPlayer key={url} src={url} className="max-w-2xl" />
                   ) : (
                     <img key={url} src={url} alt="" className="max-w-full h-auto rounded border border-white/10" />
                   )

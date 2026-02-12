@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
 import { listContent, type Job } from '@/lib/api';
@@ -35,7 +36,7 @@ export default function ContentPage() {
   const [total, setTotal] = useState(0);
 
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
-  const [viewingImage, setViewingImage] = useState<{ urls: string[] } | null>(null);
+  const [viewingMedia, setViewingMedia] = useState<{ urls: string[] } | null>(null);
 
   const typeFilter = (searchParams.get('type') || '') as 'image' | 'video' | '';
   const searchQ = searchParams.get('q') || '';
@@ -122,41 +123,28 @@ export default function ContentPage() {
           <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {items.map((job) => (
               <li key={job.id} className="flex flex-col gap-1.5">
-                {job.type === 'image' ? (
+                {(job.type === 'image' || job.type === 'video') ? (
                   <button
                     type="button"
-                    onClick={() => setViewingImage({ urls: job.outputUrls })}
+                    onClick={() => setViewingMedia({ urls: job.outputUrls })}
                     className="w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover transition-all group"
                   >
                     <div className="aspect-square relative bg-theme-bg-elevated">
-                      {job.outputUrls[0] && (
-                        <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                      )}
-                      <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="text-sm font-medium text-theme-fg px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong">
-                          {t(locale, 'content.view')}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                ) : (
-                  <a
-                    href={job.outputUrls[0]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover transition-all group"
-                  >
-                    <div className="aspect-square relative bg-theme-bg-elevated">
                       {job.outputUrls[0] ? (
-                        <video
-                          src={job.outputUrls[0]}
-                          className="w-full h-full object-cover"
-                          muted
-                          preload="metadata"
-                        />
+                        job.type === 'video' ? (
+                          <video
+                            src={job.outputUrls[0]}
+                            className="w-full h-full object-cover"
+                            muted
+                            preload="metadata"
+                            playsInline
+                          />
+                        ) : (
+                          <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                        )
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-theme-fg-subtle">
-                          <VideoIcon className="w-12 h-12" />
+                          {job.type === 'video' ? <VideoIcon className="w-12 h-12" /> : <ImageIcon className="w-12 h-12" />}
                         </div>
                       )}
                       <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -165,8 +153,8 @@ export default function ContentPage() {
                         </span>
                       </div>
                     </div>
-                  </a>
-                )}
+                  </button>
+                ) : null}
                 {getJobDisplayName(job) && (
                   <p className="text-xs text-theme-fg-subtle truncate px-0.5" title={getJobDisplayName(job)}>
                     {getJobDisplayName(job)}
@@ -210,11 +198,11 @@ export default function ContentPage() {
         </>
       )}
 
-      {viewingImage && viewingImage.urls[0] && (
+      {viewingMedia && viewingMedia.urls[0] && (
         <ImageViewModal
-          url={viewingImage.urls[0]}
-          urls={viewingImage.urls.length > 1 ? viewingImage.urls : undefined}
-          onClose={() => setViewingImage(null)}
+          url={viewingMedia.urls[0]}
+          urls={viewingMedia.urls.length > 1 ? viewingMedia.urls : undefined}
+          onClose={() => setViewingMedia(null)}
           locale={locale}
         />
       )}
@@ -230,6 +218,13 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
+function ImageIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  );
+}
 function VideoIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>

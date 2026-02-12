@@ -12,6 +12,7 @@ type Props = {
   confirmClass?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  customContent?: React.ReactNode;
 };
 
 export function ConfirmDialog({
@@ -23,6 +24,7 @@ export function ConfirmDialog({
   confirmClass = 'bg-red-500/20 text-red-400 hover:bg-red-500/30',
   onConfirm,
   onCancel,
+  customContent,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -49,7 +51,8 @@ export function ConfirmDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-display text-lg font-bold text-white mb-2">{title}</h3>
-        <p className="text-sm text-neutral-400 mb-6">{message}</p>
+        {message && <p className="text-sm text-neutral-400 mb-6">{message}</p>}
+        {customContent}
         <div className="flex gap-3 justify-end">
           <button
             type="button"

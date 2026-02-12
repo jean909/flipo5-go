@@ -13,6 +13,7 @@ import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from './ImageGallery';
+import { ImageViewModal } from './ImageViewModal';
 import { jobErrorDisplay } from '@/lib/i18n';
 
 // Markdown components: render AI output (including tables) without requiring prompt instructions
@@ -68,6 +69,7 @@ export function JobCard({
 }) {
   const [job, setJob] = useState<Job | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [viewingVideoUrl, setViewingVideoUrl] = useState<string | null>(null);
   const [streamOutput, setStreamOutput] = useState('');
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [displayLen, setDisplayLen] = useState(0); // typing animation
@@ -108,9 +110,9 @@ export function JobCard({
     return () => { cancelled = true; };
   }, [jobId]);
 
-  // Retry fetch when completed image job has no URLs (mirror may still be updating)
+  // Retry fetch when completed image/video job has no URLs (mirror may still be updating)
   useEffect(() => {
-    if (!job || job.type !== 'image' || job.status !== 'completed' || retryCount >= 3) return;
+    if (!job || (job.type !== 'image' && job.type !== 'video') || job.status !== 'completed' || retryCount >= 3) return;
     const urls = getOutputUrls(job.output);
     if (urls.length > 0) return;
     const t = setTimeout(() => {
@@ -218,6 +220,20 @@ export function JobCard({
           <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
             <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
             <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Video job: pending/running = same gradient loader card
+  if (job && job.type === 'video' && (job.status === 'pending' || job.status === 'running')) {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
+          <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
+            <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
+            <p className="text-sm text-theme-fg/80">{t(locale, 'video.creating')}</p>
           </div>
         </div>
       </div>
@@ -346,6 +362,66 @@ export function JobCard({
     );
   }
 
+  // Video job: completed = video player (or gradient loader while URLs loading)
+  if (job && job.type === 'video' && job.status === 'completed') {
+    const videoUrl = imageUrls[0];
+    if (!videoUrl && retryCount < 3) {
+      return (
+        <div className="flex justify-start">
+          <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
+            <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
+              <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
+              <p className="text-sm text-theme-fg/80">{t(locale, 'video.creating')}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (videoUrl) {
+      return (
+        <>
+          <div className="flex justify-start">
+            <button
+              type="button"
+              onClick={() => setViewingVideoUrl(videoUrl)}
+              className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden text-left block cursor-pointer relative group"
+            >
+              <video
+                src={videoUrl}
+                className="w-full aspect-video object-cover pointer-events-none"
+                muted
+                preload="metadata"
+                playsInline
+              />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none">
+                <span className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                  <PlayIcon className="w-7 h-7 text-black ml-1" />
+                </span>
+              </div>
+            </button>
+          </div>
+          {viewingVideoUrl && (
+            <ImageViewModal url={viewingVideoUrl} onClose={() => setViewingVideoUrl(null)} locale={locale} />
+          )}
+        </>
+      );
+    }
+    return (
+      <div className="flex justify-start">
+        <p className={`rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5 text-sm ${textCls} italic`}>{t(locale, 'chat.noResponse')}</p>
+      </div>
+    );
+  }
+
+  // Video job: failed
+  if (job && job.type === 'video' && job.status === 'failed') {
+    return (
+      <div className="flex justify-start">
+        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+      </div>
+    );
+  }
+
   // Chat variant: completed = balon stânga (markdown, liste, linkuri)
   if (isChat && job.status === 'completed') {
     const hasText = outputStr.length > 0;
@@ -427,5 +503,12 @@ export function JobCard({
         <p className={`mt-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       )}
     </div>
+  );
+}
+function PlayIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+      <path d="M8 5v14l11-7z" />
+    </svg>
   );
 }

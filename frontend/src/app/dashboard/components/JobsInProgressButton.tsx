@@ -298,11 +298,21 @@ export function JobsInProgressButton() {
                       >
                         <div className="flex items-center gap-2">
                           {toast.imageUrl ? (
-                            <img
-                              src={toast.imageUrl}
-                              alt=""
-                              className="w-12 h-12 rounded-lg object-cover shrink-0"
-                            />
+                            toast.type === 'video' ? (
+                              <video
+                                src={toast.imageUrl}
+                                className="w-12 h-12 rounded-lg object-cover shrink-0"
+                                muted
+                                preload="metadata"
+                                playsInline
+                              />
+                            ) : (
+                              <img
+                                src={toast.imageUrl}
+                                alt=""
+                                className="w-12 h-12 rounded-lg object-cover shrink-0"
+                              />
+                            )
                           ) : (
                             <span className="shrink-0 w-12 h-12 rounded-lg bg-theme-success-muted flex items-center justify-center">
                               {toast.type === 'video' ? (
