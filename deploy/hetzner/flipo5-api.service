@@ -1,0 +1,16 @@
+[Unit]
+Description=Flipo5 Go API
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=flipo5
+Group=flipo5
+WorkingDirectory=/opt/flipo5
+ExecStart=/opt/flipo5/flipo5-api
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/flipo5/.env
+
+[Install]
+WantedBy=multi-user.target

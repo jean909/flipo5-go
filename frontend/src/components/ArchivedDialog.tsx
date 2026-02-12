@@ -1,0 +1,56 @@
+'use client';
+
+import Link from 'next/link';
+import { motion } from 'framer-motion';
+
+type Props = {
+  open: boolean;
+  title: string;
+  message: string;
+  profileLabel: string;
+  onClose: () => void;
+};
+
+export function ArchivedDialog({ open, title, message, profileLabel, onClose }: Props) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-black/70"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative w-full max-w-md rounded-2xl border border-white/20 bg-zinc-900 p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="Close"
+        >
+          <XIcon className="w-5 h-5" />
+        </button>
+        <h3 className="font-display text-lg font-bold text-white mb-2 pr-8">{title}</h3>
+        <p className="text-sm text-neutral-400 mb-6">{message}</p>
+        <Link
+          href="/dashboard/profile?fromArchive=1"
+          onClick={onClose}
+          className="block w-full text-center py-3 rounded-xl text-sm font-medium bg-white/10 text-white hover:bg-white/20 transition-colors"
+        >
+          {profileLabel}
+        </Link>
+      </motion.div>
+    </div>
+  );
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}

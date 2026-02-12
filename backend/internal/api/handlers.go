@@ -1,0 +1,841 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/MicahParks/keyfunc/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
+	"flipo5/backend/internal/middleware"
+	"flipo5/backend/internal/queue"
+	"flipo5/backend/internal/storage"
+	"flipo5/backend/internal/store"
+	"flipo5/backend/internal/stream"
+)
+
+type Server struct {
+	DB                   *store.DB
+	Asynq                *asynq.Client
+	Store                *storage.Store
+	Stream               *stream.Subscriber
+	redisURL             string
+	supabaseJWTSecret    string
+	jwks                 *keyfunc.JWKS
+	supabaseURL          string
+	supabaseServiceRole  string
+}
+
+// NewServer builds the API server.
+func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
+	return &Server{
+		DB: db, Asynq: asynq, Store: store, Stream: streamSub,
+		redisURL: redisURL, supabaseJWTSecret: supabaseJWTSecret, jwks: jwks,
+		supabaseURL: supabaseURL, supabaseServiceRole: supabaseServiceRole,
+	}
+}
+
+func (s *Server) Routes() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/health", s.health)
+	r.Get("/health/ready", s.healthReady)
+
+	// Public, rate-limited by IP (no auth = no UserID)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RateLimitByIP(30))
+		r.Get("/api/check-email", s.checkEmail)
+	})
+
+	r.Route("/api", func(r chi.Router) {
+		r.Use(middleware.SupabaseAuth(s.supabaseJWTSecret, s.jwks, s.DB))
+		r.Use(middleware.RateLimit(60))
+		r.Get("/me", s.me)
+		r.Patch("/me", s.patchMe)
+		r.Post("/chat", s.createChat)
+		r.Post("/image", s.createImage)
+		r.Post("/video", s.createVideo)
+		r.Post("/upload", s.upload)
+		r.Get("/threads", s.listThreads)
+		r.Get("/threads/{id}", s.getThread)
+		r.Patch("/threads/{id}", s.patchThread)
+		r.Get("/jobs", s.listJobs)
+		r.Get("/content", s.listContent)
+		r.Get("/jobs/{id}", s.getJob)
+		r.Get("/jobs/{id}/stream", s.jobStreamSSE)
+		r.Get("/download", s.downloadMedia)
+	})
+	return r
+}
+
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func (s *Server) healthReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := s.DB.Ping(ctx); err != nil {
+		log.Printf("health/ready: db ping: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "database unavailable"})
+		return
+	}
+
+	if s.redisURL != "" {
+		u := s.redisURL
+		if !strings.HasPrefix(u, "redis://") && !strings.HasPrefix(u, "rediss://") {
+			u = "redis://" + u
+		}
+		opt, err := redis.ParseURL(u)
+		if err != nil {
+			log.Printf("health/ready: redis parse: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "redis config invalid"})
+			return
+		}
+		rdb := redis.NewClient(opt)
+		defer rdb.Close()
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			log.Printf("health/ready: redis ping: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "redis unavailable"})
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	user, err := s.DB.UserByID(r.Context(), userID)
+	if err != nil || user == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
+func (s *Server) checkEmail(w http.ResponseWriter, r *http.Request) {
+	email := strings.TrimSpace(r.URL.Query().Get("email"))
+	if email == "" {
+		http.Error(w, `{"error":"email required"}`, http.StatusBadRequest)
+		return
+	}
+	if s.supabaseURL == "" || s.supabaseServiceRole == "" {
+		reason := "missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in backend .env"
+		if s.supabaseURL == "" {
+			reason = "missing SUPABASE_URL in backend .env"
+		} else if s.supabaseServiceRole == "" {
+			reason = "missing SUPABASE_SERVICE_ROLE_KEY in backend .env (Project Settings → API → service_role)"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not configured", "reason": reason})
+		return
+	}
+	// Supabase GoTrue: GET /auth/v1/admin/users
+	reqURL := s.supabaseURL + "/auth/v1/admin/users?per_page=50&page=1"
+	req, err := http.NewRequestWithContext(r.Context(), "GET", reqURL, nil)
+	if err != nil {
+		http.Error(w, `{"error":"request"}`, http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+s.supabaseServiceRole)
+	req.Header.Set("apikey", s.supabaseServiceRole)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, `{"error":"upstream"}`, http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Users []struct {
+			Email string `json:"email"`
+		} `json:"users"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		http.Error(w, `{"error":"decode"}`, http.StatusBadGateway)
+		return
+	}
+	emailLower := strings.ToLower(email)
+	exists := false
+	for _, u := range out.Users {
+		if strings.ToLower(u.Email) == emailLower {
+			exists = true
+			break
+		}
+	}
+	// If we got 50 and didn't find, paginate once to reduce false negatives
+	if !exists && len(out.Users) == 50 {
+		req2, _ := http.NewRequestWithContext(r.Context(), "GET", s.supabaseURL+"/auth/v1/admin/users?per_page=50&page=2", nil)
+		req2.Header.Set("Authorization", "Bearer "+s.supabaseServiceRole)
+		req2.Header.Set("apikey", s.supabaseServiceRole)
+		if resp2, err := http.DefaultClient.Do(req2); err == nil {
+			var out2 struct {
+				Users []struct {
+					Email string `json:"email"`
+				} `json:"users"`
+			}
+			_ = json.NewDecoder(resp2.Body).Decode(&out2)
+			resp2.Body.Close()
+			for _, u := range out2.Users {
+				if strings.ToLower(u.Email) == emailLower {
+					exists = true
+					break
+				}
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"exists": exists})
+}
+
+var validStyles = map[string]bool{"friendly": true, "direct": true, "logical": true, "brief": true, "detailed": true}
+var validLangs = map[string]bool{"browser": true, "en": true, "de": true, "ro": true, "fr": true, "es": true, "it": true}
+
+func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	var body struct {
+		FullName             *string                `json:"full_name"`
+		WhereHeard           *string                `json:"where_heard"`
+		UseCase              *string                `json:"use_case"`
+		Plan                 *string                `json:"plan"`
+		DataRetentionAccepted *bool                 `json:"data_retention_accepted"`
+		AIConfiguration      map[string]interface{} `json:"ai_configuration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	var planVal *string
+	if body.Plan != nil {
+		p := strings.TrimSpace(*body.Plan)
+		if p != "" && p != "free" && p != "premium" && p != "creator" {
+			http.Error(w, `{"error":"invalid plan"}`, http.StatusBadRequest)
+			return
+		}
+		if p != "" {
+			planVal = &p
+		}
+	}
+	if err := s.DB.UpdateUserProfile(r.Context(), userID, body.FullName, body.WhereHeard, body.UseCase, planVal); err != nil {
+		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if body.DataRetentionAccepted != nil || body.AIConfiguration != nil {
+		var aiConfig map[string]interface{}
+		if body.AIConfiguration != nil {
+			aiConfig = make(map[string]interface{})
+			if u, _ := s.DB.UserByID(r.Context(), userID); u != nil && u.AIConfiguration != nil {
+				for k, v := range u.AIConfiguration {
+					aiConfig[k] = v
+				}
+			}
+			if s, ok := body.AIConfiguration["style"].(string); ok && validStyles[s] {
+				aiConfig["style"] = s
+			}
+			if l, ok := body.AIConfiguration["primary_language"].(string); ok && validLangs[l] {
+				aiConfig["primary_language"] = l
+			}
+			if _, has := body.AIConfiguration["user_details"]; has {
+				d, _ := body.AIConfiguration["user_details"].(string)
+				d = strings.TrimSpace(d)
+				if len(d) > 80 {
+					d = d[:80]
+				}
+				aiConfig["user_details"] = d
+			}
+			if len(aiConfig) == 0 {
+				aiConfig = nil
+			}
+		}
+		err := s.DB.UpdateUserSettings(r.Context(), userID, body.DataRetentionAccepted, aiConfig)
+		if err != nil {
+			if err == store.ErrAIConfigCooldown {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				json.NewEncoder(w).Encode(map[string]string{"error": "ai_config_cooldown", "message": "AI configuration can only be changed once per 24 hours"})
+				return
+			}
+			http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	user, _ := s.DB.UserByID(r.Context(), userID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
+func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt         string   `json:"prompt"`
+		AttachmentURLs []string `json:"attachment_urls,omitempty"`
+		ThreadID       string   `json:"thread_id,omitempty"`
+		Incognito      bool     `json:"incognito,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
+		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	var threadID *uuid.UUID
+	if !req.Incognito && req.ThreadID != "" {
+		if id, err := uuid.Parse(req.ThreadID); err == nil {
+			t, _ := s.DB.GetThreadForUser(ctx, id, userID)
+			if t != nil {
+				threadID = &id
+			}
+		}
+	}
+	if !req.Incognito && threadID == nil {
+		id, err := s.DB.CreateThread(ctx, userID, false)
+		if err != nil {
+			log.Printf("create thread failed: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "create thread"})
+			return
+		}
+		threadID = &id
+	}
+	if req.Incognito && threadID == nil {
+		id, err := s.DB.CreateThread(ctx, userID, true)
+		if err != nil {
+			log.Printf("create ephemeral thread failed: %v", err)
+			http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
+			return
+		}
+		threadID = &id
+	}
+	input := map[string]interface{}{"prompt": req.Prompt}
+	if len(req.AttachmentURLs) > 0 {
+		input["attachment_urls"] = req.AttachmentURLs
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "chat", input, threadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewChatTask(jobID, req.Prompt)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	out := map[string]string{"job_id": jobID.String()}
+	if threadID != nil {
+		out["thread_id"] = threadID.String()
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+	if s.Store == nil {
+		http.Error(w, `{"error":"upload not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	const maxSize = 10 << 20 // 10 MB per file
+	if err := r.ParseMultipartForm(maxSize * 5); err != nil {
+		http.Error(w, `{"error":"multipart too large"}`, http.StatusBadRequest)
+		return
+	}
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 {
+		http.Error(w, `{"error":"no files"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	var urls []string
+	for _, fh := range files {
+		if fh.Size > maxSize {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(fh.Filename))
+		if ext == "" {
+			ext = ".bin"
+		}
+		key := fmt.Sprintf("uploads/%s/%s%s", userID.String(), uuid.New().String(), ext)
+		file, err := fh.Open()
+		if err != nil {
+			continue
+		}
+		contentType := fh.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		_, err = s.Store.Put(ctx, key, file, contentType)
+		file.Close()
+		if err != nil {
+			continue
+		}
+		urls = append(urls, s.Store.URL(key))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"urls": urls})
+}
+
+func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt         string   `json:"prompt"`
+		ThreadID       string   `json:"thread_id,omitempty"`
+		Incognito      bool     `json:"incognito,omitempty"`
+		Size           string   `json:"size,omitempty"`
+		AspectRatio    string   `json:"aspect_ratio,omitempty"`
+		ImageInput     []string `json:"image_input,omitempty"`
+		MaxImages      int      `json:"max_images,omitempty"`
+		SequentialMode string   `json:"sequential_image_generation,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
+		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Size != "2K" && req.Size != "4K" && req.Size != "HD" {
+		req.Size = "2K"
+	}
+	if req.AspectRatio == "" {
+		req.AspectRatio = "match_input_image"
+	}
+	if req.MaxImages < 1 || req.MaxImages > 15 {
+		req.MaxImages = 4
+	}
+	if req.SequentialMode == "" {
+		req.SequentialMode = "auto"
+	}
+	if len(req.ImageInput) > 14 {
+		req.ImageInput = req.ImageInput[:14]
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	var threadID *uuid.UUID
+	if !req.Incognito && req.ThreadID != "" {
+		if id, err := uuid.Parse(req.ThreadID); err == nil {
+			t, _ := s.DB.GetThreadForUser(ctx, id, userID)
+			if t != nil {
+				threadID = &id
+			}
+		}
+	}
+	if !req.Incognito && threadID == nil {
+		id, err := s.DB.CreateThread(ctx, userID, false)
+		if err != nil {
+			log.Printf("create thread failed: %v", err)
+			http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
+			return
+		}
+		threadID = &id
+	}
+	if req.Incognito && threadID == nil {
+		id, err := s.DB.CreateThread(ctx, userID, true)
+		if err != nil {
+			log.Printf("create ephemeral thread failed: %v", err)
+			http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
+			return
+		}
+		threadID = &id
+	}
+	input := map[string]interface{}{
+		"prompt":                      req.Prompt,
+		"size":                        req.Size,
+		"aspect_ratio":                req.AspectRatio,
+		"max_images":                  req.MaxImages,
+		"sequential_image_generation": req.SequentialMode,
+	}
+	if len(req.ImageInput) > 0 {
+		input["image_input"] = req.ImageInput
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "image", input, threadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewImageTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	out := map[string]string{"job_id": jobID.String()}
+	if threadID != nil {
+		out["thread_id"] = threadID.String()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt    string `json:"prompt"`
+		ThreadID  string `json:"thread_id,omitempty"`
+		Incognito bool   `json:"incognito,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
+		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	var threadID *uuid.UUID
+	if !req.Incognito && req.ThreadID != "" {
+		if id, err := uuid.Parse(req.ThreadID); err == nil {
+			t, _ := s.DB.GetThreadForUser(ctx, id, userID)
+			if t != nil {
+				threadID = &id
+			}
+		}
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "video", map[string]string{"prompt": req.Prompt}, threadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewVideoTask(jobID, req.Prompt)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	out := map[string]string{"job_id": jobID.String()}
+	if threadID != nil {
+		out["thread_id"] = threadID.String()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) listThreads(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	archived := r.URL.Query().Get("archived") == "true"
+	threads, err := s.DB.ListThreads(r.Context(), userID, 50, archived)
+	if err != nil {
+		http.Error(w, `{"error":"list threads"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"threads": threads})
+}
+
+func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	var body struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	switch body.Action {
+	case "archive":
+		if err := s.DB.ArchiveThread(r.Context(), id, userID); err != nil {
+			if err == pgx.ErrNoRows {
+				http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+				return
+			}
+			http.Error(w, `{"error":"archive failed"}`, http.StatusInternalServerError)
+			return
+		}
+	case "unarchive":
+		if err := s.DB.UnarchiveThread(r.Context(), id, userID); err != nil {
+			if err == pgx.ErrNoRows {
+				http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+				return
+			}
+			http.Error(w, `{"error":"unarchive failed"}`, http.StatusInternalServerError)
+			return
+		}
+	case "delete":
+		if err := s.DB.DeleteThread(r.Context(), id, userID); err != nil {
+			if err == pgx.ErrNoRows {
+				http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+				return
+			}
+			http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+			return
+		}
+	default:
+		http.Error(w, `{"error":"invalid action"}`, http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	thread, err := s.DB.GetThreadForUser(r.Context(), id, userID)
+	if err != nil || thread == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	jobs, err := s.DB.ListJobsByThread(r.Context(), id, userID)
+	if err != nil {
+		http.Error(w, `{"error":"list jobs"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"thread": thread, "jobs": jobs})
+}
+
+func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	jobs, err := s.DB.ListJobs(r.Context(), userID, 50)
+	if err != nil {
+		http.Error(w, `{"error":"list jobs"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"jobs": jobs})
+}
+
+func (s *Server) listContent(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 50 {
+			limit = v
+		}
+	}
+	typeFilter := strings.TrimSpace(r.URL.Query().Get("type"))
+	if typeFilter != "" && typeFilter != "image" && typeFilter != "video" {
+		typeFilter = ""
+	}
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	offset := (page - 1) * limit
+	jobs, total, err := s.DB.ListContentJobs(r.Context(), userID, offset, limit, typeFilter, search)
+	if err != nil {
+		http.Error(w, `{"error":"list content"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"jobs":  jobs,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	job, err := s.DB.GetJobForUser(r.Context(), id, userID)
+	if err != nil || job == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(job)
+}
+
+func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
+	urlStr := strings.TrimSpace(r.URL.Query().Get("url"))
+	if urlStr == "" {
+		http.Error(w, `{"error":"url required"}`, http.StatusBadRequest)
+		return
+	}
+	if !strings.HasPrefix(urlStr, "https://") {
+		http.Error(w, `{"error":"invalid url"}`, http.StatusBadRequest)
+		return
+	}
+	// Allow only known CDN domains (Replicate, Cloudflare R2, custom storage)
+	if !strings.Contains(urlStr, "replicate.delivery") &&
+		!strings.Contains(urlStr, "r2.dev") &&
+		!strings.Contains(urlStr, "r2.cloudflarestorage.com") &&
+		!strings.Contains(urlStr, "storage.flipo5.com") &&
+		!strings.Contains(urlStr, "flipo5.com") {
+		http.Error(w, `{"error":"url not allowed"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := http.Get(urlStr)
+	if err != nil {
+		http.Error(w, `{"error":"fetch failed"}`, http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, `{"error":"fetch failed"}`, http.StatusBadGateway)
+		return
+	}
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "image/jpeg"
+	}
+	ext := ".jpg"
+	if strings.Contains(ct, "png") {
+		ext = ".png"
+	} else if strings.Contains(ct, "webp") {
+		ext = ".webp"
+	} else if strings.Contains(ct, "gif") {
+		ext = ".gif"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", "attachment; filename=\"flipo5-"+fmt.Sprint(time.Now().Unix())+ext+"\"")
+	io.Copy(w, resp.Body)
+}
+
+func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	jobID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	job, err := s.DB.GetJobForUser(r.Context(), jobID, userID)
+	if err != nil || job == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	sendSSE := func(output string, status string) {
+		payload := map[string]string{"output": output, "status": status}
+		b, _ := json.Marshal(payload)
+		w.Write([]byte("data: " + string(b) + "\n\n"))
+		flusher.Flush()
+	}
+	outputText := func(j *store.Job) string {
+		if len(j.Output) == 0 {
+			return ""
+		}
+		var m map[string]interface{}
+		if json.Unmarshal(j.Output, &m) != nil {
+			return ""
+		}
+		if o, _ := m["output"].(string); o != "" {
+			return o
+		}
+		return ""
+	}
+	sendSSE(outputText(job), job.Status)
+	if job.Status == "completed" || job.Status == "failed" {
+		return
+	}
+	ctx := r.Context()
+	// Redis Pub/Sub: real-time stream when available
+	if s.Stream != nil {
+		type streamMsg struct {
+			output string
+			done   bool
+		}
+		ch := make(chan streamMsg, 64)
+		go func() {
+			_ = s.Stream.Subscribe(ctx, jobID, func(output string, done bool) {
+				select {
+				case ch <- streamMsg{output, done}:
+				default:
+				}
+			})
+			close(ch)
+		}()
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					job, _ = s.DB.GetJobForUser(r.Context(), jobID, userID)
+					if job != nil {
+						sendSSE(outputText(job), job.Status)
+					}
+					return
+				}
+				status := "running"
+				if msg.done {
+					status = "completed"
+				}
+				sendSSE(msg.output, status)
+				if msg.done {
+					return
+				}
+			case <-ticker.C:
+				next, err := s.DB.GetJobForUser(r.Context(), jobID, userID)
+				if err != nil || next == nil {
+					return
+				}
+				sendSSE(outputText(next), next.Status)
+				if next.Status == "completed" || next.Status == "failed" {
+					return
+				}
+			}
+		}
+	}
+	// Fallback: poll DB only
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			next, err := s.DB.GetJobForUser(r.Context(), jobID, userID)
+			if err != nil || next == nil {
+				return
+			}
+			sendSSE(outputText(next), next.Status)
+			if next.Status == "completed" || next.Status == "failed" {
+				return
+			}
+		}
+	}
+}

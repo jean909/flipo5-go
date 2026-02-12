@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   FLIPO5 THEME – centralizat, ușor de schimbat
+   Schimbă valorile aici pentru a actualiza tema
+   ============================================ */
+
+:root {
+  /* Base (solid) */
+  --theme-bg: #000000;
+  --theme-bg-elevated: #171717;
+
+  /* Base (RGB pentru opacity – Tailwind) */
+  --theme-bg-rgb: 0 0 0;
+  --theme-white-rgb: 255 255 255;
+
+  /* Neutral (muted) */
+  --theme-fg-muted: #a3a3a3;
+  --theme-fg-subtle: #737373;
+  --theme-fg-muted-rgb: 163 163 163;
+
+  /* Accent (in progress / pending) – amber */
+  --theme-accent: #f59e0b;
+  --theme-accent-rgb: 245 158 11;
+
+  /* Success (completed) */
+  --theme-success: #22c55e;
+  --theme-success-rgb: 34 197 94;
+
+  /* Danger */
+  --theme-danger: #ef4444;
+  --theme-danger-rgb: 239 68 68;
+
+  /* Legătură cu body (pentru compatibility) */
+  --bg: var(--theme-bg);
+  --fg: #ffffff;
+  --muted: var(--theme-fg-subtle);
+  --border: rgba(255, 255, 255, 0.2);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Grid overlay */
+.bg-grid-dark {
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+input, textarea, button, select {
+  border-color: var(--border);
+}
+
+/* KaTeX math in dark chat bubbles */
+.prose-invert .katex,
+.prose-invert .katex .mord,
+.prose-invert .katex .mop,
+.prose-invert .katex .mbin,
+.prose-invert .katex .mrel,
+.prose-invert .katex .mopen,
+.prose-invert .katex .mclose {
+  color: rgb(255 255 255 / 0.9) !important;
+}
+.prose-invert .katex .mspace {
+  background: transparent !important;
+}
+input:focus, textarea:focus {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+/* Custom scrollbar */
+.scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+.scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Search cancel button – folosește tema */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  width: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23a3a3a3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 18L18 6M6 6l12 12'/%3E%3C/svg%3E") no-repeat center;
+  background-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+input[type="search"]::-webkit-search-cancel-button:hover {
+  opacity: 1;
+}
+input[type="search"]::-webkit-search-decoration {
+  display: none;
+}
+input[type="search"]::-ms-clear {
+  display: none;
+}

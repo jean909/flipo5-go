@@ -1,0 +1,31 @@
+# Env
+.env
+.env.local
+.env*.local
+
+# Dependencies
+node_modules/
+
+# Build
+.next/
+out/
+frontend/flipo5-api
+backend/flipo5-api
+backend/api.exe
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Example/reference (conține .env și secrete)
+example ui/
+
+# Env production și backup cu secrete
+.env.production
+*.bak
