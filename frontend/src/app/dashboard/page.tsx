@@ -48,7 +48,10 @@ export default function DashboardPage() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threadData, setThreadData] = useState<Thread | null>(null);
   const [threadJobs, setThreadJobs] = useState<Job[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [lastSentPrompt, setLastSentPrompt] = useState<string>('');
+  const [pendingUserMessage, setPendingUserMessage] = useState<string>('');
+  const [pendingUserMessageThreadId, setPendingUserMessageThreadId] = useState<string | null>(null);
   const [imageSettings, setImageSettings] = useState<ImageSettings>({
     size: '2K',
     aspectRatio: 'match_input_image',
@@ -112,10 +115,19 @@ export default function DashboardPage() {
   const urlThreadId = searchParams.get('thread');
   const effectiveThreadId = incognito ? incognitoThreadId : threadId;
   useEffect(() => {
-    const loadId = incognito ? incognitoThreadId : urlThreadId;
+    const loadId = urlThreadId ?? (incognito ? incognitoThreadId : null);
     if (loadId && loadId !== threadId) {
       setThreadId(loadId);
+      setThreadData(null);
+      setThreadJobs([]);
+      setPendingUserMessage('');
+      setPendingUserMessageThreadId(null);
+      setThreadLoading(true);
       setHasStarted(true);
+      if (urlThreadId) {
+        setIncognito(false);
+        setIncognitoThreadId(null);
+      }
       getThread(loadId)
         .then((r) => {
           setThreadData(r.thread ?? null);
@@ -127,7 +139,8 @@ export default function DashboardPage() {
           setThreadId(null);
           if (!incognito) router.replace('/dashboard', { scroll: false });
           else setIncognitoThreadId(null);
-        });
+        })
+        .finally(() => setThreadLoading(false));
     }
     if (!incognito && !urlThreadId && threadId) {
       setThreadId(null);
@@ -216,13 +229,20 @@ export default function DashboardPage() {
     const tid = effectiveIncognito ? incognitoThreadId : threadId;
     try {
       if (mode === 'chat') {
+        const msg = trimmed || ' ';
+        setPendingUserMessage(msg);
+        setPendingUserMessageThreadId(tid ?? null);
         let attachmentUrls: string[] = [];
         if (attachments.length > 0) {
           attachmentUrls = await uploadAttachments(attachments.map((a) => a.file));
         }
-        const res = await createChat(trimmed || ' ', attachmentUrls.length ? attachmentUrls : undefined, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito);
+        const res = await createChat(msg, attachmentUrls.length ? attachmentUrls : undefined, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito);
+        setPendingUserMessage('');
+        setPendingUserMessageThreadId(null);
         setJobId(res.job_id);
-        setLastSentPrompt(trimmed || ' ');
+        setLastSentPrompt(msg);
+        setPendingJobThreadId(res.thread_id ?? tid ?? null);
+        setPendingJobType('chat');
         if (res.thread_id) {
           setThreadId(res.thread_id);
           if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
@@ -280,6 +300,8 @@ export default function DashboardPage() {
       setHasStarted(true);
       setPrompt('');
     } catch (err) {
+      setPendingUserMessage('');
+      setPendingUserMessageThreadId(null);
       setError(err instanceof Error ? err.message : t(locale, 'error.generic'));
     } finally {
       setLoading(false);
@@ -562,7 +584,13 @@ export default function DashboardPage() {
           )}
           <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full scrollbar-subtle">
             <div ref={chatContentRef} className="w-full max-w-2xl mx-auto flex flex-col py-4 gap-3 px-4">
+            {threadLoading && (
+              <p className="text-theme-fg-subtle text-sm py-4">{t(locale, 'common.loading')}</p>
+            )}
             {[
+              ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
+                ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
+                : []),
               ...threadJobs,
               ...(jobId &&
               !threadJobs.some((j) => j.id === jobId) &&
@@ -578,6 +606,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 )}
+                {job.id !== '_pending' && (
                 <JobCard
                   jobId={job.id}
                   locale={locale}
@@ -586,6 +615,7 @@ export default function DashboardPage() {
                   onNotFound={job.id === jobId ? () => { setJobId(null); setPendingJobThreadId(null); } : undefined}
                   onUseAsReference={addReferenceImage}
                 />
+                )}
               </div>
             ))}
             </div>

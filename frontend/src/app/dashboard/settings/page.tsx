@@ -39,17 +39,19 @@ export default function SettingsPage() {
   const [aiLang, setAiLang] = useState<string>('browser');
   const [userDetails, setUserDetails] = useState('');
 
+  function syncFormFromUser(u: User) {
+    setDataRetention(u.data_retention_accepted ?? null);
+    const cfg = u.ai_configuration ?? {};
+    setAiStyle((cfg.style as string) || '');
+    setAiLang((cfg.primary_language as string) || 'browser');
+    setUserDetails((cfg.user_details as string) || '');
+  }
+
   useEffect(() => {
     getMe().then((u) => {
       if (!u) return;
       setUser(u);
-      setDataRetention(u.data_retention_accepted ?? null);
-      const cfg = u.ai_configuration;
-      if (cfg) {
-        setAiStyle(cfg.style || '');
-        setAiLang(cfg.primary_language || 'browser');
-        setUserDetails(cfg.user_details || '');
-      }
+      syncFormFromUser(u);
     });
   }, []);
 
@@ -67,6 +69,7 @@ export default function SettingsPage() {
         ai_configuration: Object.keys(aiConfig).length ? aiConfig : undefined,
       });
       setUser(updated);
+      syncFormFromUser(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {

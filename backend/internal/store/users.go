@@ -17,7 +17,7 @@ type User struct {
 	UseCase              string                 `json:"use_case,omitempty"`
 	Plan                 string                 `json:"plan,omitempty"`
 	DataRetentionAccepted *bool                 `json:"data_retention_accepted,omitempty"`
-	AIConfiguration      map[string]interface{} `json:"ai_configuration,omitempty"`
+	AIConfiguration      map[string]interface{} `json:"ai_configuration"`
 	AIConfigUpdatedAt     string                `json:"ai_config_updated_at,omitempty"`
 	CreatedAt            string                `json:"created_at"`
 	UpdatedAt            string                `json:"updated_at,omitempty"`
@@ -36,6 +36,9 @@ func (db *DB) UserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	}
 	if len(aiConfig) > 0 {
 		_ = json.Unmarshal(aiConfig, &u.AIConfiguration)
+	}
+	if u.AIConfiguration == nil {
+		u.AIConfiguration = map[string]interface{}{}
 	}
 	if aiUpdatedAt != nil {
 		u.AIConfigUpdatedAt = *aiUpdatedAt
@@ -56,6 +59,9 @@ func (db *DB) UserByEmail(ctx context.Context, email string) (*User, error) {
 	}
 	if len(aiConfig) > 0 {
 		_ = json.Unmarshal(aiConfig, &u.AIConfiguration)
+	}
+	if u.AIConfiguration == nil {
+		u.AIConfiguration = map[string]interface{}{}
 	}
 	if aiUpdatedAt != nil {
 		u.AIConfigUpdatedAt = *aiUpdatedAt
