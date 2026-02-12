@@ -374,6 +374,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	var urls []string
 	for _, fh := range files {
 		if fh.Size > maxSize {
+			log.Printf("upload skip %s: size %d > max %d", fh.Filename, fh.Size, maxSize)
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(fh.Filename))
@@ -383,6 +384,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		key := fmt.Sprintf("uploads/%s/%s%s", userID.String(), uuid.New().String(), ext)
 		file, err := fh.Open()
 		if err != nil {
+			log.Printf("upload open %s: %v", fh.Filename, err)
 			continue
 		}
 		contentType := fh.Header.Get("Content-Type")
@@ -392,12 +394,32 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		_, err = s.Store.Put(ctx, key, file, contentType)
 		file.Close()
 		if err != nil {
+			log.Printf("upload store %s: %v", fh.Filename, err)
 			continue
 		}
 		urls = append(urls, s.Store.URL(key))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"urls": urls})
+}
+
+// ensureThread returns threadID for job. If threadID param is valid, uses it; otherwise creates new (normal or ephemeral).
+func (s *Server) ensureThread(ctx context.Context, w http.ResponseWriter, userID uuid.UUID, threadIDParam string, incognito bool) *uuid.UUID {
+	if threadIDParam != "" {
+		if id, err := uuid.Parse(threadIDParam); err == nil {
+			if t, _ := s.DB.GetThreadForUser(ctx, id, userID); t != nil {
+				return &id
+			}
+		}
+	}
+	ephemeral := incognito
+	id, err := s.DB.CreateThread(ctx, userID, ephemeral)
+	if err != nil {
+		log.Printf("create thread failed: %v", err)
+		http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
+		return nil
+	}
+	return &id
 }
 
 func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
@@ -432,32 +454,9 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
-	var threadID *uuid.UUID
-	if !req.Incognito && req.ThreadID != "" {
-		if id, err := uuid.Parse(req.ThreadID); err == nil {
-			t, _ := s.DB.GetThreadForUser(ctx, id, userID)
-			if t != nil {
-				threadID = &id
-			}
-		}
-	}
-	if !req.Incognito && threadID == nil {
-		id, err := s.DB.CreateThread(ctx, userID, false)
-		if err != nil {
-			log.Printf("create thread failed: %v", err)
-			http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
-			return
-		}
-		threadID = &id
-	}
-	if req.Incognito && threadID == nil {
-		id, err := s.DB.CreateThread(ctx, userID, true)
-		if err != nil {
-			log.Printf("create ephemeral thread failed: %v", err)
-			http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
-			return
-		}
-		threadID = &id
+	threadID := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
+	if threadID == nil {
+		return
 	}
 	input := map[string]interface{}{
 		"prompt":                      req.Prompt,
@@ -500,14 +499,9 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
-	var threadID *uuid.UUID
-	if !req.Incognito && req.ThreadID != "" {
-		if id, err := uuid.Parse(req.ThreadID); err == nil {
-			t, _ := s.DB.GetThreadForUser(ctx, id, userID)
-			if t != nil {
-				threadID = &id
-			}
-		}
+	threadID := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
+	if threadID == nil {
+		return
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "video", map[string]string{"prompt": req.Prompt}, threadID)
 	if err != nil {

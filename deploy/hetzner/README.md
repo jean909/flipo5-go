@@ -1,13 +1,37 @@
-# Flipo5 – Deploy pe Hetzner bare metal
+# Flipo5 – Deploy pe Hetzner
 
-Backend (Go API) pe Hetzner AX41. Frontend poate rula local (localhost) și se conectează la backend-ul de pe server.
+Backend (Go API) pe Hetzner. Frontend poate rula local și se conectează la backend-ul de pe server.
+
+## Deploy cu Docker (recomandat)
+
+### Deploy rapid (după modificări)
+
+```bash
+# Setează IP-ul o dată
+export DEPLOY_SERVER=root@YOUR_SERVER_IP
+
+# La fiecare modificare: git add, commit, apoi:
+./deploy/hetzner/deploy-docker.sh
+```
+
+Scriptul face: `git push` → pe server: `git pull` + `docker compose build api` + `up -d`.
+
+### Workers – mai multă paralelizare
+
+În `.env` pe server, adaugă pentru viteză mai bună (Hetzner AX41 suportă):
+
+```env
+ASYNQ_CONCURRENCY=12
+```
+
+Default e 8. Cu 12–16, mai multe joburi (chat/image/video) rulează în paralel = experiență mai fluidă. Nu depăși 20 (Replicate are rate limits).
 
 ## Arquitectură
 
 ```
-[Windows local]                    [Hetzner FSN1]
-  Frontend (localhost:3000)  --->  Backend (API :8080)
-  npm run dev                      PostgreSQL + Redis
+[Windows local]                    [Hetzner]
+  Frontend (localhost:3000)  --->  Docker (API + Redis)
+  npm run dev                      Supabase DB
   Dezvoltare                       Producție
 ```
 
@@ -36,7 +60,7 @@ Setări esențiale:
 ```env
 PORT=8080
 DATABASE_URL=postgres://flipo5:CHANGE_ME@localhost:5432/flipo5?sslmode=disable
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://localhost:6379   # Local. Upstash ca backup: schimbă la URL Upstash dacă Redis local cade
 
 REPLICATE_API_TOKEN=...
 REPLICATE_MODEL_TEXT=meta/meta-llama-3-70b-instruct

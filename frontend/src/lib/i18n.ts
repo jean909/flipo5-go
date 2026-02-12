@@ -92,6 +92,7 @@ const dict: Record<Locale, Record<string, string>> = {
     'start.whereHeard': 'Where did you hear about us?',
     'start.useCase': 'What do you want to use Flipo5 for?',
     'start.choosePlan': 'Choose your plan',
+    'start.planChangeLater': 'You can change this later.',
     'start.plan.free': 'Free',
     'start.plan.premium': 'Premium',
     'start.plan.creator': 'Creator',
@@ -146,6 +147,7 @@ const dict: Record<Locale, Record<string, string>> = {
     'jobs.type.video': 'Video',
     'error.generic': 'Something went wrong.',
     'error.rate': 'Too many requests.',
+    'error.serverUnavailable': 'Server unavailable. Please try again.',
     'error.passwordMismatch': 'Passwords do not match.',
     'dashboard.completeProfile': 'Complete your profile',
     'dashboard.completeProfileSub': 'A few details to get you started.',
@@ -283,6 +285,7 @@ const dict: Record<Locale, Record<string, string>> = {
     'start.whereHeard': 'Wo hast du von uns erfahren?',
     'start.useCase': 'Wofür möchtest du Flipo5 nutzen?',
     'start.choosePlan': 'Wähle deinen Plan',
+    'start.planChangeLater': 'Du kannst das später ändern.',
     'start.plan.free': 'Free',
     'start.plan.premium': 'Premium',
     'start.plan.creator': 'Creator',
@@ -337,6 +340,7 @@ const dict: Record<Locale, Record<string, string>> = {
     'jobs.type.video': 'Video',
     'error.generic': 'Etwas ist schiefgelaufen.',
     'error.rate': 'Zu viele Anfragen.',
+    'error.serverUnavailable': 'Server nicht verfügbar. Bitte erneut versuchen.',
     'error.passwordMismatch': 'Passwörter stimmen nicht überein.',
     'dashboard.completeProfile': 'Profil vervollständigen',
     'dashboard.completeProfileSub': 'Ein paar Angaben für den Start.',
@@ -390,3 +394,11 @@ export function t(locale: Locale, key: string): string {
 }
 
 export const defaultLocale: Locale = 'en';
+
+/** Backend timeout message – show translated */
+export const ERR_SERVER_UNAVAILABLE = 'Server unavailable. Please try again.';
+
+export function jobErrorDisplay(error: string | null | undefined, locale: Locale): string {
+  if (!error) return t(locale, 'common.failed');
+  return error === ERR_SERVER_UNAVAILABLE ? t(locale, 'error.serverUnavailable') : error;
+}

@@ -133,14 +133,14 @@ export default function StartPage() {
     }
   }
 
-  const cardCls = 'relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-8 shadow-2xl backdrop-blur-md';
-  const inputCls = 'w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/20 transition-all';
-  const labelCls = 'block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2';
+  const cardCls = 'relative z-10 w-full max-w-md rounded-2xl border border-theme-border-subtle bg-theme-bg-subtle p-8 shadow-2xl backdrop-blur-md';
+  const inputCls = 'w-full px-4 py-3 rounded-xl bg-theme-bg-elevated border border-theme-border-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-border focus:border-theme-border transition-all';
+  const labelCls = 'block text-xs font-medium text-theme-fg-subtle uppercase tracking-wider mb-2';
   const btnPrimary = 'w-full py-3.5 px-4 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 disabled:opacity-50 transition-colors';
-  const btnSecondary = 'w-full py-2.5 px-4 rounded-xl border border-white/20 text-white font-medium hover:bg-white/10 transition-colors';
+  const btnSecondary = 'w-full py-2.5 px-4 rounded-xl border border-theme-border text-theme-fg font-medium hover:bg-theme-bg-hover transition-colors';
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div className="min-h-screen bg-theme-bg text-theme-fg flex flex-col">
       <Header dark />
       <main className="flex-1 relative flex flex-col items-center justify-center px-4 overflow-hidden min-h-[calc(100vh-4rem)] py-8">
         <SpaceBackground />
@@ -155,7 +155,7 @@ export default function StartPage() {
               className={cardCls}
             >
               <h1 className="font-display text-2xl font-bold text-white mb-2 tracking-tight">{t(locale, 'start.title')}</h1>
-              <p className="text-neutral-400 text-sm mb-6">{t(locale, 'start.subtitle')}</p>
+              <p className="text-theme-fg-muted text-sm mb-6">{t(locale, 'start.subtitle')}</p>
               <form onSubmit={handleEmailSubmit} className="space-y-5">
                 <div>
                   <label className={labelCls}>{t(locale, 'login.email')}</label>
@@ -173,8 +173,8 @@ export default function StartPage() {
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
               </form>
-              <p className="mt-6 text-center text-sm text-neutral-500">
-                <Link href="/" className="text-neutral-400 hover:text-white transition-colors">← {t(locale, 'start.back')}</Link>
+              <p className="mt-6 text-center text-sm text-theme-fg-subtle">
+                <Link href="/" className="text-theme-fg-muted hover:text-theme-fg transition-colors">← {t(locale, 'start.back')}</Link>
               </p>
             </motion.div>
           )}
@@ -187,7 +187,7 @@ export default function StartPage() {
               exit={{ opacity: 0, y: -10 }}
               className={cardCls}
             >
-              <p className="text-neutral-400 text-sm mb-1">{email}</p>
+              <p className="text-theme-fg-muted text-sm mb-1">{email}</p>
               <h1 className="font-display text-xl font-bold text-white mb-6 tracking-tight">{t(locale, 'start.enterPassword')}</h1>
               <form onSubmit={handlePasswordSubmit} className="space-y-5">
                 <div>
@@ -206,7 +206,7 @@ export default function StartPage() {
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
               </form>
-              <button type="button" onClick={() => { setStep('email'); setError(''); }} className="mt-4 w-full text-sm text-neutral-500 hover:text-white">
+              <button type="button" onClick={() => { setStep('email'); setError(''); }} className="mt-4 w-full text-sm text-theme-fg-subtle hover:text-theme-fg">
                 ← {t(locale, 'start.back')}
               </button>
             </motion.div>
@@ -222,24 +222,24 @@ export default function StartPage() {
               className={cardCls}
             >
               <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/5">
-                  <EnvelopeIcon className="h-6 w-6 text-white/90" />
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-theme-border bg-theme-bg-subtle">
+                  <EnvelopeIcon className="h-6 w-6 text-theme-fg opacity-90" />
                 </div>
                 <h2 className="font-display text-lg font-bold text-white mb-2">{t(locale, 'start.confirmEmailTitle')}</h2>
-                <p className="text-sm text-neutral-400 mb-4">{t(locale, 'start.confirmEmailBody')}</p>
-                <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 mb-6">{email}</p>
+                <p className="text-sm text-theme-fg-muted mb-4">{t(locale, 'start.confirmEmailBody')}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-theme-fg-subtle mb-6">{email}</p>
                 <motion.button
                   type="button"
                   onClick={() => { setStep('email'); setError(''); }}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full rounded-xl border border-white/20 bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
+                  className="w-full rounded-xl border border-theme-border bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
                 >
                   {t(locale, 'start.another')}
                 </motion.button>
               </div>
-              <p className="mt-6 text-center text-sm text-neutral-500">
-                <Link href="/" className="text-neutral-400 hover:text-white transition-colors">← {t(locale, 'start.back')}</Link>
+              <p className="mt-6 text-center text-sm text-theme-fg-subtle">
+                <Link href="/" className="text-theme-fg-muted hover:text-theme-fg transition-colors">← {t(locale, 'start.back')}</Link>
               </p>
             </motion.div>
           )}
@@ -254,19 +254,19 @@ export default function StartPage() {
               className={cardCls}
             >
               <div className="flex flex-col items-center text-center">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/5">
-                  <UserPlusIcon className="h-6 w-6 text-white/90" />
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-theme-border bg-theme-bg-subtle">
+                  <UserPlusIcon className="h-6 w-6 text-theme-fg opacity-90" />
                 </div>
-                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-neutral-500">{email}</p>
-                <h2 className="font-display text-lg font-bold text-white mb-1">{t(locale, 'start.emailNotExists')}</h2>
-                <p className="text-sm text-neutral-400 mb-6">{t(locale, 'start.createAccountQuestion')}</p>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-theme-fg-subtle">{email}</p>
+                <h2 className="font-display text-lg font-bold text-theme-fg mb-1">{t(locale, 'start.emailNotExists')}</h2>
+                <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'start.createAccountQuestion')}</p>
                 <div className="flex w-full gap-3">
                   <motion.button
                     type="button"
                     onClick={handleCreateAccountClick}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="flex-1 rounded-xl border border-white/20 bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
+                    className="flex-1 rounded-xl border border-theme-border bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
                   >
                     {t(locale, 'start.create')}
                   </motion.button>
@@ -275,14 +275,14 @@ export default function StartPage() {
                     onClick={() => setStep('email')}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="flex-1 rounded-xl border border-white/20 bg-transparent py-3 px-4 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+                    className="flex-1 rounded-xl border border-theme-border bg-transparent py-3 px-4 text-sm font-semibold text-theme-fg hover:bg-theme-bg-hover transition-colors"
                   >
                     {t(locale, 'start.cancel')}
                   </motion.button>
                 </div>
               </div>
-              <p className="mt-6 text-center text-sm text-neutral-500">
-                <button type="button" onClick={() => setStep('email')} className="text-neutral-400 hover:text-white transition-colors">
+              <p className="mt-6 text-center text-sm text-theme-fg-subtle">
+                <button type="button" onClick={() => setStep('email')} className="text-theme-fg-muted hover:text-theme-fg transition-colors">
                   ← {t(locale, 'start.back')}
                 </button>
               </p>
@@ -297,7 +297,7 @@ export default function StartPage() {
               exit={{ opacity: 0, y: -10 }}
               className={cardCls}
             >
-              <p className="text-neutral-400 text-sm mb-4">{email}</p>
+              <p className="text-theme-fg-muted text-sm mb-4">{email}</p>
               <h1 className="font-display text-xl font-bold text-white mb-6">{t(locale, 'start.createAccount')}</h1>
               <form onSubmit={handleSignUpSubmit} className="space-y-4">
                 <div>
@@ -313,7 +313,7 @@ export default function StartPage() {
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
               </form>
-              <button type="button" onClick={() => setStep('dialog')} className="mt-4 w-full text-sm text-neutral-500 hover:text-white">← {t(locale, 'start.back')}</button>
+              <button type="button" onClick={() => setStep('dialog')} className="mt-4 w-full text-sm text-theme-fg-subtle hover:text-theme-fg">← {t(locale, 'start.back')}</button>
             </motion.div>
           )}
 
@@ -355,7 +355,7 @@ export default function StartPage() {
               className={cardCls}
             >
               <h1 className="font-display text-xl font-bold text-white mb-2">{t(locale, 'start.choosePlan')}</h1>
-              <p className="text-neutral-400 text-sm mb-6">You can change this later.</p>
+              <p className="text-theme-fg-muted text-sm mb-6">{t(locale, 'start.planChangeLater')}</p>
               <form onSubmit={handlePlanSubmit} className="space-y-3">
                 {PLANS.map((plan) => (
                   <motion.button
@@ -365,16 +365,16 @@ export default function StartPage() {
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                     className={`w-full p-4 rounded-xl border text-left transition-all ${
-                      selectedPlan === plan.id ? 'border-white bg-white/10' : 'border-white/10 hover:border-white/20'
+                      selectedPlan === plan.id ? 'border-theme-border bg-theme-bg-hover' : 'border-theme-border-subtle hover:border-theme-border'
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-medium text-white">{t(locale, plan.nameKey)}</span>
-                      <span className="text-white">
+                      <span className="font-medium text-theme-fg">{t(locale, plan.nameKey)}</span>
+                      <span className="text-theme-fg">
                         {plan.price === 0 ? t(locale, 'start.plan.free') : `${t(locale, 'start.plan.eur')}${plan.price}`}
                       </span>
                     </div>
-                    {plan.credits > 0 && <p className="text-neutral-500 text-sm mt-1">{plan.credits} {t(locale, 'start.plan.perDay')}</p>}
+                    {plan.credits > 0 && <p className="text-theme-fg-subtle text-sm mt-1">{plan.credits} {t(locale, 'start.plan.perDay')}</p>}
                   </motion.button>
                 ))}
                 {error && <p className="text-sm text-red-400">{error}</p>}

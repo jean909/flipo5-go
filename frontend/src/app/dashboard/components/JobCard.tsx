@@ -13,6 +13,7 @@ import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from './ImageGallery';
+import { jobErrorDisplay } from '@/lib/i18n';
 
 // Markdown components: render AI output (including tables) without requiring prompt instructions
 const markdownComponents = {
@@ -340,7 +341,7 @@ export function JobCard({
   if (job && job.type === 'image' && job.status === 'failed') {
     return (
       <div className="flex justify-start">
-        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{job.error || t(locale, 'common.failed')}</p>
+        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       </div>
     );
   }
@@ -396,7 +397,7 @@ export function JobCard({
   if (isChat && job.status === 'failed') {
     return (
       <div className="flex justify-start">
-        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{job.error || t(locale, 'common.failed')}</p>
+        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       </div>
     );
   }
@@ -423,7 +424,7 @@ export function JobCard({
         </>
       )}
       {job.status === 'failed' && job.error && (
-        <p className={`mt-2 text-sm ${errCls}`}>{job.error}</p>
+        <p className={`mt-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       )}
     </div>
   );

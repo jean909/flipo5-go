@@ -7,7 +7,7 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { getJob, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from '../../components/ImageGallery';
-import { t } from '@/lib/i18n';
+import { t, jobErrorDisplay } from '@/lib/i18n';
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -68,7 +68,7 @@ export default function JobDetailPage() {
           </pre>
         )}
         {job.status === 'failed' && job.error && (
-          <p className="mt-3 text-sm text-red-400">{job.error}</p>
+          <p className="mt-3 text-sm text-red-400">{jobErrorDisplay(job.error, locale)}</p>
         )}
         {job.status === 'completed' && outputText && (
           <p className="mt-4 text-sm text-white whitespace-pre-wrap">{outputText}</p>

@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -15,6 +16,19 @@ import (
 	"flipo5/backend/internal/storage"
 	"flipo5/backend/internal/store"
 )
+
+// ErrMsgServerUnavailable is shown to users when job times out (5 min)
+const ErrMsgServerUnavailable = "Server unavailable. Please try again."
+
+func jobErrorMsg(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return ErrMsgServerUnavailable
+	}
+	return err.Error()
+}
 
 // Context strategy (research-based): user questions = topic anchor; full assistant replies = token-heavy.
 // We send: (1) list of user questions = what was discussed; (2) last 2 full exchanges = immediate follow-up.
@@ -210,7 +224,7 @@ Response style:
 	// Prefer streaming: create prediction with stream, then consume stream and update job output per chunk
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, model, input)
 	if err != nil {
-		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, err.Error(), 0, "")
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, pred.ID)
@@ -231,6 +245,12 @@ Response style:
 		// Use GetPrediction final output - Replicate returns complete output; stream can lose chunks
 		finalOutput := acc.String()
 		for i := 0; i < 5; i++ {
+			select {
+			case <-ctx.Done():
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+				return nil
+			default:
+			}
 			predState, err := h.Repl.GetPrediction(ctx, pred.ID)
 			if err != nil || predState.Status != "succeeded" {
 				if i < 4 {
@@ -257,9 +277,15 @@ Response style:
 		// Fallback: model doesn't support stream; poll until done
 		jobID := p.JobID
 		for {
+			select {
+			case <-ctx.Done():
+				_ = h.DB.UpdateJobStatus(ctx, jobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+				return nil
+			default:
+			}
 			predState, err := h.Repl.GetPrediction(ctx, pred.ID)
 			if err != nil {
-				_ = h.DB.UpdateJobStatus(ctx, jobID, "failed", nil, err.Error(), 0, pred.ID)
+				_ = h.DB.UpdateJobStatus(ctx, jobID, "failed", nil, jobErrorMsg(err), 0, pred.ID)
 				return err
 			}
 			switch predState.Status {
@@ -392,7 +418,7 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		}
 		out, err := h.Repl.Run(ctx, model, input)
 		if err != nil {
-			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, err.Error(), 0, "")
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
 			return err
 		}
 		// nano-banana returns single URL string; normalize to {"output": "url"} for r2mirror
@@ -425,7 +451,7 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 	}
 	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {
-		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, err.Error(), 0, "")
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
 		return err
 	}
 	// Seedream returns array directly; r2mirror expects {"output": [...]}
@@ -465,7 +491,7 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	}
 	out, err := h.Repl.Run(ctx, model, repgo.PredictionInput{"prompt": p.Prompt})
 	if err != nil {
-		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, err.Error(), 0, "")
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", out, "", 0, "")
