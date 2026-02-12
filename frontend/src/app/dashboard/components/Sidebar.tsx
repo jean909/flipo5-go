@@ -7,7 +7,7 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { getMe, listThreads, patchThread, type User, type Thread } from '@/lib/api';
+import { getMe, listThreads, patchThread, ThreadActionError, type User, type Thread } from '@/lib/api';
 import { ArchivedDialog } from '@/components/ArchivedDialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ThreadItem } from './ThreadItem';
@@ -26,6 +26,7 @@ export function Sidebar() {
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | null>(null);
   const [pendingDeleteThread, setPendingDeleteThread] = useState<Thread | null>(null);
   const [showArchivedDialog, setShowArchivedDialog] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getMe().then(setUser);
@@ -175,8 +176,11 @@ export function Sidebar() {
                               setThreads(r.threads ?? []);
                               if (urlThreadId === thread.id) router.replace('/dashboard');
                               setShowArchivedDialog(true);
-                            } catch {
-                              // ignore
+                            } catch (e) {
+                              if (e instanceof ThreadActionError && e.code === 'has_active_jobs') {
+                                setError(t(locale, 'error.hasActiveJobs'));
+                                setTimeout(() => setError(null), 4000);
+                              }
                             }
                           }}
                           onDeleteRequest={(t) => setPendingDeleteThread(t)}
@@ -286,14 +290,22 @@ export function Sidebar() {
             const r = await listThreads();
             setThreads(r.threads ?? []);
             if (urlThreadId === pendingDeleteThread.id) router.replace('/dashboard');
-          } catch {
-            // ignore
+          } catch (e) {
+            if (e instanceof ThreadActionError && e.code === 'has_active_jobs') {
+              setError(t(locale, 'error.hasActiveJobs'));
+              setTimeout(() => setError(null), 4000);
+            }
           } finally {
             setPendingDeleteThread(null);
           }
         }}
         onCancel={() => setPendingDeleteThread(null)}
       />
+      {error && (
+        <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-amber-500/20 text-amber-200 text-sm">
+          {error}
+        </div>
+      )}
       <ArchivedDialog
         open={showArchivedDialog}
         title={t(locale, 'thread.archivedTitle')}

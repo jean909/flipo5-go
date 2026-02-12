@@ -130,7 +130,7 @@ export default function ContentPage() {
                   >
                     <div className="aspect-square relative bg-theme-bg-elevated">
                       {job.outputUrls[0] && (
-                        <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" />
+                        <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                       )}
                       <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <span className="text-sm font-medium text-theme-fg px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong">

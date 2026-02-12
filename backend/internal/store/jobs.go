@@ -187,6 +187,21 @@ func (db *DB) ListContentJobs(ctx context.Context, userID uuid.UUID, offset, lim
 	return list, total, rows.Err()
 }
 
+// ThreadHasActiveJobs returns true if thread has any pending or running job (chat, image, video).
+func (db *DB) ThreadHasActiveJobs(ctx context.Context, threadID uuid.UUID) (bool, error) {
+	var dummy int
+	err := db.Pool.QueryRow(ctx,
+		`SELECT 1 FROM jobs WHERE thread_id = $1 AND status IN ('pending','running') LIMIT 1`,
+		threadID).Scan(&dummy)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (db *DB) ListJobsByThread(ctx context.Context, threadID, userID uuid.UUID) ([]Job, error) {
 	rows, err := db.Pool.Query(ctx,
 		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text

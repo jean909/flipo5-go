@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useLocale } from '@/app/components/LocaleContext';
-import { listThreads, patchThread, type Thread } from '@/lib/api';
+import { listThreads, patchThread, ThreadActionError, type Thread } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArchivedDialog } from '@/components/ArchivedDialog';
@@ -19,6 +19,7 @@ export default function SessionsPage() {
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | null>(null);
   const [pendingDeleteThread, setPendingDeleteThread] = useState<Thread | null>(null);
   const [showArchivedDialog, setShowArchivedDialog] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = () => listThreads().then((r) => setThreads(r.threads ?? [])).catch(() => setThreads([]));
 
@@ -29,6 +30,11 @@ export default function SessionsPage() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
       <h1 className="text-xl font-semibold text-white mb-6">{t(locale, 'sessions.title')}</h1>
+      {error && (
+        <div className="mb-4 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-200 text-sm">
+          {error}
+        </div>
+      )}
       {loading && <p className="text-zinc-500">{t(locale, 'common.loading')}</p>}
       {!loading && threads.length === 0 && (
         <p className="text-zinc-500">{t(locale, 'sessions.empty')}</p>
@@ -53,8 +59,11 @@ export default function SessionsPage() {
                     await refresh();
                     if (urlThreadId === thread.id) router.replace('/dashboard');
                     setShowArchivedDialog(true);
-                  } catch {
-                    // ignore
+                  } catch (e) {
+                    if (e instanceof ThreadActionError && e.code === 'has_active_jobs') {
+                      setError(t(locale, 'error.hasActiveJobs'));
+                      setTimeout(() => setError(null), 4000);
+                    }
                   }
                 }}
                 onDeleteRequest={(th) => setPendingDeleteThread(th)}
@@ -76,8 +85,11 @@ export default function SessionsPage() {
             await patchThread(pendingDeleteThread.id, 'delete');
             await refresh();
             if (urlThreadId === pendingDeleteThread.id) router.replace('/dashboard');
-          } catch {
-            // ignore
+          } catch (e) {
+            if (e instanceof ThreadActionError && e.code === 'has_active_jobs') {
+              setError(t(locale, 'error.hasActiveJobs'));
+              setTimeout(() => setError(null), 4000);
+            }
           } finally {
             setPendingDeleteThread(null);
           }

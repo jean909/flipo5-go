@@ -61,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_threads_updated_at ON threads(updated_at DESC);
 
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS thread_id UUID REFERENCES threads(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_jobs_thread_id ON jobs(thread_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_thread_user ON jobs(thread_id, user_id) WHERE thread_id IS NOT NULL;
 ALTER TABLE threads ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE threads ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 ALTER TABLE threads ADD COLUMN IF NOT EXISTS ephemeral BOOLEAN DEFAULT false;

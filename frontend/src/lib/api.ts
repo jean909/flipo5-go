@@ -170,6 +170,16 @@ export async function listThreads(archived?: boolean): Promise<{ threads: Thread
   return res.json();
 }
 
+export class ThreadActionError extends Error {
+  constructor(
+    message: string,
+    public code: string
+  ) {
+    super(message);
+    this.name = 'ThreadActionError';
+  }
+}
+
 export async function patchThread(threadId: string, action: 'archive' | 'unarchive' | 'delete'): Promise<void> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
@@ -179,8 +189,10 @@ export async function patchThread(threadId: string, action: 'archive' | 'unarchi
     body: JSON.stringify({ action }),
   });
   if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error((e as { error?: string }).error || 'Failed');
+    const e = await res.json().catch(() => ({})) as { error?: string; message?: string };
+    const code = e.error || 'failed';
+    const msg = e.message || 'Failed';
+    throw new ThreadActionError(msg, code);
   }
 }
 

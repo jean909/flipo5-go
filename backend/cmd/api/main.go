@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
 	"flipo5/backend/internal/api"
+	"flipo5/backend/internal/cache"
 	"flipo5/backend/internal/config"
 	"flipo5/backend/internal/queue"
 	"flipo5/backend/internal/replicate"
@@ -108,7 +109,13 @@ func main() {
 			jwks = nil
 		}
 	}
-	srv := api.NewServer(db, asynqClient, s3Store, streamSub, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
+	var apiCache *cache.Redis
+	if c, err := cache.NewRedis(cfg.Redis); err == nil {
+		apiCache = c
+		defer apiCache.Close()
+		log.Print("cache: Redis enabled for threads/content")
+	}
+	srv := api.NewServer(db, asynqClient, s3Store, streamSub, apiCache, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
 	handler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
