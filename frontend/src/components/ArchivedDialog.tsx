@@ -16,29 +16,29 @@ export function ArchivedDialog({ open, title, message, profileLabel, onClose }: 
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-black/70"
+      className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-theme-bg-overlay"
       onClick={onClose}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-md rounded-2xl border border-white/20 bg-zinc-900 p-6 shadow-xl"
+        className="relative w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-3 right-3 p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-white/10 transition-colors"
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
           aria-label="Close"
         >
           <XIcon className="w-5 h-5" />
         </button>
-        <h3 className="font-display text-lg font-bold text-white mb-2 pr-8">{title}</h3>
-        <p className="text-sm text-neutral-400 mb-6">{message}</p>
+        <h3 className="font-display text-lg font-bold text-theme-fg mb-2 pr-8">{title}</h3>
+        <p className="text-sm text-theme-fg-muted mb-6">{message}</p>
         <Link
           href="/dashboard/profile?fromArchive=1"
           onClick={onClose}
-          className="block w-full text-center py-3 rounded-xl text-sm font-medium bg-white/10 text-white hover:bg-white/20 transition-colors"
+          className="block w-full text-center py-3 rounded-xl text-sm font-medium bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong transition-colors"
         >
           {profileLabel}
         </Link>

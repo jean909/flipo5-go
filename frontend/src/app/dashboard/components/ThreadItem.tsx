@@ -87,22 +87,22 @@ export function ThreadItem({
 
   const content = (
     <>
-      <span className={`block truncate ${compact ? 'text-sm font-medium' : 'text-white font-medium'}`}>
+      <span className={`block truncate ${compact ? 'text-sm font-medium' : 'text-theme-fg font-medium'}`}>
         {displayTitle(thread, t(locale, 'sessions.untitled'))}
       </span>
-      <span className={`block truncate mt-0.5 ${compact ? 'text-xs text-neutral-500' : 'text-sm text-neutral-400'}`}>
+      <span className={`block truncate mt-0.5 ${compact ? 'text-xs text-theme-fg-subtle' : 'text-sm text-theme-fg-muted'}`}>
         {formatDate(thread.updated_at)}
       </span>
     </>
   );
 
   const linkCls = card
-    ? 'block rounded-xl border border-white/20 bg-white/5 p-4 hover:bg-white/10 hover:border-white/30 transition-all'
+    ? 'block rounded-xl border border-theme-border bg-theme-bg-subtle p-4 hover:bg-theme-bg-hover hover:border-theme-border-hover transition-all'
     : isActive
-      ? 'block px-2 py-2 rounded transition-colors bg-neutral-700 text-white'
+      ? 'block px-2 py-2 rounded transition-colors bg-theme-bg-elevated text-theme-fg'
       : compact
-        ? 'block px-2 py-2 rounded transition-colors text-neutral-400 hover:bg-neutral-800 hover:text-white'
-        : 'block px-2 py-2 rounded transition-colors text-white hover:bg-white/10';
+        ? 'block px-2 py-2 rounded transition-colors text-theme-fg-muted hover:bg-theme-bg-elevated hover:text-theme-fg'
+        : 'block px-2 py-2 rounded transition-colors text-theme-fg hover:bg-theme-bg-hover';
 
   return (
     <div className="relative" onContextMenu={handleContextMenu}>
@@ -111,7 +111,7 @@ export function ThreadItem({
       </Link>
       {menuOpen && (
         <div
-          className="fixed z-50 min-w-[140px] rounded-lg border border-white/20 bg-neutral-900 py-1 shadow-xl"
+          className="fixed z-50 min-w-[140px] rounded-lg border border-theme-border bg-theme-bg-elevated py-1 shadow-xl"
           style={{ left: menuPos.x, top: menuPos.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -122,7 +122,7 @@ export function ThreadItem({
                 onContextMenuOpen(null);
                 onArchive();
               }}
-              className="w-full px-3 py-2 text-left text-sm text-neutral-300 hover:bg-neutral-800 hover:text-white"
+              className="w-full px-3 py-2 text-left text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg"
             >
               {t(locale, 'thread.archive')}
             </button>
@@ -134,7 +134,7 @@ export function ThreadItem({
                 onContextMenuOpen(null);
                 onUnarchive();
               }}
-              className="w-full px-3 py-2 text-left text-sm text-neutral-300 hover:bg-neutral-800 hover:text-white"
+              className="w-full px-3 py-2 text-left text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg"
             >
               {t(locale, 'thread.unarchive')}
             </button>
@@ -146,7 +146,7 @@ export function ThreadItem({
                 onContextMenuOpen(null);
                 onDeleteRequest ? onDeleteRequest(thread) : onDelete?.();
               }}
-              className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-neutral-800 hover:text-red-300"
+              className="w-full px-3 py-2 text-left text-sm text-theme-danger hover:bg-theme-bg-hover hover:text-theme-danger"
             >
               {t(locale, 'thread.delete')}
             </button>

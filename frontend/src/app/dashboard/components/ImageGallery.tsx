@@ -24,12 +24,12 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
       <div className="block cursor-pointer" onClick={() => setViewingUrl(url)}>
         <img src={url} alt="" className="w-full h-auto object-cover" loading="lazy" decoding="async" />
       </div>
-      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 pointer-events-none">
+      <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 pointer-events-none">
         {onUseAsReference && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onUseAsReference(url); }}
-            className="px-3 py-1.5 rounded-lg bg-white/40 text-white text-sm font-medium hover:bg-white/50 pointer-events-auto -mt-4"
+            className="px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong text-theme-fg text-sm font-medium hover:bg-theme-bg-hover-stronger pointer-events-auto -mt-4"
           >
             {t(locale, 'image.useAsReference')}
           </button>
@@ -37,7 +37,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setViewingUrl(url); }}
-          className="px-3 py-1.5 rounded-lg bg-white/40 text-white text-sm font-medium hover:bg-white/50 pointer-events-auto"
+          className="px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong text-theme-fg text-sm font-medium hover:bg-theme-bg-hover-stronger pointer-events-auto"
         >
           {t(locale, 'image.view')}
         </button>
@@ -46,7 +46,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
   );
 
   if (urls.length === 1) {
-    const cls = variant === 'full' ? 'block overflow-hidden rounded-lg border border-white/10' : 'block overflow-hidden rounded-lg';
+    const cls = variant === 'full' ? 'block overflow-hidden rounded-lg border border-theme-border-subtle' : 'block overflow-hidden rounded-lg';
     return (
       <>
         <div className={variant === 'chat' ? 'flex justify-start' : ''}>
@@ -61,8 +61,8 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
     );
   }
   const containerCls = variant === 'chat'
-    ? `${maxW} min-w-0 flex gap-2 rounded-2xl rounded-tl-md overflow-hidden p-2 bg-white/5`
-    : 'flex gap-3 rounded-lg border border-white/10 p-2 bg-white/5';
+    ? `${maxW} min-w-0 flex gap-2 rounded-2xl rounded-tl-md overflow-hidden p-2 bg-theme-bg-subtle`
+    : 'flex gap-3 rounded-lg border border-theme-border-subtle p-2 bg-theme-bg-subtle';
   const mainCls = variant === 'chat' ? 'flex-1 min-w-0' : 'flex-1 min-w-0';
   const thumbCls = variant === 'chat' ? 'w-14 shrink-0 max-h-56' : 'w-20 shrink-0 max-h-80';
   return (
@@ -81,7 +81,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
                 type="button"
                 onClick={() => setSelected(i)}
                 className={`block rounded overflow-hidden border-2 transition-all shrink-0 ${
-                  i === selected ? 'border-white/60 ring-1 ring-white/30' : 'border-transparent hover:border-white/30 opacity-70 hover:opacity-100'
+                  i === selected ? 'border-theme-border-strong ring-1 ring-theme-border-hover' : 'border-transparent hover:border-theme-border-hover opacity-70 hover:opacity-100'
                 }`}
               >
                 <img src={url} alt="" className="w-full aspect-square object-cover" loading="lazy" decoding="async" />

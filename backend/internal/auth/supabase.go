@@ -3,10 +3,12 @@ package auth
 import (
 	"errors"
 
+	"github.com/MicahParks/keyfunc/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/MicahParks/keyfunc/v2"
 )
+
+var ErrInvalidToken = errors.New("invalid token")
 
 // Supabase JWT claims (access token: sub = user id, email)
 type supabaseClaims struct {

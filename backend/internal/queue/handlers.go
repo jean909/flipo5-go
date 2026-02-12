@@ -190,7 +190,7 @@ Response style:
 	prompt += "User: " + p.Prompt
 	input := repgo.PredictionInput{
 		"prompt":            prompt,
-		"max_output_tokens": 16384, // longer responses (example ui uses 16384 default)
+		"max_output_tokens": 16384,
 	}
 	var jobInput map[string]interface{}
 	if len(job.Input) > 0 {
