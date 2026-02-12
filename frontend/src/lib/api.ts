@@ -268,12 +268,30 @@ export async function createImage(params: CreateImageParams | string, threadId?:
   return res.json();
 }
 
-export async function createVideo(prompt: string, threadId?: string, incognito?: boolean): Promise<{ job_id: string; thread_id?: string }> {
+export interface CreateVideoParams {
+  prompt: string;
+  threadId?: string;
+  incognito?: boolean;
+  image?: string;
+  video?: string;
+  duration?: number;
+  aspectRatio?: string;
+  resolution?: '720p' | '480p';
+}
+
+export async function createVideo(params: CreateVideoParams): Promise<{ job_id: string; thread_id?: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const body: { prompt: string; thread_id?: string; incognito?: boolean } = { prompt };
-  if (threadId) body.thread_id = threadId;
-  if (incognito) body.incognito = true;
+  const body: Record<string, unknown> = {
+    prompt: params.prompt,
+    thread_id: params.threadId,
+    incognito: params.incognito ?? false,
+    duration: params.duration ?? 5,
+    aspect_ratio: params.aspectRatio ?? '16:9',
+    resolution: params.resolution ?? '720p',
+  };
+  if (params.image) body.image = params.image;
+  if (params.video) body.video = params.video;
   const res = await fetch(`${API_URL}/api/video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

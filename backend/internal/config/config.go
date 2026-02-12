@@ -59,7 +59,7 @@ func Load() *Config {
 		ModelText:      getEnv("REPLICATE_MODEL_TEXT", ""),
 		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),
-		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", ""),
+		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
 	}
 }
 

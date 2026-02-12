@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
@@ -58,8 +58,14 @@ export function Sidebar() {
   ];
 
   const displayName = user?.full_name?.trim() || user?.email || '';
-  const recentThreads = threads.slice(0, 5);
   const urlThreadId = searchParams.get('thread');
+  const threadsToShow = useMemo(() => {
+    if (!urlThreadId) return threads;
+    if (threads.some((t) => t.id === urlThreadId)) return threads;
+    const now = new Date().toISOString();
+    return [{ id: urlThreadId, user_id: '', title: 'New chat', archived_at: null, created_at: now, updated_at: now }, ...threads];
+  }, [threads, urlThreadId]);
+  const recentThreads = threadsToShow.slice(0, 5);
 
   return (
     <motion.aside
@@ -79,7 +85,7 @@ export function Sidebar() {
           </button>
         ) : (
           <>
-            <Link href="/dashboard" className="group flex items-baseline gap-0.5 tracking-tight min-w-0">
+            <Link href={pathname === '/dashboard' ? '/dashboard?new=1' : '/dashboard'} className="group flex items-baseline gap-0.5 tracking-tight min-w-0">
               <span className="text-neutral-500 group-hover:text-neutral-400 shrink-0">{"<"}</span>
               <span className="font-display font-bold text-white truncate">FLIPO5</span>
               <span className="text-neutral-500 group-hover:text-neutral-400 shrink-0">{" />"}</span>
@@ -99,7 +105,7 @@ export function Sidebar() {
         {nav.map(({ href, labelKey, icon: Icon }) => (
           <Link
             key={href}
-            href={href}
+            href={href === '/dashboard' && pathname === '/dashboard' ? '/dashboard?new=1' : href}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
               pathname === href ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
             }`}

@@ -28,8 +28,7 @@ type ImagePayload struct {
 }
 
 type VideoPayload struct {
-	JobID  uuid.UUID `json:"job_id"`
-	Prompt string    `json:"prompt"`
+	JobID uuid.UUID `json:"job_id"`
 }
 
 func NewChatTask(jobID uuid.UUID, prompt string) (*asynq.Task, error) {
@@ -48,8 +47,8 @@ func NewImageTask(jobID uuid.UUID) (*asynq.Task, error) {
 	return asynq.NewTask(TypeImage, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
 }
 
-func NewVideoTask(jobID uuid.UUID, prompt string) (*asynq.Task, error) {
-	payload, err := json.Marshal(VideoPayload{JobID: jobID, Prompt: prompt})
+func NewVideoTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(VideoPayload{JobID: jobID})
 	if err != nil {
 		return nil, err
 	}

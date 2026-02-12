@@ -489,13 +489,38 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO not set", 0, "")
 		return nil
 	}
-	out, err := h.Repl.Run(ctx, model, repgo.PredictionInput{"prompt": p.Prompt})
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	input := make(repgo.PredictionInput)
+	for k, v := range jobInput {
+		input[k] = v
+	}
+	if input["duration"] == nil {
+		input["duration"] = 5
+	}
+	if input["aspect_ratio"] == nil || input["aspect_ratio"] == "" {
+		input["aspect_ratio"] = "16:9"
+	}
+	if input["resolution"] == nil || input["resolution"] == "" {
+		input["resolution"] = "720p"
+	}
+	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
 		return err
 	}
-	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", out, "", 0, "")
-	go mirrorMediaToR2(h, p.JobID, out, "video")
+	outNormalized := out
+	if s, ok := out.(string); ok && s != "" {
+		outNormalized = map[string]interface{}{"output": s}
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
+	go mirrorMediaToR2(h, p.JobID, outNormalized, "video")
 	return nil
 }
 

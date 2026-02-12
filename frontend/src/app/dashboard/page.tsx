@@ -10,6 +10,7 @@ import { createChat, createImage, createVideo, uploadAttachments, getMe, getThre
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { JobCard } from './components/JobCard';
 import { ImageSettingsRow, type ImageSettings } from './components/ImageSettingsRow';
+import { VideoSettingsRow, type VideoSettings } from './components/VideoSettingsRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type AttachmentItem = { id: string; file: File; previewUrl: string };
@@ -32,7 +33,7 @@ export default function DashboardPage() {
   const [mode, setMode] = useState<Mode>('chat');
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingJobThreadId, setPendingJobThreadId] = useState<string | null>(null);
-  const [pendingJobType, setPendingJobType] = useState<'image' | 'video'>('image');
+  const [pendingJobType, setPendingJobType] = useState<'chat' | 'image' | 'video'>('image');
   const [hasStarted, setHasStarted] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,7 +57,16 @@ export default function DashboardPage() {
     size: '2K',
     aspectRatio: 'match_input_image',
   });
+  const [videoSettings, setVideoSettings] = useState<VideoSettings>({
+    duration: 5,
+    aspectRatio: '16:9',
+    resolution: '720p',
+  });
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [showVideoInputDialog, setShowVideoInputDialog] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [showIncognitoMediaDialog, setShowIncognitoMediaDialog] = useState(false);
@@ -73,7 +83,8 @@ export default function DashboardPage() {
     if (!file.type.startsWith('image/')) return;
     const id = Math.random().toString(36).slice(2);
     setAttachments((prev) => [...prev, { id, file, previewUrl: URL.createObjectURL(file) }]);
-  }, []);
+    if (mode === 'video') setVideoFile(null);
+  }, [mode]);
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
       const one = prev.find((a) => a.id === id);
@@ -85,6 +96,19 @@ export default function DashboardPage() {
     attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
     setAttachments([]);
   }, [attachments]);
+
+  const addVideoFile = useCallback((file: File) => {
+    const valid = ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
+    if (!valid) return;
+    setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+    setVideoFile(file);
+    clearAttachments();
+    setReferenceImageUrls([]);
+  }, [clearAttachments]);
+  const removeVideoFile = useCallback(() => {
+    setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setVideoFile(null);
+  }, []);
 
   useEffect(() => {
     getMe().then((u) => {
@@ -287,14 +311,44 @@ export default function DashboardPage() {
         setReferenceImageUrls([]);
         if (tid) setTimeout(refreshThread, 2000);
       } else {
-        const res = await createVideo(trimmed, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito);
+        let imageUrl: string | undefined;
+        let videoUrl: string | undefined;
+        const refUrls = referenceImageUrls.length > 0 ? referenceImageUrls : undefined;
+        if (attachments.length > 0) {
+          const uploaded = await uploadAttachments(attachments.map((a) => a.file));
+          imageUrl = (refUrls ? [...refUrls, ...uploaded] : uploaded)[0];
+        } else if (refUrls?.[0]) {
+          imageUrl = refUrls[0];
+        }
+        if (videoFile) {
+          const urls = await uploadAttachments([videoFile]);
+          videoUrl = urls[0];
+        }
+        const res = await createVideo({
+          prompt: trimmed || ' ',
+          threadId: useNormalSession ? undefined : tid ?? undefined,
+          incognito: effectiveIncognito,
+          image: imageUrl,
+          video: videoUrl,
+          duration: videoSettings.duration,
+          aspectRatio: videoSettings.aspectRatio,
+          resolution: videoSettings.resolution,
+        });
         setJobId(res.job_id);
         setPendingJobThreadId(res.thread_id ?? tid ?? null);
         setPendingJobType('video');
+        setLastSentPrompt(trimmed || ' ');
         if (res.thread_id) {
           setThreadId(res.thread_id);
           if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
+          if (!tid) {
+            if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 2000);
+          }
         }
+        clearAttachments();
+        setReferenceImageUrls([]);
+        setVideoFile(null);
         if (tid) setTimeout(refreshThread, 2000);
       }
       setHasStarted(true);
@@ -312,7 +366,7 @@ export default function DashboardPage() {
   const labelCls = 'block text-sm font-medium text-theme-fg-muted mb-1';
   const btnPrimary = 'w-full rounded-xl bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors';
 
-  const showPaperclip = hasStarted || mode === 'image';
+  const showPaperclip = hasStarted || mode === 'image' || mode === 'video';
   const inputWithAttach = (
     <>
       <input
@@ -329,6 +383,17 @@ export default function DashboardPage() {
           }
         }}
       />
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/mp4,video/webm,video/quicktime"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) { addVideoFile(f); setShowVideoInputDialog(false); }
+          e.target.value = '';
+        }}
+      />
       <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all flex items-center flex-wrap gap-1.5 px-2 py-1.5">
         {showPaperclip && (
           <button
@@ -340,9 +405,32 @@ export default function DashboardPage() {
             <PaperclipIcon className="w-5 h-5" />
           </button>
         )}
-        {(mode === 'image' && referenceImageUrls.length > 0) || attachments.length > 0 ? (
+        {mode === 'video' && (
+          <button
+            type="button"
+            onClick={() => setShowVideoInputDialog(true)}
+            className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+            aria-label={t(locale, 'video.videoInput')}
+          >
+            <VideoClipIcon className="w-5 h-5" />
+          </button>
+        )}
+        {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile)) ? (
           <>
-            {referenceImageUrls.map((url) => (
+            {mode === 'video' && videoFile && videoPreviewUrl && (
+              <div className="relative shrink-0">
+                <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
+                <button
+                  type="button"
+                  onClick={removeVideoFile}
+                  className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90"
+                  aria-label="Remove"
+                >
+                  <XIcon className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
+            {!videoFile && referenceImageUrls.map((url) => (
               <div key={url} className="relative shrink-0">
                 <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
                 <button
@@ -355,7 +443,7 @@ export default function DashboardPage() {
                 </button>
               </div>
             ))}
-            {attachments.map((a) => (
+            {!videoFile && attachments.map((a) => (
               <div key={a.id} className="relative shrink-0">
                 <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
                 <button
@@ -392,6 +480,15 @@ export default function DashboardPage() {
         {mode === 'image' && hasStarted && (
           <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />
         )}
+        {mode === 'video' && hasStarted && (
+          <VideoSettingsRow
+            locale={locale}
+            settings={videoSettings}
+            onChange={setVideoSettings}
+            hasImage={attachments.length > 0 || referenceImageUrls.length > 0}
+            hasVideo={!!videoFile}
+          />
+        )}
         {inputWithAttach}
         <div className="flex flex-wrap items-center gap-2">
           {(['video', 'image', 'chat'] as const).map((m) => (
@@ -420,6 +517,16 @@ export default function DashboardPage() {
 
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${hasStarted ? '' : 'items-center justify-center overflow-y-auto scrollbar-subtle'} px-4 py-8`}>
+      <ConfirmDialog
+        open={showVideoInputDialog}
+        title={t(locale, 'video.videoInputDialog')}
+        message={t(locale, 'video.videoInputDesc')}
+        confirmLabel={t(locale, 'video.videoInput')}
+        cancelLabel={t(locale, 'dialog.cancel')}
+        confirmClass="bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover"
+        onConfirm={() => { videoInputRef.current?.click(); setShowVideoInputDialog(false); }}
+        onCancel={() => setShowVideoInputDialog(false)}
+      />
       <ConfirmDialog
         open={showIncognitoMediaDialog}
         title={t(locale, 'incognito.media.title')}
@@ -480,6 +587,15 @@ export default function DashboardPage() {
             {mode === 'image' && (
               <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />
             )}
+            {mode === 'video' && (
+              <VideoSettingsRow
+                locale={locale}
+                settings={videoSettings}
+                onChange={setVideoSettings}
+                hasImage={attachments.length > 0 || referenceImageUrls.length > 0}
+                hasVideo={!!videoFile}
+              />
+            )}
             <div className="w-full flex flex-col gap-2">
               <input
                 ref={fileInputRef}
@@ -495,8 +611,19 @@ export default function DashboardPage() {
                   }
                 }}
               />
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) { addVideoFile(f); setShowVideoInputDialog(false); }
+                  e.target.value = '';
+                }}
+              />
               <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all flex items-center flex-wrap gap-1.5 px-2 py-1.5">
-                {mode === 'image' && (
+                {(mode === 'image' || mode === 'video') && (
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -506,9 +633,35 @@ export default function DashboardPage() {
                     <PaperclipIcon className="w-5 h-5" />
                   </button>
                 )}
-                {attachments.length > 0 ? (
+                {mode === 'video' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowVideoInputDialog(true)}
+                    className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+                    aria-label={t(locale, 'video.videoInput')}
+                  >
+                    <VideoClipIcon className="w-5 h-5" />
+                  </button>
+                )}
+                {((mode === 'image' || mode === 'video') && (attachments.length > 0 || referenceImageUrls.length > 0)) || (mode === 'video' && videoFile) ? (
                   <>
-                    {attachments.map((a) => (
+                    {mode === 'video' && videoFile && videoPreviewUrl && (
+                      <div className="relative shrink-0">
+                        <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
+                        <button type="button" onClick={removeVideoFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
+                          <XIcon className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    )}
+                    {!videoFile && referenceImageUrls.map((url) => (
+                      <div key={url} className="relative shrink-0">
+                        <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
+                        <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
+                          <XIcon className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {!videoFile && attachments.map((a) => (
                       <div key={a.id} className="relative shrink-0">
                         <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
                         <button
@@ -599,7 +752,7 @@ export default function DashboardPage() {
                 : []),
             ].map((job) => (
               <div key={job.id} className="flex flex-col gap-2">
-                {((job.type === 'chat') || (job.type === 'image')) && (job.input as { prompt?: string })?.prompt && (
+                {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
                   <div className="flex justify-end">
                     <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
                       {(job.input as { prompt: string }).prompt}
@@ -631,6 +784,14 @@ function VideoIcon() {
   return (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function VideoClipIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
     </svg>
   );
 }

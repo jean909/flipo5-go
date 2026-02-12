@@ -383,7 +383,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
-	const maxSize = 10 << 20 // 10 MB per file
+	const maxSize = 50 << 20 // 50 MB per file (video up to 8.7s)
 	if err := r.ParseMultipartForm(maxSize * 5); err != nil {
 		http.Error(w, `{"error":"multipart too large"}`, http.StatusBadRequest)
 		return
@@ -515,13 +515,27 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt    string `json:"prompt"`
-		ThreadID  string `json:"thread_id,omitempty"`
-		Incognito bool   `json:"incognito,omitempty"`
+		Prompt      string   `json:"prompt"`
+		ThreadID    string   `json:"thread_id,omitempty"`
+		Incognito   bool     `json:"incognito,omitempty"`
+		Image       string   `json:"image,omitempty"`
+		Video       string   `json:"video,omitempty"`
+		Duration    int      `json:"duration,omitempty"`
+		AspectRatio string   `json:"aspect_ratio,omitempty"`
+		Resolution  string   `json:"resolution,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
 		return
+	}
+	if req.Duration < 1 || req.Duration > 15 {
+		req.Duration = 5
+	}
+	if req.Resolution != "720p" && req.Resolution != "480p" {
+		req.Resolution = "720p"
+	}
+	if req.AspectRatio == "" {
+		req.AspectRatio = "16:9"
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
@@ -529,12 +543,24 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	if threadID == nil {
 		return
 	}
-	jobID, err := s.DB.CreateJob(ctx, userID, "video", map[string]string{"prompt": req.Prompt}, threadID)
+	input := map[string]interface{}{
+		"prompt":       req.Prompt,
+		"duration":     req.Duration,
+		"aspect_ratio": req.AspectRatio,
+		"resolution":   req.Resolution,
+	}
+	if req.Image != "" {
+		input["image"] = req.Image
+	}
+	if req.Video != "" {
+		input["video"] = req.Video
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
-	task, _ := queue.NewVideoTask(jobID, req.Prompt)
+	task, _ := queue.NewVideoTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
 		return
