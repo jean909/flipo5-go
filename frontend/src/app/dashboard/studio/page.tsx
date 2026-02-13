@@ -187,7 +187,7 @@ export default function StudioPage() {
                 setPendingDelete(contextMenu.project);
                 setContextMenu(null);
               }}
-              className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
+              className="w-full px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted"
             >
               {t(locale, 'studio.delete')}
             </button>
@@ -201,7 +201,7 @@ export default function StudioPage() {
         message="Delete this project and all its items? This cannot be undone."
         confirmLabel={t(locale, 'studio.delete')}
         cancelLabel={t(locale, 'dialog.cancel')}
-        confirmClass="bg-red-500/20 text-red-400 hover:bg-red-500/30"
+        confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted"
         onConfirm={() => pendingDelete && handleDelete(pendingDelete)}
         onCancel={() => setPendingDelete(null)}
       />
@@ -226,7 +226,7 @@ export default function StudioPage() {
               className="w-full px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:border-theme-border-strong focus:outline-none focus:ring-1 focus:ring-theme-border-hover"
               disabled={creating}
             />
-            {nameError && <p className="mt-2 text-sm text-red-400">{nameError}</p>}
+            {nameError && <p className="mt-2 text-sm text-theme-danger">{nameError}</p>}
           </div>
         }
       />

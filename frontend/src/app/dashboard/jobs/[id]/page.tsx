@@ -40,7 +40,7 @@ export default function JobDetailPage() {
     return () => { cancelled = true; };
   }, [id, router]);
 
-  if (!job) return <div className="flex-1 flex items-center justify-center p-6"><p className="text-zinc-500">{t(locale, 'common.loading')}</p></div>;
+  if (!job) return <div className="flex-1 flex items-center justify-center p-6"><p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p></div>;
 
   const statusLabel =
     job.status === 'pending'
@@ -58,21 +58,21 @@ export default function JobDetailPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-subtle">
-      <Link href="/dashboard/jobs" className="text-sm text-zinc-400 hover:text-white">
+      <Link href="/dashboard/jobs" className="text-sm text-theme-fg-muted hover:text-theme-fg">
         ← {t(locale, 'nav.jobs')}
       </Link>
-      <div className="border border-white/10 rounded-lg p-6 bg-white/5">
-        <p className="text-sm text-zinc-500">{job.type} · {statusLabel}</p>
+      <div className="border border-theme-border rounded-lg p-6 bg-theme-bg-subtle">
+        <p className="text-sm text-theme-fg-muted">{job.type} · {statusLabel}</p>
         {job.input && (
-          <pre className="mt-2 text-sm text-white whitespace-pre-wrap bg-black/30 p-3 rounded border border-white/10">
+          <pre className="mt-2 text-sm text-theme-fg whitespace-pre-wrap bg-theme-bg-overlay p-3 rounded border border-theme-border">
             {JSON.stringify(job.input, null, 2)}
           </pre>
         )}
         {job.status === 'failed' && job.error && (
-          <p className="mt-3 text-sm text-red-400">{jobErrorDisplay(job.error, locale)}</p>
+          <p className="mt-3 text-sm text-theme-danger">{jobErrorDisplay(job.error, locale)}</p>
         )}
         {job.status === 'completed' && outputText && (
-          <p className="mt-4 text-sm text-white whitespace-pre-wrap">{outputText}</p>
+          <p className="mt-4 text-sm text-theme-fg whitespace-pre-wrap">{outputText}</p>
         )}
         {job.status === 'completed' && validUrls.length > 0 && (
           <div className="mt-4">
@@ -86,7 +86,7 @@ export default function JobDetailPage() {
                   !url ? null : /\.(mp4|webm|mov)$/i.test(url) ? (
                     <VideoPlayer key={url} src={url} className="max-w-2xl" />
                   ) : (
-                    <img key={url} src={url} alt="" className="max-w-full h-auto rounded border border-white/10" />
+                    <img key={url} src={url} alt="" className="max-w-full h-auto rounded border border-theme-border" />
                   )
                 )}
               </div>
@@ -94,7 +94,7 @@ export default function JobDetailPage() {
           </div>
         )}
         {job.status === 'completed' && out && !outputText && validUrls.length === 0 && (
-          <pre className="mt-3 text-xs text-zinc-400 overflow-auto scrollbar-subtle rounded">{JSON.stringify(job.output)}</pre>
+          <pre className="mt-3 text-xs text-theme-fg-muted overflow-auto scrollbar-subtle rounded">{JSON.stringify(job.output)}</pre>
         )}
       </div>
     </div>

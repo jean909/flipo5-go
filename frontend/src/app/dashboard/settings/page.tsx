@@ -184,7 +184,7 @@ export default function SettingsPage() {
         />
       </section>
 
-      {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+      {error && <p className="text-theme-danger text-sm mb-4">{error}</p>}
 
       <button
         type="button"

@@ -52,7 +52,7 @@ export default function ProfilePage() {
   if (!user) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <p className="text-neutral-500">{t(locale, 'common.loading')}</p>
+        <p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p>
       </div>
     );
   }
@@ -60,35 +60,35 @@ export default function ProfilePage() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
       <div className="max-w-xl mx-auto">
-      <h1 className="font-display text-2xl font-bold text-white mb-8">{t(locale, 'profile.title')}</h1>
+      <h1 className="font-display text-2xl font-bold text-theme-fg mb-8">{t(locale, 'profile.title')}</h1>
 
-      <section className="rounded-2xl border border-white/20 bg-white/5 p-6 mb-6">
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">{t(locale, 'profile.section')}</h2>
+      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
+        <h2 className="text-sm font-medium text-theme-fg-muted uppercase tracking-wider mb-4">{t(locale, 'profile.section')}</h2>
         <dl className="space-y-3 text-sm">
           <div>
-            <dt className="text-neutral-500">{t(locale, 'start.fullName')}</dt>
-            <dd className="text-white font-medium mt-0.5">{user.full_name || '—'}</dd>
+            <dt className="text-theme-fg-muted">{t(locale, 'start.fullName')}</dt>
+            <dd className="text-theme-fg font-medium mt-0.5">{user.full_name || '—'}</dd>
           </div>
           <div>
-            <dt className="text-neutral-500">{t(locale, 'login.email')}</dt>
-            <dd className="text-white mt-0.5">{user.email}</dd>
+            <dt className="text-theme-fg-muted">{t(locale, 'login.email')}</dt>
+            <dd className="text-theme-fg mt-0.5">{user.email}</dd>
           </div>
           <div>
-            <dt className="text-neutral-500">{t(locale, 'start.whereHeard')}</dt>
-            <dd className="text-white mt-0.5">{user.where_heard || '—'}</dd>
+            <dt className="text-theme-fg-muted">{t(locale, 'start.whereHeard')}</dt>
+            <dd className="text-theme-fg mt-0.5">{user.where_heard || '—'}</dd>
           </div>
           <div>
-            <dt className="text-neutral-500">{t(locale, 'start.useCase')}</dt>
-            <dd className="text-white mt-0.5">{user.use_case || '—'}</dd>
+            <dt className="text-theme-fg-muted">{t(locale, 'start.useCase')}</dt>
+            <dd className="text-theme-fg mt-0.5">{user.use_case || '—'}</dd>
           </div>
         </dl>
       </section>
 
-      <section className="rounded-2xl border border-white/20 bg-white/5 p-6 mb-6">
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">{t(locale, 'profile.archive')}</h2>
-        {archivedLoading && <p className="text-neutral-500 text-sm">{t(locale, 'common.loading')}</p>}
+      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
+        <h2 className="text-sm font-medium text-theme-fg-muted uppercase tracking-wider mb-4">{t(locale, 'profile.archive')}</h2>
+        {archivedLoading && <p className="text-theme-fg-muted text-sm">{t(locale, 'common.loading')}</p>}
         {!archivedLoading && archived.length === 0 && (
-          <p className="text-neutral-500 text-sm">{t(locale, 'profile.archiveEmpty')}</p>
+          <p className="text-theme-fg-muted text-sm">{t(locale, 'profile.archiveEmpty')}</p>
         )}
         {!archivedLoading && archived.length > 0 && (
           <ul className="space-y-2">

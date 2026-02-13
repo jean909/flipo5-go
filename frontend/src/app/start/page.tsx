@@ -168,7 +168,7 @@ export default function StartPage() {
                     required
                   />
                 </div>
-                {error && <p className="text-sm text-red-400">{error}</p>}
+                {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
@@ -201,7 +201,7 @@ export default function StartPage() {
                     required
                   />
                 </div>
-                {error && <p className="text-sm text-red-400">{error}</p>}
+                {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
@@ -308,7 +308,7 @@ export default function StartPage() {
                   <label className={labelCls}>{t(locale, 'start.confirmPassword')}</label>
                   <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} minLength={6} required />
                 </div>
-                {error && <p className="text-sm text-red-400">{error}</p>}
+                {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
@@ -377,7 +377,7 @@ export default function StartPage() {
                     {plan.credits > 0 && <p className="text-theme-fg-subtle text-sm mt-1">{plan.credits} {t(locale, 'start.plan.perDay')}</p>}
                   </motion.button>
                 ))}
-                {error && <p className="text-sm text-red-400">{error}</p>}
+                {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary + ' mt-4'}>
                   {loading ? '...' : t(locale, 'home.cta')}
                 </motion.button>

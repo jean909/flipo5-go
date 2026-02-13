@@ -122,9 +122,7 @@ export default function StudioProjectPage() {
       setSelectedItem(newItem);
       setShowAddFromContent(false);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Add failed';
-      setError(msg);
-      console.error('Add item failed:', e);
+      setError(e instanceof Error ? e.message : 'Add failed');
     }
   }
 
@@ -156,9 +154,7 @@ export default function StudioProjectPage() {
       setProjectName(r.project?.name ?? '');
       setSelectedItem(list[list.length - 1] ?? list[0] ?? null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Upload failed';
-      setError(msg);
-      console.error('Upload failed:', err);
+      setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
     }

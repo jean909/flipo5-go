@@ -32,22 +32,22 @@ export default function JobsPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
-      <h1 className="text-xl font-semibold text-white mb-6">{t(locale, 'jobs.title')}</h1>
-      {loading && <p className="text-zinc-500">{t(locale, 'common.loading')}</p>}
+      <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'jobs.title')}</h1>
+      {loading && <p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p>}
       {!loading && (jobs ?? []).length === 0 && (
-        <p className="text-zinc-500">{t(locale, 'jobs.empty')}</p>
+        <p className="text-theme-fg-muted">{t(locale, 'jobs.empty')}</p>
       )}
       {!loading && (jobs ?? []).length > 0 && (
         <ul className="space-y-2">
           {(jobs ?? []).map((job) => (
-            <li key={job.id} className="border border-white/10 rounded-lg p-4 flex items-center justify-between bg-white/5">
+            <li key={job.id} className="border border-theme-border rounded-lg p-4 flex items-center justify-between bg-theme-bg-subtle">
               <div>
-                <span className="text-sm font-medium text-white">{typeT(job.type)}</span>
-                <span className="text-sm text-zinc-500 ml-2">{statusT(job.status)}</span>
+                <span className="text-sm font-medium text-theme-fg">{typeT(job.type)}</span>
+                <span className="text-sm text-theme-fg-muted ml-2">{statusT(job.status)}</span>
               </div>
               <Link
                 href={`/dashboard/jobs/${job.id}`}
-                className="text-sm text-white hover:underline"
+                className="text-sm text-theme-fg hover:underline"
               >
                 {t(locale, 'jobs.view')}
               </Link>

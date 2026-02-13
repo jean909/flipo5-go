@@ -76,14 +76,14 @@ export function Sidebar() {
     <motion.aside
       animate={{ width: collapsed ? 64 : 224 }}
       transition={{ duration: 0.2 }}
-      className="h-screen shrink-0 border-r border-neutral-800 bg-black flex flex-col overflow-hidden"
+      className="h-screen shrink-0 border-r border-theme-border bg-theme-bg flex flex-col overflow-hidden"
     >
-      <div className="p-4 border-b border-neutral-800 flex items-center justify-between gap-2 min-h-[52px]">
+      <div className="p-4 border-b border-theme-border flex items-center justify-between gap-2 min-h-[52px]">
         {collapsed ? (
           <button
             type="button"
             onClick={() => setCollapsed(false)}
-            className="mx-auto p-1.5 rounded-md text-neutral-500 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="mx-auto p-1.5 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
             aria-label="Expand"
           >
             <ChevronIcon collapsed={true} />
@@ -91,14 +91,14 @@ export function Sidebar() {
         ) : (
           <>
             <Link href={pathname === '/dashboard' ? '/dashboard?new=1' : '/dashboard'} className="group flex items-baseline gap-0.5 tracking-tight min-w-0">
-              <span className="text-neutral-500 group-hover:text-neutral-400 shrink-0">{"<"}</span>
-              <span className="font-display font-bold text-white truncate">FLIPO5</span>
-              <span className="text-neutral-500 group-hover:text-neutral-400 shrink-0">{" />"}</span>
+              <span className="text-theme-fg-muted group-hover:text-theme-fg shrink-0">{"<"}</span>
+              <span className="font-display font-bold text-theme-fg truncate">FLIPO5</span>
+              <span className="text-theme-fg-muted group-hover:text-theme-fg shrink-0">{" />"}</span>
             </Link>
             <button
               type="button"
               onClick={() => setCollapsed(true)}
-              className="shrink-0 p-1.5 rounded-md text-neutral-500 hover:text-white hover:bg-neutral-800 transition-colors"
+              className="shrink-0 p-1.5 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
               aria-label="Collapse"
             >
               <ChevronIcon collapsed={false} />
@@ -114,7 +114,7 @@ export function Sidebar() {
             key={href}
             href={href === '/dashboard' && pathname === '/dashboard' ? '/dashboard?new=1' : href}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
-              isActive ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
+              isActive ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
             }`}
             title={collapsed ? t(locale, labelKey) : undefined}
           >
@@ -142,8 +142,8 @@ export function Sidebar() {
               onClick={() => setSessionsExpanded((e) => !e)}
               className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 w-full ${
                 pathname === '/dashboard/sessions' || sessionsExpanded
-                  ? 'bg-neutral-800 text-white'
-                  : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
+                  ? 'bg-theme-bg-hover text-theme-fg'
+                  : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
               }`}
               title={t(locale, 'nav.sessions')}
             >
@@ -151,7 +151,7 @@ export function Sidebar() {
               <span className="truncate flex-1 text-left">{t(locale, 'nav.sessions')}</span>
               <motion.span
                 animate={{ rotate: sessionsExpanded ? 180 : 0 }}
-                className="shrink-0 text-neutral-500"
+                className="shrink-0 text-theme-fg-muted"
               >
                 <ChevronDownIcon className="w-4 h-4" />
               </motion.span>
@@ -166,9 +166,9 @@ export function Sidebar() {
                   className="overflow-hidden"
                 >
                   <div className="pl-8 pr-2 py-2 flex flex-col gap-1">
-                    {threadsLoading && <p className="text-xs text-neutral-500 py-1">{t(locale, 'common.loading')}</p>}
+                    {threadsLoading && <p className="text-xs text-theme-fg-muted py-1">{t(locale, 'common.loading')}</p>}
                     {!threadsLoading && recentThreads.length === 0 && (
-                      <p className="text-xs text-neutral-500 py-1">{t(locale, 'sessions.empty')}</p>
+                      <p className="text-xs text-theme-fg-muted py-1">{t(locale, 'sessions.empty')}</p>
                     )}
                     {!threadsLoading &&
                       recentThreads.map((thread) => (
@@ -203,7 +203,7 @@ export function Sidebar() {
                     {threads.length > 5 && (
                       <Link
                         href="/dashboard/sessions"
-                        className="mt-2 px-2 py-1.5 rounded text-sm text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                        className="mt-2 px-2 py-1.5 rounded text-sm text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
                       >
                         {t(locale, 'sessions.viewMore')}
                       </Link>
@@ -217,18 +217,18 @@ export function Sidebar() {
         {collapsed && (
           <Link
             href="/dashboard/sessions"
-            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-900 hover:text-white transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors"
             title={t(locale, 'nav.sessions')}
           >
             <SessionsIcon className="w-5 h-5 shrink-0" />
           </Link>
         )}
       </nav>
-      <div className="p-3 border-t border-neutral-800 flex flex-col gap-1">
+      <div className="p-3 border-t border-theme-border flex flex-col gap-1">
         <Link
           href="/dashboard/profile"
           className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
-            pathname === '/dashboard/profile' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
+            pathname === '/dashboard/profile' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
           }`}
           title={collapsed ? displayName || t(locale, 'nav.profile') : undefined}
         >
@@ -250,7 +250,7 @@ export function Sidebar() {
         <Link
           href="/dashboard/settings"
           className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
-            pathname === '/dashboard/settings' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-white'
+            pathname === '/dashboard/settings' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
           }`}
           title={collapsed ? t(locale, 'nav.settings') : undefined}
         >
@@ -272,7 +272,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-900 hover:text-white text-left transition-colors w-full"
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-left transition-colors w-full"
           title={t(locale, 'nav.logout')}
         >
           <DoorIcon className="w-5 h-5 shrink-0" />
@@ -296,7 +296,6 @@ export function Sidebar() {
         message={t(locale, 'thread.deleteConfirm')}
         confirmLabel={t(locale, 'thread.delete')}
         cancelLabel={t(locale, 'dialog.cancel')}
-        confirmClass="bg-red-500/20 text-red-400 hover:bg-red-500/30"
         onConfirm={async () => {
           if (!pendingDeleteThread) return;
           try {
@@ -316,7 +315,7 @@ export function Sidebar() {
         onCancel={() => setPendingDeleteThread(null)}
       />
       {error && (
-        <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-amber-500/20 text-amber-200 text-sm">
+        <div className="mx-3 mb-2 px-3 py-2 rounded-lg bg-theme-danger-muted text-theme-danger text-sm">
           {error}
         </div>
       )}

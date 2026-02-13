@@ -44,7 +44,7 @@ function AuthCallbackContent() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-2 px-4">
-      <p className="text-neutral-500">
+      <p className="text-theme-fg-muted">
         {status === 'loading' && t(locale, 'auth.signingIn')}
         {status === 'ok' && t(locale, 'auth.redirecting')}
         {status === 'error' && t(locale, 'auth.syncError')}
@@ -57,7 +57,7 @@ function AuthCallbackFallback() {
   const { locale } = useLocale();
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <p className="text-neutral-500">{t(locale, 'common.loading')}</p>
+      <p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p>
     </div>
   );
 }

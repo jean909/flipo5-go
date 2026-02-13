@@ -23,7 +23,7 @@ const markdownComponents = {
   ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal pl-5 my-2 space-y-0.5 break-words">{children}</ol>,
   li: ({ children }: { children?: React.ReactNode }) => <li className="text-[15px] text-theme-fg/90 break-words">{children}</li>,
   strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-semibold text-theme-fg">{children}</strong>,
-  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => <a href={href} className="text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => <a href={href} className="text-theme-accent hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>,
   h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-xl font-bold text-theme-fg mt-4 mb-2 first:mt-0">{children}</h1>,
   h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-lg font-semibold text-theme-fg mt-3 mb-2">{children}</h2>,
   h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-base font-semibold text-theme-fg mt-2 mb-1">{children}</h3>,
@@ -207,8 +207,8 @@ export function JobCard({
   }, [jobId, variant, job?.status]);
 
   const isChat = variant === 'chat';
-  const textCls = dark ? 'text-theme-fg-muted' : 'text-neutral-600';
-  const errCls = dark ? 'text-red-400' : 'text-red-600';
+  const textCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';
+  const errCls = dark ? 'text-theme-danger' : 'text-theme-danger';
 
   if (notFound) return <p className={`text-sm mt-2 ${textCls}`}>{t(locale, 'jobs.notFound')}</p>;
 
@@ -310,9 +310,9 @@ export function JobCard({
 
   const cardCls = dark
     ? 'mt-3 p-3 border border-theme-border-subtle rounded-lg bg-theme-bg-subtle'
-    : 'mt-3 p-3 border border-neutral-200 rounded bg-neutral-50';
-  const linkCls = dark ? 'text-white hover:underline' : 'text-black underline';
-  const preCls = dark ? 'text-theme-fg-muted' : 'text-neutral-600';
+    : 'mt-3 p-3 border border-theme-border rounded bg-theme-bg-subtle';
+  const linkCls = dark ? 'text-theme-fg hover:underline' : 'text-theme-fg underline';
+  const preCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';
 
   const out = job.output as { output?: string | string[] } | string[] | null;
   let outputStr = '';
@@ -340,7 +340,7 @@ export function JobCard({
           <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
             <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
               <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
-              <p className="text-sm text-white/80">{t(locale, 'image.creating')}</p>
+              <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
             </div>
           </div>
         </div>
@@ -357,7 +357,7 @@ export function JobCard({
   if (job && job.type === 'image' && job.status === 'failed') {
     return (
       <div className="flex justify-start">
-        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+        <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       </div>
     );
   }
@@ -393,7 +393,7 @@ export function JobCard({
                 preload="metadata"
                 playsInline
               />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors pointer-events-none">
+              <div className="absolute inset-0 flex items-center justify-center bg-theme-bg-overlay group-hover:bg-theme-bg-overlay-strong transition-colors pointer-events-none">
                 <span className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
                   <PlayIcon className="w-7 h-7 text-black ml-1" />
                 </span>
@@ -417,7 +417,7 @@ export function JobCard({
   if (job && job.type === 'video' && job.status === 'failed') {
     return (
       <div className="flex justify-start">
-        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+        <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       </div>
     );
   }
@@ -473,7 +473,7 @@ export function JobCard({
   if (isChat && job.status === 'failed') {
     return (
       <div className="flex justify-start">
-        <p className={`rounded-2xl rounded-tl-md bg-red-500/10 px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+        <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
       </div>
     );
   }

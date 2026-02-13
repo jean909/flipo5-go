@@ -473,22 +473,16 @@ export async function removeProjectItem(itemId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to remove item');
 }
 
-/** Upload file to project (image/video from device). One request: upload + add item. */
+/** Upload file to project (image/video from device). Uses /api/upload + addProjectItem for reliability. */
 export async function uploadProjectItem(projectId: string, file: File): Promise<{ id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const form = new FormData();
-  form.append('file', file);
-  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/upload`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(err?.error || `Upload failed (${res.status})`);
-  }
-  return res.json();
+  // Use same upload flow as chat attachments (proven to work)
+  const urls = await uploadAttachments([file]);
+  const url = urls[0];
+  if (!url) throw new Error('Upload returned no URL');
+  const itemType = file.type.startsWith('video/') ? 'video' : 'image';
+  return addProjectItem(projectId, itemType, url);
 }
 
 /** Upload file as new version of project item. One request: upload + add version. */

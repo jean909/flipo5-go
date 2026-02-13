@@ -29,15 +29,15 @@ export default function SessionsPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
-      <h1 className="text-xl font-semibold text-white mb-6">{t(locale, 'sessions.title')}</h1>
+      <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'sessions.title')}</h1>
       {error && (
-        <div className="mb-4 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-200 text-sm">
+        <div className="mb-4 px-4 py-2 rounded-lg bg-theme-danger-muted text-theme-danger text-sm">
           {error}
         </div>
       )}
-      {loading && <p className="text-zinc-500">{t(locale, 'common.loading')}</p>}
+      {loading && <p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p>}
       {!loading && threads.length === 0 && (
-        <p className="text-zinc-500">{t(locale, 'sessions.empty')}</p>
+        <p className="text-theme-fg-muted">{t(locale, 'sessions.empty')}</p>
       )}
       {!loading && threads.length > 0 && (
         <ul className="space-y-2">
@@ -78,7 +78,6 @@ export default function SessionsPage() {
         message={t(locale, 'thread.deleteConfirm')}
         confirmLabel={t(locale, 'thread.delete')}
         cancelLabel={t(locale, 'dialog.cancel')}
-        confirmClass="bg-red-500/20 text-red-400 hover:bg-red-500/30"
         onConfirm={async () => {
           if (!pendingDeleteThread) return;
           try {

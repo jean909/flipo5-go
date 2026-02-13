@@ -21,7 +21,7 @@ export function ConfirmDialog({
   message,
   confirmLabel,
   cancelLabel,
-  confirmClass = 'bg-red-500/20 text-red-400 hover:bg-red-500/30',
+  confirmClass = 'bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted',
   onConfirm,
   onCancel,
   customContent,
@@ -40,24 +40,24 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-black/70"
+      className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-theme-bg-overlay"
       onClick={onCancel}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="w-full max-w-md rounded-2xl border border-white/20 bg-zinc-900 p-6 shadow-xl"
+        className="w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-display text-lg font-bold text-white mb-2">{title}</h3>
-        {message && <p className="text-sm text-neutral-400 mb-6">{message}</p>}
+        <h3 className="font-display text-lg font-bold text-theme-fg mb-2">{title}</h3>
+        {message && <p className="text-sm text-theme-fg-muted mb-6">{message}</p>}
         {customContent}
         <div className="flex gap-3 justify-end">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
           >
             {cancelLabel}
           </button>

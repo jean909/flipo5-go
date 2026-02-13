@@ -12,8 +12,8 @@ export default function LoginPage() {
     router.replace('/start');
   }, [router]);
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-      <p className="text-neutral-500">{t(locale, 'auth.redirecting')}</p>
+    <div className="min-h-screen bg-theme-bg flex items-center justify-center">
+      <p className="text-theme-fg-muted">{t(locale, 'auth.redirecting')}</p>
     </div>
   );
 }

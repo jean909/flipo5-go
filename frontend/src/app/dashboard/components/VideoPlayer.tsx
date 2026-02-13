@@ -103,7 +103,7 @@ export function VideoPlayer({ src, className = '', autoPlay }: { src: string; cl
 
   return (
     <div
-      className={`relative group rounded-xl overflow-hidden bg-black ${className}`}
+      className={`relative group rounded-xl overflow-hidden bg-theme-bg ${className}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setShowControls(false)}
     >
@@ -121,12 +121,12 @@ export function VideoPlayer({ src, className = '', autoPlay }: { src: string; cl
         }}
       />
       <div
-        className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent pt-12 pb-2 px-3 transition-opacity duration-200 ${
+        className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-theme-bg-overlay-strong to-transparent pt-12 pb-2 px-3 transition-opacity duration-200 ${
           showControls ? 'opacity-100' : 'opacity-0'
         }`}
       >
         <div
-          className="h-1 rounded-full bg-white/30 cursor-pointer hover:bg-white/40 transition-colors mb-2"
+          className="h-1 rounded-full bg-theme-border-hover cursor-pointer hover:bg-theme-border-strong transition-colors mb-2"
           onClick={seek}
           role="progressbar"
           aria-valuenow={progress}
@@ -142,7 +142,7 @@ export function VideoPlayer({ src, className = '', autoPlay }: { src: string; cl
           <button
             type="button"
             onClick={togglePlay}
-            className="p-1.5 rounded-full text-white hover:bg-white/20 transition-colors"
+            className="p-1.5 rounded-full text-theme-fg hover:bg-theme-bg-hover transition-colors"
             aria-label={playing ? 'Pause' : 'Play'}
           >
             {playing ? (
@@ -151,13 +151,13 @@ export function VideoPlayer({ src, className = '', autoPlay }: { src: string; cl
               <PlayIcon className="w-5 h-5" />
             )}
           </button>
-          <span className="text-xs text-white/90 tabular-nums min-w-[45px]">
+          <span className="text-xs text-theme-fg/90 tabular-nums min-w-[45px]">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
           <button
             type="button"
             onClick={toggleMute}
-            className="p-1.5 rounded-full text-white hover:bg-white/20 transition-colors ml-auto"
+            className="p-1.5 rounded-full text-theme-fg hover:bg-theme-bg-hover transition-colors ml-auto"
             aria-label={muted ? 'Unmute' : 'Mute'}
           >
             {muted || volume === 0 ? (
@@ -169,7 +169,7 @@ export function VideoPlayer({ src, className = '', autoPlay }: { src: string; cl
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="p-1.5 rounded-full text-white hover:bg-white/20 transition-colors"
+            className="p-1.5 rounded-full text-theme-fg hover:bg-theme-bg-hover transition-colors"
             aria-label="Fullscreen"
           >
             <FullscreenIcon className="w-5 h-5" />
@@ -180,7 +180,7 @@ export function VideoPlayer({ src, className = '', autoPlay }: { src: string; cl
         <button
           type="button"
           onClick={togglePlay}
-          className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors"
+          className="absolute inset-0 flex items-center justify-center bg-theme-bg-overlay hover:bg-theme-bg-overlay-strong transition-colors"
           aria-label="Play"
         >
           <span className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg hover:bg-white transition-colors">

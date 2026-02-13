@@ -521,8 +521,8 @@ export default function DashboardPage() {
               whileTap={{ scale: 0.98 }}
               onClick={() => setMode(m)}
               className={mode === m
-                ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-500 bg-neutral-700/80 text-white text-sm font-medium transition-all'
-                : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-600 bg-neutral-800/60 text-neutral-300 hover:bg-neutral-700/60 hover:text-white hover:border-neutral-500 text-sm font-medium transition-all'
+                ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg text-sm font-medium transition-all'
+                : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover text-sm font-medium transition-all'
               }
             >
               {m === 'video' && <VideoIcon />}
@@ -532,7 +532,7 @@ export default function DashboardPage() {
             </motion.button>
           ))}
         </div>
-        {error && <p className="text-sm text-red-400">{error === 'rate' ? t(locale, 'error.rate') : error}</p>}
+        {error && <p className="text-sm text-theme-danger">{error === 'rate' ? t(locale, 'error.rate') : error}</p>}
       </form>
     </div>
   );
@@ -587,7 +587,7 @@ export default function DashboardPage() {
                 <label className={labelCls}>{t(locale, 'start.useCase')} *</label>
                 <input type="text" value={useCase} onChange={(e) => setUseCase(e.target.value)} placeholder={t(locale, 'start.placeholderUseCase')} className={inputCls} required />
               </div>
-              {profileError && <p className="text-sm text-red-400">{profileError}</p>}
+              {profileError && <p className="text-sm text-theme-danger">{profileError}</p>}
               <motion.button type="submit" disabled={profileSaving} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
                 {profileSaving ? '...' : t(locale, 'login.submit')}
               </motion.button>
@@ -721,8 +721,8 @@ export default function DashboardPage() {
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setMode(m)}
                   className={mode === m
-                    ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-500 bg-neutral-700/80 text-white text-sm font-medium transition-all'
-                    : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-600 bg-neutral-800/60 text-neutral-300 hover:bg-neutral-700/60 hover:text-white hover:border-neutral-500 text-sm font-medium transition-all'
+                    ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg text-sm font-medium transition-all'
+                    : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover text-sm font-medium transition-all'
                   }
                 >
                   {m === 'video' && <VideoIcon />}
@@ -733,7 +733,7 @@ export default function DashboardPage() {
               ))}
             </div>
           </form>
-          {error && <p className="mt-4 text-sm text-red-400">{error === 'rate' ? t(locale, 'error.rate') : error}</p>}
+          {error && <p className="mt-4 text-sm text-theme-danger">{error === 'rate' ? t(locale, 'error.rate') : error}</p>}
           {showPromo && (
             <div className="mt-10 w-full max-w-md mx-auto">
               {contentTotal >= 5 ? (
@@ -761,7 +761,7 @@ export default function DashboardPage() {
                     {latestContent.map((job, i) => (
                       <div
                         key={job.id}
-                        className={`w-14 h-14 rounded-lg overflow-hidden border border-theme-border bg-theme-bg-elevated flex-shrink-0 relative ${i === latestContent.length - 1 ? "after:content-[''] after:absolute after:inset-0 after:bg-black/50" : ''}`}
+                        className={`w-14 h-14 rounded-lg overflow-hidden border border-theme-border bg-theme-bg-elevated flex-shrink-0 relative ${i === latestContent.length - 1 ? "after:content-[''] after:absolute after:inset-0 after:bg-theme-bg-overlay" : ''}`}
                       >
                         {job.outputUrls[0] ? (
                           job.type === 'video' ? (
