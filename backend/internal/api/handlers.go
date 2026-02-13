@@ -74,6 +74,8 @@ func (s *Server) Routes() http.Handler {
 		r.Patch("/threads/{id}", s.patchThread)
 		r.Get("/jobs", s.listJobs)
 		r.Get("/content", s.listContent)
+		r.Get("/jobs/{id}", s.getJob)
+		r.Get("/projects/{id}", s.getProject) // before Route so GET /projects/{id} matches first
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
 			r.Post("/", s.createProject)
@@ -83,11 +85,9 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/items/{itemId}/versions/upload", s.uploadProjectVersion)
 			r.Post("/{id}/items/upload", s.uploadProjectItem)
 			r.Post("/{id}/items", s.addProjectItem)
-			r.Get("/{id}", s.getProject)
 			r.Patch("/{id}", s.updateProject)
 			r.Delete("/{id}", s.deleteProject)
 		})
-		r.Get("/jobs/{id}", s.getJob)
 		r.Get("/jobs/{id}/stream", s.jobStreamSSE)
 		r.Get("/download", s.downloadMedia)
 		r.Get("/media", s.serveMedia)
@@ -1033,7 +1033,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	if json.NewDecoder(r.Body).Decode(&body) != nil {
 		body.Name = "Untitled"
 	}
-	id, err := s.DB.CreateProject(r.Context(), userID, strings.TrimSpace(body.Name))
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = "Untitled"
+	}
+	id, err := s.DB.CreateProject(r.Context(), userID, name)
 	if err != nil {
 		log.Printf("[createProject] user=%s err=%v", userID, err)
 		if errors.Is(err, store.ErrProjectNameExists) {
@@ -1045,7 +1049,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[createProject] ok id=%s user=%s", id, userID)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": id.String(), "name": body.Name})
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": id.String(), "name": name})
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -1062,7 +1066,11 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.DB.GetProject(r.Context(), projectID, userID)
 	if err != nil || p == nil {
-		log.Printf("[getProject] notFound project=%s user=%s err=%v", projectID, userID, err)
+		if owner, ok := s.DB.GetProjectOwner(r.Context(), projectID); ok {
+			log.Printf("[getProject] notFound project=%s requestUser=%s projectOwner=%s (user_id mismatch)", projectID, userID, owner)
+		} else {
+			log.Printf("[getProject] notFound project=%s user=%s err=%v", projectID, userID, err)
+		}
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -1070,7 +1078,6 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	if errItems != nil {
 		items = nil
 	}
-	log.Printf("[getProject] project=%s items=%d", projectID, len(items))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]interface{}{"project": p, "items": items})

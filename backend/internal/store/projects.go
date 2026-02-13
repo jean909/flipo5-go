@@ -83,6 +83,13 @@ func (db *DB) GetProject(ctx context.Context, projectID, userID uuid.UUID) (*Pro
 	return &p, err
 }
 
+// GetProjectOwner returns the user_id of the project if it exists (for debugging 404s).
+func (db *DB) GetProjectOwner(ctx context.Context, projectID uuid.UUID) (uuid.UUID, bool) {
+	var owner uuid.UUID
+	err := db.Pool.QueryRow(ctx, `SELECT user_id FROM projects WHERE id = $1`, projectID).Scan(&owner)
+	return owner, err == nil
+}
+
 func (db *DB) ListProjects(ctx context.Context, userID uuid.UUID, limit int) ([]Project, error) {
 	if limit <= 0 {
 		limit = 50
@@ -212,13 +219,11 @@ func (db *DB) AddProjectVersion(ctx context.Context, itemID, userID uuid.UUID, u
 	if err != nil {
 		return err
 	}
-	if _, err := db.GetProject(ctx, projectID, userID); err != nil {
-		return err
-	}
-	p, _ := db.GetProject(ctx, projectID, userID)
-	if p == nil {
+	p, err := db.GetProject(ctx, projectID, userID)
+	if err != nil || p == nil {
 		return pgx.ErrNoRows
 	}
+	_ = p
 	var nextNum int
 	_ = db.Pool.QueryRow(ctx, `SELECT COALESCE(MAX(version_num),0)+1 FROM projects_versions WHERE item_id = $1`, itemID).Scan(&nextNum)
 	if metadata == nil {
