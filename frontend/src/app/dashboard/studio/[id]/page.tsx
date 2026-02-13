@@ -176,6 +176,10 @@ export default function StudioProjectPage() {
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!id || !project) {
+      setError('Please wait for the project to load');
+      return;
+    }
     const valid = file.type.startsWith('image/') || ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
     if (!valid) return;
     setError(null);
