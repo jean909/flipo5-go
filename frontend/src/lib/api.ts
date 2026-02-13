@@ -390,6 +390,7 @@ export interface Project {
   name: string;
   created_at: string;
   updated_at: string;
+  item_count?: number;
 }
 
 export interface ProjectItem {
@@ -408,7 +409,10 @@ export async function listProjects(limit?: number): Promise<{ projects: Project[
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const sp = limit ? `?limit=${limit}` : '';
-  const res = await fetch(`${API_URL}/api/projects${sp}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${API_URL}/api/projects${sp}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
   if (!res.ok) throw new Error('Failed to load projects');
   return res.json();
 }
@@ -484,26 +488,21 @@ export async function removeProjectItem(itemId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to remove item');
 }
 
-/** Upload file to project (image/video from device). Uses dedicated endpoint: upload + add item in 1 request. */
-export async function uploadProjectItem(projectId: string, file: File): Promise<{ id: string }> {
+/** Upload file to project (image/video from device). Returns full item for optimistic UI. */
+export async function uploadProjectItem(projectId: string, file: File): Promise<{ id: string; item: ProjectItem }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const form = new FormData();
   form.append('file', file);
-  const url = `${API_URL}/api/projects/${projectId}/items/upload`;
-  console.log('[studio upload] POST', url, 'file=', file.name, file.type, file.size);
-  const res = await fetch(url, {
+  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
-  const body = await res.json().catch(() => ({})) as { id?: string; error?: string };
-  if (!res.ok) {
-    console.error('[studio upload] failed', res.status, body);
-    throw new Error(body?.error || 'Upload failed');
-  }
-  console.log('[studio upload] ok', body);
-  return body as { id: string };
+  const body = await res.json().catch(() => ({})) as { id?: string; item?: ProjectItem; error?: string };
+  if (!res.ok) throw new Error(body?.error || 'Upload failed');
+  if (!body.item) throw new Error('Upload failed');
+  return { id: body.id!, item: body.item };
 }
 
 /** Upload file as new version of project item. One request: upload + add version. */

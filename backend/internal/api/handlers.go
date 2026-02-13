@@ -1017,6 +1017,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]interface{}{"projects": list})
 }
 
@@ -1247,7 +1248,20 @@ func (s *Server) uploadProjectItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("[studio upload] success item=%s url=%s", itemID, url)
-		break
+		// Return full item for optimistic UI (avoids getProject cache/race issues)
+		item := map[string]interface{}{
+			"id":          itemID.String(),
+			"project_id":  projectID.String(),
+			"type":        itemType,
+			"source_url":  url,
+			"latest_url":  url,
+			"sort_order":  0,
+			"created_at":  time.Now().Format(time.RFC3339),
+			"version_num": 0,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"id": itemID.String(), "item": item})
+		return
 	}
 	if itemID == uuid.Nil {
 		log.Printf("[studio upload] no item created (all files skipped or failed)")

@@ -17,6 +17,7 @@ type Project struct {
 	Name      string    `json:"name"`
 	CreatedAt string    `json:"created_at"`
 	UpdatedAt string    `json:"updated_at"`
+	ItemCount int       `json:"item_count,omitempty"` // only in list
 }
 
 type ProjectItem struct {
@@ -87,7 +88,9 @@ func (db *DB) ListProjects(ctx context.Context, userID uuid.UUID, limit int) ([]
 		limit = 50
 	}
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, user_id, COALESCE(name,'Untitled'), created_at::text, updated_at::text FROM projects WHERE user_id = $1 ORDER BY updated_at DESC LIMIT $2`,
+		`SELECT p.id, p.user_id, COALESCE(p.name,'Untitled'), p.created_at::text, p.updated_at::text,
+		        (SELECT COUNT(*) FROM projects_items WHERE project_id = p.id)::int
+		 FROM projects p WHERE p.user_id = $1 ORDER BY p.updated_at DESC LIMIT $2`,
 		userID, limit)
 	if err != nil {
 		return nil, err
@@ -96,7 +99,7 @@ func (db *DB) ListProjects(ctx context.Context, userID uuid.UUID, limit int) ([]
 	var list []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.CreatedAt, &p.UpdatedAt, &p.ItemCount); err != nil {
 			return nil, err
 		}
 		list = append(list, p)

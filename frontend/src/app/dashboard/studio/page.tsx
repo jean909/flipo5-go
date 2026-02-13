@@ -149,6 +149,9 @@ export default function StudioPage() {
                     >
                       <p className="font-medium text-theme-fg truncate">{p.name || t(locale, 'studio.untitled')}</p>
                       <p className="text-xs text-theme-fg-subtle mt-1">
+                        {(p.item_count ?? 0) > 0 && (
+                          <span className="mr-2">{(p.item_count ?? 0)} {t(locale, p.item_count === 1 ? 'studio.item' : 'studio.items')}</span>
+                        )}
                         {new Date(p.updated_at).toLocaleDateString(locale, {
                           day: 'numeric',
                           month: 'short',

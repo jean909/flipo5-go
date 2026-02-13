@@ -48,6 +48,26 @@ export default function StudioProjectPage() {
     getToken().then(setMediaToken);
   }, []);
 
+  function fetchProject() {
+    if (!id) return;
+    getProject(id)
+      .then((r) => {
+        const itemList = r.items ?? [];
+        setProject(r.project);
+        setItems(itemList);
+        setProjectName(r.project?.name ?? '');
+        setSelectedItem((prev) => {
+          const next = itemList.find((i) => i.id === prev?.id);
+          return next ?? itemList[0] ?? null;
+        });
+      })
+      .catch(() => {
+        setProject(null);
+        setItems([]);
+        setSelectedItem(null);
+      });
+  }
+
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -72,6 +92,15 @@ export default function StudioProjectPage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [id]);
+
+  // Refetch when tab becomes visible (user returns) - ensures persisted items are visible
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && id && !loading) fetchProject();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [id, loading]);
 
   // Sync selectedItem when items change (e.g. after add/upload)
   useEffect(() => {
@@ -153,17 +182,11 @@ export default function StudioProjectPage() {
     setUploading(true);
     e.target.value = '';
     try {
-      console.log('[studio handleUpload] start', file.name, id);
-      const result = await uploadProjectItem(id, file);
-      console.log('[studio handleUpload] upload ok', result);
-      const r = await getProject(id);
-      const list = r.items ?? [];
-      console.log('[studio handleUpload] getProject items=', list.length, list.map((i) => ({ id: i.id, source_url: i.source_url, latest_url: i.latest_url })));
-      setProject(r.project);
-      setItems(list);
-      setSelectedItem(list[list.length - 1] ?? list[0] ?? null);
+      const { item } = await uploadProjectItem(id, file);
+      const newItem: ProjectItem = { ...item, sort_order: items.length };
+      setItems((prev) => [...prev, newItem]);
+      setSelectedItem(newItem);
     } catch (err) {
-      console.error('[studio handleUpload] error', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
