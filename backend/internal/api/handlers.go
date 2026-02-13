@@ -1064,6 +1064,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	}
 	items, _ := s.DB.ListProjectItems(r.Context(), projectID, userID)
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store") // prevent stale data after upload
 	json.NewEncoder(w).Encode(map[string]interface{}{"project": p, "items": items})
 }
 

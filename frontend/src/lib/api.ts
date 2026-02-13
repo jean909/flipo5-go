@@ -429,7 +429,10 @@ export async function createProject(name?: string): Promise<{ id: string; name: 
 export async function getProject(id: string): Promise<{ project: Project; items: ProjectItem[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const res = await fetch(`${API_URL}/api/projects/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${API_URL}/api/projects/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store', // avoid stale cache after upload
+  });
   if (!res.ok) throw new Error('Project not found');
   return res.json();
 }
