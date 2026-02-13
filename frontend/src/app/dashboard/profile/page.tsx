@@ -39,14 +39,15 @@ export default function ProfilePage() {
   useEffect(() => {
     if (searchParams.get('fromArchive') !== '1') return;
     router.replace('/dashboard/profile', { scroll: false });
+    let cancelled = false;
     const id = setTimeout(() => {
       setArchivedLoading(true);
       loadArchived()
-        .then(setArchived)
+        .then((r) => { if (!cancelled) setArchived(r); })
         .catch(() => {})
-        .finally(() => setArchivedLoading(false));
+        .finally(() => { if (!cancelled) setArchivedLoading(false); });
     }, 400);
-    return () => clearTimeout(id);
+    return () => { clearTimeout(id); cancelled = true; };
   }, [searchParams, router]);
 
   if (!user) {

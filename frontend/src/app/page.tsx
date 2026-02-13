@@ -14,9 +14,12 @@ export default function Home() {
   const { locale } = useLocale();
 
   useEffect(() => {
+    let cancelled = false;
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
       if (session) router.replace('/dashboard');
     });
+    return () => { cancelled = true; };
   }, [router]);
 
   return (

@@ -124,8 +124,10 @@ export function JobCard({
     return () => clearTimeout(t);
   }, [job?.id, job?.output, job?.status, job?.type, jobId, retryCount]);
 
-  // Buffer flush: SSE → state every 50ms (ChatGPT-style, fewer re-renders)
+  // Buffer flush: SSE → state every 50ms (ChatGPT-style, fewer re-renders). Only when streaming.
+  const isStreaming = variant === 'chat' && job && (job.status === 'pending' || job.status === 'running');
   useEffect(() => {
+    if (!isStreaming) return;
     const id = setInterval(() => {
       setStreamOutput((prev) => {
         const buf = streamBufferRef.current;
@@ -133,7 +135,7 @@ export function JobCard({
       });
     }, 50);
     return () => clearInterval(id);
-  }, []);
+  }, [isStreaming]);
 
   // Typing animation: displayLen catches up (smooth, fluid character reveal)
   useEffect(() => {

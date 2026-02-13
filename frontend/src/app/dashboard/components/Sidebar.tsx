@@ -41,13 +41,17 @@ export function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
-    if (sessionsExpanded && !collapsed) {
-      setThreadsLoading(true);
-      listThreads()
-        .then((r) => setThreads(r.threads ?? []))
-        .catch(() => setThreads([]))
-        .finally(() => setThreadsLoading(false));
-    }
+    if (!sessionsExpanded || collapsed) return;
+    let cancelled = false;
+    setThreadsLoading(true);
+    listThreads()
+      .then((r) => {
+        if (cancelled) return;
+        setThreads(r.threads ?? []);
+      })
+      .catch(() => { if (!cancelled) setThreads([]); })
+      .finally(() => { if (!cancelled) setThreadsLoading(false); });
+    return () => { cancelled = true; };
   }, [sessionsExpanded, collapsed]);
 
   async function logout() {

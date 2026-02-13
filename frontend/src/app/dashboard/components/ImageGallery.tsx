@@ -13,15 +13,22 @@ interface ImageGalleryProps {
   onUseAsReference?: (url: string) => void;
 }
 
-export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsReference }: ImageGalleryProps) {
-  const [selected, setSelected] = useState(0);
-  const [viewingUrl, setViewingUrl] = useState<string | null>(null);
-  const main = urls[selected];
-  const maxW = variant === 'chat' ? 'max-w-[340px]' : '';
-
-  const ImageOverlay = ({ url, className = '' }: { url: string; className?: string }) => (
+function ImageOverlay({
+  url,
+  className = '',
+  locale,
+  onUseAsReference,
+  onView,
+}: {
+  url: string;
+  className?: string;
+  locale: Locale;
+  onUseAsReference?: (url: string) => void;
+  onView: (url: string) => void;
+}) {
+  return (
     <div className={`relative group ${className}`}>
-      <div className="block cursor-pointer" onClick={() => setViewingUrl(url)}>
+      <div className="block cursor-pointer" onClick={() => onView(url)}>
         <img src={url} alt="" className="w-full h-auto object-cover" loading="lazy" decoding="async" />
       </div>
       <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 pointer-events-none">
@@ -36,7 +43,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
         )}
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); setViewingUrl(url); }}
+          onClick={(e) => { e.stopPropagation(); onView(url); }}
           className="px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong text-theme-fg text-sm font-medium hover:bg-theme-bg-hover-stronger pointer-events-auto"
         >
           {t(locale, 'image.view')}
@@ -44,6 +51,15 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
       </div>
     </div>
   );
+}
+
+export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsReference }: ImageGalleryProps) {
+  const [selected, setSelected] = useState(0);
+  const [viewingUrl, setViewingUrl] = useState<string | null>(null);
+  const maxW = variant === 'chat' ? 'max-w-[340px]' : '';
+  const main = urls[selected];
+
+  if (urls.length === 0) return null;
 
   if (urls.length === 1) {
     const cls = variant === 'full' ? 'block overflow-hidden rounded-lg border border-theme-border-subtle' : 'block overflow-hidden rounded-lg';
@@ -51,7 +67,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
       <>
         <div className={variant === 'chat' ? 'flex justify-start' : ''}>
           <div className={`${cls} ${maxW}`}>
-            <ImageOverlay url={urls[0]} />
+            <ImageOverlay url={urls[0]} locale={locale} onUseAsReference={onUseAsReference} onView={setViewingUrl} />
           </div>
         </div>
         {viewingUrl && (
@@ -71,7 +87,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
         <div className={containerCls}>
           <div className={mainCls}>
             <div className="rounded-lg overflow-hidden">
-              <ImageOverlay url={main} />
+              <ImageOverlay url={main} locale={locale} onUseAsReference={onUseAsReference} onView={setViewingUrl} />
             </div>
           </div>
           <div className={`flex flex-col gap-1.5 ${thumbCls} overflow-y-auto scrollbar-subtle`}>

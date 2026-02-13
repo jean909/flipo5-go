@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, listContent, type Project, type ProjectItem, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, listContent, getToken, getMediaDisplayUrl, type Project, type ProjectItem, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../../components/ImageViewModal';
@@ -38,14 +38,22 @@ export default function StudioProjectPage() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [canvasScale, setCanvasScale] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [mediaToken, setMediaToken] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const referenceUrl = getReferenceUrl(selectedItem);
+  const displayUrl = referenceUrl ? getMediaDisplayUrl(referenceUrl, mediaToken) : null;
 
-  const refresh = () => {
-    if (!id) return Promise.resolve();
-    return getProject(id)
+  useEffect(() => {
+    getToken().then(setMediaToken);
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    getProject(id)
       .then((r) => {
+        if (cancelled) return;
         const itemList = r.items ?? [];
         setProject(r.project);
         setItems(itemList);
@@ -56,25 +64,22 @@ export default function StudioProjectPage() {
         });
       })
       .catch(() => {
+        if (cancelled) return;
         setProject(null);
         setItems([]);
         setSelectedItem(null);
       })
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    refresh();
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [id]);
 
   // Sync selectedItem when items change (e.g. after add/upload)
   useEffect(() => {
-    if (items.length > 0 && !selectedItem) {
-      setSelectedItem(items[0]);
-    }
-    if (items.length > 0 && selectedItem && !items.some((i) => i.id === selectedItem.id)) {
-      setSelectedItem(items[0]);
-    }
+    if (items.length === 0) return;
+    setSelectedItem((prev) => {
+      if (!prev) return items[0];
+      return items.some((i) => i.id === prev.id) ? prev : items[0];
+    });
   }, [items]);
 
   // Reset scale when selecting a different item
@@ -83,17 +88,19 @@ export default function StudioProjectPage() {
   }, [selectedItem?.id]);
 
   useEffect(() => {
-    if (showAddFromContent) {
-      listContent({ limit: 30 })
-        .then((r) => {
-          const jobs = (r.jobs ?? []).map((j) => ({
-            ...j,
-            outputUrls: j.status === 'completed' && j.output ? getOutputUrls(j.output) : [],
-          }));
-          setContentJobs(jobs.filter((j) => j.outputUrls.length > 0 && (j.type === 'image' || j.type === 'video')));
-        })
-        .catch(() => setContentJobs([]));
-    }
+    if (!showAddFromContent) return;
+    let cancelled = false;
+    listContent({ limit: 30 })
+      .then((r) => {
+        if (cancelled) return;
+        const jobs = (r.jobs ?? []).map((j) => ({
+          ...j,
+          outputUrls: j.status === 'completed' && j.output ? getOutputUrls(j.output) : [],
+        }));
+        setContentJobs(jobs.filter((j) => j.outputUrls.length > 0 && (j.type === 'image' || j.type === 'video')));
+      })
+      .catch(() => { if (!cancelled) setContentJobs([]); });
+    return () => { cancelled = true; };
   }, [showAddFromContent]);
 
   async function handleSaveName() {
@@ -342,7 +349,7 @@ export default function StudioProjectPage() {
           ) : (
             <>
               <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto">
-                {selectedItem && referenceUrl ? (
+                {selectedItem && displayUrl ? (
                   <div className="relative group flex items-center justify-center">
                     <div
                       className="relative origin-center"
@@ -350,13 +357,13 @@ export default function StudioProjectPage() {
                     >
                       <button
                         type="button"
-                        onClick={() => setViewingMedia({ urls: [referenceUrl] })}
+                        onClick={() => setViewingMedia({ urls: [displayUrl] })}
                         className="block"
                       >
                         {selectedItem.type === 'video' ? (
-                          <video src={referenceUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
+                          <video src={displayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
                         ) : (
-                          <img src={referenceUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} />
+                          <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} />
                         )}
                       </button>
                       <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -404,7 +411,9 @@ export default function StudioProjectPage() {
                       </>
                     )}
                   </div>
-                  {items.map((item) => (
+                  {items.map((item) => {
+                    const thumbUrl = getMediaDisplayUrl(item.latest_url || item.source_url, mediaToken);
+                    return (
                     <button
                       key={item.id}
                       type="button"
@@ -414,15 +423,15 @@ export default function StudioProjectPage() {
                       }`}
                     >
                       {item.type === 'video' ? (
-                        <video src={item.latest_url || item.source_url} className="w-full h-full object-cover" muted preload="metadata" playsInline />
+                        <video src={thumbUrl} className="w-full h-full object-cover" muted preload="metadata" playsInline />
                       ) : (
-                        <img src={item.latest_url || item.source_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        <img src={thumbUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
                       )}
                       <span className="absolute top-0.5 right-0.5 px-1 rounded bg-theme-bg-overlay text-[10px] text-theme-fg font-medium">
                         {(item.version_num ?? 0) === 0 ? 'Original' : `v${(item.version_num ?? 0) + 1}`}
                       </span>
                     </button>
-                  ))}
+                  );})}
                 </div>
               </div>
             </>

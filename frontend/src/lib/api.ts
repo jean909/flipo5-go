@@ -2,6 +2,14 @@ import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+/** Returns display URL for media. When url is relative (no http), uses /api/media proxy with token. */
+export function getMediaDisplayUrl(url: string | null | undefined, token: string | null): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (!token) return url; // Will likely fail; caller should handle
+  return `${API_URL}/api/media?key=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+}
+
 export async function getToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   const { data: { session } } = await supabase.auth.getSession();
@@ -473,16 +481,22 @@ export async function removeProjectItem(itemId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to remove item');
 }
 
-/** Upload file to project (image/video from device). Uses /api/upload + addProjectItem for reliability. */
+/** Upload file to project (image/video from device). Uses dedicated endpoint: upload + add item in 1 request. */
 export async function uploadProjectItem(projectId: string, file: File): Promise<{ id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  // Use same upload flow as chat attachments (proven to work)
-  const urls = await uploadAttachments([file]);
-  const url = urls[0];
-  if (!url) throw new Error('Upload returned no URL');
-  const itemType = file.type.startsWith('video/') ? 'video' : 'image';
-  return addProjectItem(projectId, itemType, url);
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(e?.error || 'Upload failed');
+  }
+  return res.json();
 }
 
 /** Upload file as new version of project item. One request: upload + add version. */

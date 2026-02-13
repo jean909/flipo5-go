@@ -42,6 +42,7 @@ export default function ContentPage() {
   const searchQ = searchParams.get('q') || '';
 
   const fetchContent = useCallback(() => {
+    let cancelled = false;
     setLoading(true);
     listContent({
       page,
@@ -50,19 +51,23 @@ export default function ContentPage() {
       q: searchQ || undefined,
     })
       .then((r) => {
+        if (cancelled) return;
         const jobs = (r.jobs ?? []).map((j) => ({ ...j, outputUrls: extractOutputUrls(j) }));
         setItems(jobs);
         setTotal(r.total ?? 0);
       })
       .catch(() => {
+        if (cancelled) return;
         setItems([]);
         setTotal(0);
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [page, typeFilter, searchQ]);
 
   useEffect(() => {
-    fetchContent();
+    const cleanup = fetchContent();
+    return cleanup;
   }, [fetchContent]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -87,6 +92,7 @@ export default function ContentPage() {
         >
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-fg-subtle pointer-events-none" />
           <input
+            key={`${searchQ}-${typeFilter}`}
             name="q"
             type="search"
             placeholder={t(locale, 'content.searchPlaceholder')}

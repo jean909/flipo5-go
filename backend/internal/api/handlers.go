@@ -90,6 +90,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs/{id}", s.getJob)
 		r.Get("/jobs/{id}/stream", s.jobStreamSSE)
 		r.Get("/download", s.downloadMedia)
+		r.Get("/media", s.serveMedia)
 	})
 	return r
 }
@@ -842,6 +843,39 @@ func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", "attachment; filename=\"flipo5-"+fmt.Sprint(time.Now().Unix())+ext+"\"")
 	io.Copy(w, resp.Body)
+}
+
+// serveMedia streams a file from storage by key. Used when public URL is not available (e.g. relative key).
+func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if s.Store == nil {
+		http.Error(w, `{"error":"storage not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" || !strings.HasPrefix(key, "uploads/") {
+		http.Error(w, `{"error":"invalid key"}`, http.StatusBadRequest)
+		return
+	}
+	// Ensure key is under user's uploads
+	if !strings.HasPrefix(key, "uploads/"+userID.String()+"/") {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	body, contentType, err := s.Store.Get(r.Context(), key)
+	if err != nil {
+		log.Printf("serveMedia Get %s: %v", key, err)
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	defer body.Close()
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	io.Copy(w, body)
 }
 
 func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {

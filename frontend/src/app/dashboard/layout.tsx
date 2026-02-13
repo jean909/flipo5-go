@@ -9,6 +9,7 @@ import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { Sidebar } from './components/Sidebar';
 import { JobsInProgressButton } from './components/JobsInProgressButton';
+import { JobsInProgressProvider } from './components/JobsInProgressContext';
 
 export default function DashboardLayout({
   children,
@@ -22,10 +23,13 @@ export default function DashboardLayout({
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
       if (!session) router.replace('/start');
       setReady(true);
     });
+    return () => { cancelled = true; };
   }, [router]);
 
   if (!ready) {
@@ -37,6 +41,7 @@ export default function DashboardLayout({
   }
 
   return (
+    <JobsInProgressProvider>
     <div className="h-screen bg-theme-bg text-theme-fg flex overflow-hidden">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 min-h-0 relative">
@@ -78,6 +83,7 @@ export default function DashboardLayout({
         {children}
       </main>
     </div>
+    </JobsInProgressProvider>
   );
 }
 

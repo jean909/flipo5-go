@@ -6,6 +6,7 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { listJobs, getJob, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
+import { useJobsInProgress } from './JobsInProgressContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /** Play a subtle click sound when opening the dropdown */
@@ -53,6 +54,7 @@ type CompletedToast = { id: string; type: 'image' | 'video'; threadId: string | 
 export function JobsInProgressButton() {
   const { locale } = useLocale();
   const router = useRouter();
+  const { optimisticJobs, removeOptimisticJob } = useJobsInProgress();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,8 +63,8 @@ export function JobsInProgressButton() {
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
 
-  const fetchJobs = useCallback(() => {
-    setLoading(true);
+  const fetchJobs = useCallback((showLoading = true) => {
+    if (showLoading) setLoading(true);
     listJobs()
       .then((r) => {
         const all = r.jobs ?? [];
@@ -99,11 +101,12 @@ export function JobsInProgressButton() {
           }
         }
         prevPendingIdsRef.current = newIds;
+        pending.forEach((j) => removeOptimisticJob(j.id));
         setJobs(pending);
       })
       .catch(() => setJobs([]))
-      .finally(() => setLoading(false));
-  }, [locale]);
+      .finally(() => { if (showLoading) setLoading(false); });
+  }, [locale, removeOptimisticJob]);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -111,11 +114,15 @@ export function JobsInProgressButton() {
     }
   }, []);
 
+  const hasPending = jobs.some((j) => j.status === 'pending' || j.status === 'running');
   useEffect(() => {
-    fetchJobs();
-    const iv = setInterval(fetchJobs, 6000);
-    return () => clearInterval(iv);
+    fetchJobs(true);
   }, [fetchJobs]);
+  useEffect(() => {
+    const pollInterval = hasPending ? 6000 : 30000;
+    const iv = setInterval(() => fetchJobs(false), pollInterval);
+    return () => clearInterval(iv);
+  }, [fetchJobs, hasPending]);
 
   useEffect(() => {
     if (!open) return;
@@ -126,7 +133,25 @@ export function JobsInProgressButton() {
     return () => document.removeEventListener('click', h);
   }, [open]);
 
-  const pendingJobs = jobs.filter((j) => j.status === 'pending' || j.status === 'running');
+  const apiPendingJobs = jobs.filter((j) => j.status === 'pending' || j.status === 'running');
+  const apiIds = new Set(apiPendingJobs.map((j) => j.id));
+  const optimisticToShow = optimisticJobs.filter((o) => !apiIds.has(o.id));
+  const pendingJobs: Job[] = [
+    ...apiPendingJobs,
+    ...optimisticToShow.map((o) => ({
+      id: o.id,
+      type: o.type,
+      status: 'pending' as const,
+      thread_id: o.thread_id ?? null,
+      user_id: '',
+      input: {},
+      output: null,
+      error: null,
+      cost_cents: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })),
+  ];
 
   const pendingIds = pendingJobs.map((j) => j.id).join(',');
 

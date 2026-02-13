@@ -73,6 +73,26 @@ func (s *Store) Put(ctx context.Context, key string, body io.Reader, contentType
 	return path.Join(s.bucket, key), nil
 }
 
+// Get reads an object from storage. Returns (body, contentType, error).
+func (s *Store) Get(ctx context.Context, key string) (io.ReadCloser, string, error) {
+	if s == nil {
+		return nil, "", fmt.Errorf("storage not configured")
+	}
+	key = strings.TrimPrefix(key, "/")
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:   aws.String(key),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	ct := "application/octet-stream"
+	if out.ContentType != nil {
+		ct = *out.ContentType
+	}
+	return out.Body, ct, nil
+}
+
 // URL returns the public URL for a key. If PublicBaseURL is set (e.g. https://storage.flipo5.com), returns that + key; otherwise returns the key only.
 func (s *Store) URL(key string) string {
 	if s == nil {

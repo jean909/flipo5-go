@@ -14,6 +14,7 @@ import { JobCard } from './components/JobCard';
 import { ImageSettingsRow, type ImageSettings } from './components/ImageSettingsRow';
 import { VideoSettingsRow, type VideoSettings } from './components/VideoSettingsRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useJobsInProgress } from './components/JobsInProgressContext';
 
 type AttachmentItem = { id: string; file: File; previewUrl: string };
 
@@ -27,6 +28,7 @@ function isProfileIncomplete(user: User | null): boolean {
 export default function DashboardPage() {
   const { locale } = useLocale();
   const { incognito, setIncognito, incognitoThreadId, setIncognitoThreadId } = useIncognito();
+  const { addOptimisticJob } = useJobsInProgress();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -98,9 +100,11 @@ export default function DashboardPage() {
     });
   }, []);
   const clearAttachments = useCallback(() => {
-    attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
-    setAttachments([]);
-  }, [attachments]);
+    setAttachments((prev) => {
+      prev.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      return [];
+    });
+  }, []);
 
   const addVideoFile = useCallback((file: File) => {
     const valid = ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
@@ -116,7 +120,9 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     getMe().then((u) => {
+      if (cancelled) return;
       setUser(u ?? null);
       if (u) {
         setFullName(u.full_name ?? '');
@@ -125,11 +131,14 @@ export default function DashboardPage() {
       }
       setProfileLoaded(true);
     });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!profileLoaded || !user || hasStarted) return;
+    let cancelled = false;
     listContent({ page: 1, limit: 8 }).then((r) => {
+      if (cancelled) return;
       const jobs = (r.jobs ?? []).map((j) => ({
         ...j,
         outputUrls: j.status === 'completed' && j.output ? getOutputUrls(j.output) : [],
@@ -137,6 +146,7 @@ export default function DashboardPage() {
       setLatestContent(jobs.filter((j) => j.outputUrls.length > 0).slice(0, 3));
       setContentTotal(r.total ?? 0);
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, [profileLoaded, user, hasStarted]);
 
   useEffect(() => {
@@ -174,19 +184,23 @@ export default function DashboardPage() {
         setIncognito(false);
         setIncognitoThreadId(null);
       }
+      let cancelled = false;
       getThread(loadId)
         .then((r) => {
+          if (cancelled) return;
           setThreadData(r.thread ?? null);
           setThreadJobs(r.jobs ?? []);
         })
         .catch(() => {
+          if (cancelled) return;
           setThreadData(null);
           setThreadJobs([]);
           setThreadId(null);
           if (!incognito) router.replace('/dashboard', { scroll: false });
           else setIncognitoThreadId(null);
         })
-        .finally(() => setThreadLoading(false));
+        .finally(() => { if (!cancelled) setThreadLoading(false); });
+      return () => { cancelled = true; };
     }
     if (!incognito && !urlThreadId && threadId) {
       setThreadId(null);
@@ -195,14 +209,18 @@ export default function DashboardPage() {
     }
   }, [urlThreadId, incognito, incognitoThreadId, router]);
 
+  const effectiveThreadIdRef = useRef(effectiveThreadId);
+  effectiveThreadIdRef.current = effectiveThreadId;
+
   const refreshThread = useCallback(() => {
-    const id = incognito ? incognitoThreadId : threadId;
+    const id = effectiveThreadIdRef.current;
     if (!id) return;
     getThread(id).then((r) => {
+      if (effectiveThreadIdRef.current !== id) return;
       setThreadData(r.thread ?? null);
       setThreadJobs(r.jobs ?? []);
-    }).catch(() => setThreadJobs([]));
-  }, [threadId, incognito, incognitoThreadId]);
+    }).catch(() => { if (effectiveThreadIdRef.current === id) setThreadJobs([]); });
+  }, []);
 
   const isArchived = !!threadData?.archived_at;
 
@@ -317,6 +335,7 @@ export default function DashboardPage() {
           imageInput,
           maxImages: 4,
         });
+        addOptimisticJob({ id: res.job_id, type: 'image', thread_id: res.thread_id ?? tid ?? null });
         setJobId(res.job_id);
         setPendingJobThreadId(res.thread_id ?? tid ?? null);
         setPendingJobType('image');
@@ -356,6 +375,7 @@ export default function DashboardPage() {
           aspectRatio: videoSettings.aspectRatio,
           resolution: videoSettings.resolution,
         });
+        addOptimisticJob({ id: res.job_id, type: 'video', thread_id: res.thread_id ?? tid ?? null });
         setJobId(res.job_id);
         setPendingJobThreadId(res.thread_id ?? tid ?? null);
         setPendingJobType('video');

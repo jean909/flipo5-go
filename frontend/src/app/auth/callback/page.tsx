@@ -14,11 +14,13 @@ function AuthCallbackContent() {
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       const tokenHash = searchParams.get('token_hash');
       const type = searchParams.get('type');
       if (tokenHash && type) {
         const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as 'email' });
+        if (cancelled) return;
         if (error) {
           setStatus('error');
           router.replace('/start');
@@ -26,20 +28,23 @@ function AuthCallbackContent() {
         }
       }
       const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
       if (session) {
         const synced = await syncMe();
+        if (cancelled) return;
         if (synced) {
           setStatus('ok');
           router.replace('/dashboard');
         } else {
           setStatus('error');
-          setTimeout(() => router.replace('/dashboard'), 3000);
+          setTimeout(() => { if (!cancelled) router.replace('/dashboard'); }, 3000);
         }
       } else {
         setStatus('error');
         router.replace('/start');
       }
     })();
+    return () => { cancelled = true; };
   }, [router, searchParams]);
 
   return (

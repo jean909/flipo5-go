@@ -20,6 +20,7 @@ export default function JobDetailPage() {
   useEffect(() => {
     let cancelled = false;
     function fetchJob() {
+      if (cancelled) return;
       getJob(id)
         .then((j) => {
           if (cancelled) return;
