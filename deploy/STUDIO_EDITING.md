@@ -19,6 +19,8 @@
 - API upload: același pattern ca `/api/upload`, limita 50MB
 - DB: projects, projects_items, projects_versions
 
+**IMPORTANT**: Pentru upload în Edit Studio, backend-ul trebuie să aibă S3/R2 configurat (CLOUDFLARE_R2_* sau S3_* în .env). Dacă Store e nil, upload returnează 503 "upload not configured".
+
 ## Next steps
 
 ### Phase 2 - Image editing

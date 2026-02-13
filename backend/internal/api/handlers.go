@@ -1116,7 +1116,7 @@ func (s *Server) addProjectItem(w http.ResponseWriter, r *http.Request) {
 	if body.Type != "image" && body.Type != "video" {
 		body.Type = "image"
 	}
-	if !strings.HasPrefix(body.SourceURL, "https://") {
+	if !strings.HasPrefix(body.SourceURL, "http://") && !strings.HasPrefix(body.SourceURL, "https://") {
 		http.Error(w, `{"error":"invalid source_url"}`, http.StatusBadRequest)
 		return
 	}

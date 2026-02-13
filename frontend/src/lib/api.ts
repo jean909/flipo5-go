@@ -456,7 +456,10 @@ export async function addProjectItem(projectId: string, type: 'image' | 'video',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ type, source_url: sourceUrl, job_id: jobId || undefined }),
   });
-  if (!res.ok) throw new Error('Failed to add item');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err?.error || `Failed to add item (${res.status})`);
+  }
   return res.json();
 }
 
@@ -481,7 +484,10 @@ export async function uploadProjectItem(projectId: string, file: File): Promise<
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err?.error || `Upload failed (${res.status})`);
+  }
   return res.json();
 }
 
