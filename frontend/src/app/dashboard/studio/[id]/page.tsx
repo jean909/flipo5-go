@@ -153,14 +153,17 @@ export default function StudioProjectPage() {
     setUploading(true);
     e.target.value = '';
     try {
-      await uploadProjectItem(id, file);
+      console.log('[studio handleUpload] start', file.name, id);
+      const result = await uploadProjectItem(id, file);
+      console.log('[studio handleUpload] upload ok', result);
       const r = await getProject(id);
       const list = r.items ?? [];
+      console.log('[studio handleUpload] getProject items=', list.length, list.map((i) => ({ id: i.id, source_url: i.source_url, latest_url: i.latest_url })));
       setProject(r.project);
       setItems(list);
-      setProjectName(r.project?.name ?? '');
       setSelectedItem(list[list.length - 1] ?? list[0] ?? null);
     } catch (err) {
+      console.error('[studio handleUpload] error', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);

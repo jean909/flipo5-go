@@ -487,16 +487,20 @@ export async function uploadProjectItem(projectId: string, file: File): Promise<
   if (!token) throw new Error('Not logged in');
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/upload`, {
+  const url = `${API_URL}/api/projects/${projectId}/items/upload`;
+  console.log('[studio upload] POST', url, 'file=', file.name, file.type, file.size);
+  const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
+  const body = await res.json().catch(() => ({})) as { id?: string; error?: string };
   if (!res.ok) {
-    const e = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(e?.error || 'Upload failed');
+    console.error('[studio upload] failed', res.status, body);
+    throw new Error(body?.error || 'Upload failed');
   }
-  return res.json();
+  console.log('[studio upload] ok', body);
+  return body as { id: string };
 }
 
 /** Upload file as new version of project item. One request: upload + add version. */

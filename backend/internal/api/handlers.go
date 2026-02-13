@@ -1169,22 +1169,27 @@ func (s *Server) addProjectItem(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) uploadProjectItem(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
+	log.Printf("[studio upload] request project=%s", idStr)
 	projectID, err := uuid.Parse(idStr)
 	if err != nil {
+		log.Printf("[studio upload] invalid project id: %v", err)
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
 	userID, ok := middleware.UserID(r.Context())
 	if !ok {
+		log.Printf("[studio upload] unauthorized")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if s.Store == nil {
+		log.Printf("[studio upload] store not configured")
 		http.Error(w, `{"error":"upload not configured"}`, http.StatusServiceUnavailable)
 		return
 	}
 	const maxSize = 50 << 20 // 50 MB
 	if err := r.ParseMultipartForm(maxSize * 2); err != nil {
+		log.Printf("[studio upload] parse multipart: %v", err)
 		http.Error(w, `{"error":"multipart too large"}`, http.StatusBadRequest)
 		return
 	}
@@ -1193,14 +1198,17 @@ func (s *Server) uploadProjectItem(w http.ResponseWriter, r *http.Request) {
 		files = r.MultipartForm.File["files"]
 	}
 	if len(files) == 0 {
+		log.Printf("[studio upload] no file in form")
 		http.Error(w, `{"error":"no file"}`, http.StatusBadRequest)
 		return
 	}
+	log.Printf("[studio upload] files=%d project=%s user=%s", len(files), projectID, userID)
 	ctx := r.Context()
 	var itemType string
 	var itemID uuid.UUID
 	for _, fh := range files {
 		if fh.Size > maxSize {
+			log.Printf("[studio upload] skip %s: size %d > max %d", fh.Filename, fh.Size, maxSize)
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(fh.Filename))
@@ -1214,8 +1222,10 @@ func (s *Server) uploadProjectItem(w http.ResponseWriter, r *http.Request) {
 			itemType = "image"
 		}
 		key := fmt.Sprintf("uploads/%s/%s%s", userID.String(), uuid.New().String(), ext)
+		log.Printf("[studio upload] processing %s type=%s key=%s size=%d", fh.Filename, itemType, key, fh.Size)
 		file, err := fh.Open()
 		if err != nil {
+			log.Printf("[studio upload] open file %s: %v", fh.Filename, err)
 			continue
 		}
 		if contentType == "" {
@@ -1224,18 +1234,22 @@ func (s *Server) uploadProjectItem(w http.ResponseWriter, r *http.Request) {
 		_, err = s.Store.Put(ctx, key, file, contentType)
 		file.Close()
 		if err != nil {
-			log.Printf("upload project item %s: %v", fh.Filename, err)
+			log.Printf("[studio upload] Store.Put %s: %v", fh.Filename, err)
 			continue
 		}
 		url := s.Store.URL(key)
+		log.Printf("[studio upload] Put ok url=%s", url)
 		itemID, err = s.DB.AddProjectItem(ctx, projectID, userID, itemType, url, nil)
 		if err != nil {
+			log.Printf("[studio upload] AddProjectItem: %v", err)
 			http.Error(w, `{"error":"add item failed"}`, http.StatusInternalServerError)
 			return
 		}
+		log.Printf("[studio upload] success item=%s url=%s", itemID, url)
 		break
 	}
 	if itemID == uuid.Nil {
+		log.Printf("[studio upload] no item created (all files skipped or failed)")
 		http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
 		return
 	}
