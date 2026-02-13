@@ -7,6 +7,15 @@ import { listProjects, createProject, updateProject, deleteProject, type Project
 import { t } from '@/lib/i18n';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
+/** Dedupe by id - keep first occurrence (backend should not return duplicates) */
+function dedupeProjects(projects: Project[]): Project[] {
+  const byId = new Map<string, Project>();
+  for (const p of projects) {
+    if (!byId.has(p.id)) byId.set(p.id, p);
+  }
+  return Array.from(byId.values());
+}
+
 export default function StudioPage() {
   const { locale } = useLocale();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -21,7 +30,7 @@ export default function StudioPage() {
   const [editName, setEditName] = useState('');
   const contextRef = useRef<HTMLDivElement>(null);
 
-  const refresh = () => listProjects().then((r) => setProjects(r.projects ?? [])).catch(() => setProjects([]));
+  const refresh = () => listProjects().then((r) => setProjects(dedupeProjects(r.projects ?? []))).catch(() => setProjects([]));
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));

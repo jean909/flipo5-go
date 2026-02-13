@@ -297,7 +297,7 @@ export default function StudioProjectPage() {
             </button>
             <span className="text-xs text-theme-fg-subtle shrink-0">{versionLabel} versions</span>
             <Link href="/dashboard/studio" className="px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-xs font-medium shrink-0">
-              New
+              {t(locale, 'studio.backToProjects')}
             </Link>
           </div>
 

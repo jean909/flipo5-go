@@ -1063,9 +1063,13 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	items, _ := s.DB.ListProjectItems(r.Context(), projectID, userID)
+	items, errItems := s.DB.ListProjectItems(r.Context(), projectID, userID)
+	if errItems != nil {
+		items = nil
+	}
+	log.Printf("[getProject] project=%s items=%d", projectID, len(items))
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store") // prevent stale data after upload
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]interface{}{"project": p, "items": items})
 }
 

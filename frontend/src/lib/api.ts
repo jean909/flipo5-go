@@ -408,8 +408,10 @@ export interface ProjectItem {
 export async function listProjects(limit?: number): Promise<{ projects: Project[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const sp = limit ? `?limit=${limit}` : '';
-  const res = await fetch(`${API_URL}/api/projects${sp}`, {
+  const sp = new URLSearchParams();
+  if (limit) sp.set('limit', String(limit));
+  sp.set('_', String(Date.now()));
+  const res = await fetch(`${API_URL}/api/projects?${sp}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   });
@@ -435,7 +437,11 @@ export async function getProject(id: string): Promise<{ project: Project; items:
   if (!token) throw new Error('Not logged in');
   const url = `${API_URL}/api/projects/${id}?_=${Date.now()}`;
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+    },
     cache: 'no-store',
   });
   if (!res.ok) throw new Error('Project not found');
