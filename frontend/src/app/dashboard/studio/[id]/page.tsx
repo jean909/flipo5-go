@@ -232,7 +232,7 @@ export default function StudioProjectPage() {
   if (!project) {
     return (
       <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
-        <p className="text-theme-fg-subtle">{t(locale, 'jobs.notFound')}</p>
+        <p className="text-theme-fg-subtle">{t(locale, 'studio.projectNotFound')}</p>
         <Link href="/dashboard/studio" className="text-theme-accent hover:underline mt-2 inline-block">
           ← {t(locale, 'studio.title')}
         </Link>

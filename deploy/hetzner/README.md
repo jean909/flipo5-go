@@ -157,3 +157,24 @@ curl http://YOUR_SERVER_IP:8080/health/ready
 # Logs
 sudo journalctl -u flipo5-api -f
 ```
+
+## Troubleshooting: "Project not found" după create
+
+Dacă creezi un proiect și primești "Project not found" când intri în el:
+
+1. **DATABASE_URL pe server** – Trebuie să fie același Supabase DB ca în development. Verifică:
+   ```bash
+   ssh root@YOUR_IP "cd ~/my-backend && grep DATABASE_URL .env"
+   ```
+   Folosește **direct connection** (port 5432), nu pooler (6543):
+   `postgresql://postgres:PASSWORD@db.XXX.supabase.co:5432/postgres`
+
+2. **Migrare** – La pornire, API-ul rulează schema. Verifică în logs:
+   ```bash
+   ssh root@YOUR_IP "cd ~/my-backend && docker compose logs api --tail 50"
+   ```
+   Caută `migrate: ok` (succes) sau `migrate FAILED` (eroare – tabelul `projects` poate lipsi).
+
+3. **createProject vs getProject** – Dacă create reușește dar get returnează 404, backend-ul loghează:
+   - `[createProject] ok id=... user=...` – create a mers
+   - `[getProject] notFound project=... user=...` – get nu găsește (posibil DB diferit sau user_id mismatch)

@@ -1035,6 +1035,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.DB.CreateProject(r.Context(), userID, strings.TrimSpace(body.Name))
 	if err != nil {
+		log.Printf("[createProject] user=%s err=%v", userID, err)
 		if errors.Is(err, store.ErrProjectNameExists) {
 			http.Error(w, `{"error":"name exists"}`, http.StatusConflict)
 			return
@@ -1042,6 +1043,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create project"}`, http.StatusInternalServerError)
 		return
 	}
+	log.Printf("[createProject] ok id=%s user=%s", id, userID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id.String(), "name": body.Name})
 }
@@ -1060,6 +1062,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.DB.GetProject(r.Context(), projectID, userID)
 	if err != nil || p == nil {
+		log.Printf("[getProject] notFound project=%s user=%s err=%v", projectID, userID, err)
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
