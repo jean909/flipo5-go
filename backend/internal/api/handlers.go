@@ -75,9 +75,9 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs", s.listJobs)
 		r.Get("/content", s.listContent)
 		r.Get("/jobs/{id}", s.getJob)
-		r.Get("/projects/{id}", s.getProject) // before Route so GET /projects/{id} matches first
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
+			r.Get("/{id}", s.getProject)
 			r.Post("/", s.createProject)
 			r.Delete("/items/{itemId}", s.removeProjectItem)
 			r.Get("/items/{itemId}/versions", s.listProjectVersions)
@@ -1039,12 +1039,16 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.DB.CreateProject(r.Context(), userID, name)
 	if err != nil {
-		log.Printf("[createProject] user=%s err=%v", userID, err)
+		log.Printf("[createProject] user=%s name=%q err=%v", userID, name, err)
 		if errors.Is(err, store.ErrProjectNameExists) {
-			http.Error(w, `{"error":"name exists"}`, http.StatusConflict)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "name exists"})
 			return
 		}
-		http.Error(w, `{"error":"create project"}`, http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 	log.Printf("[createProject] ok id=%s user=%s", id, userID)

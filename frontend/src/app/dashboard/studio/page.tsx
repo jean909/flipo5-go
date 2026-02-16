@@ -57,8 +57,13 @@ export default function StudioPage() {
       setNewName('');
       window.location.href = `/dashboard/studio/${id}`;
     } catch (e: unknown) {
-      if ((e as Error)?.message === 'name_exists') {
+      const msg = (e as Error)?.message ?? 'Unknown error';
+      if (msg === 'name_exists') {
         setNameError(t(locale, 'studio.nameExists'));
+      } else if (msg === 'Not logged in' || msg === 'session_expired') {
+        setNameError('Session expired. Please log in again.');
+      } else {
+        setNameError(msg);
       }
       setCreating(false);
     } finally {

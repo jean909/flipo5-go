@@ -429,8 +429,12 @@ export async function createProject(name?: string): Promise<{ id: string; name: 
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ name: name || 'Untitled' }),
   });
+  if (res.status === 401) throw new Error('session_expired');
   if (res.status === 409) throw new Error('name_exists');
-  if (!res.ok) throw new Error('Failed to create project');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body?.error || `Failed to create project (${res.status})`);
+  }
   return res.json();
 }
 
