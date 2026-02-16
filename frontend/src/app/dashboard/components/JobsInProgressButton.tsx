@@ -194,22 +194,31 @@ export function JobsInProgressButton() {
     getToken().then((token) => {
       if (cancelled || !token) return;
       
-      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/jobs/stream?token=${encodeURIComponent(token)}`;
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const url = `${API_URL}/api/jobs/stream?token=${encodeURIComponent(token)}`;
+      console.log('[JobsInProgressButton] Connecting to SSE:', url.replace(/token=[^&]+/, 'token=***'));
       const es = new EventSource(url);
       
       es.onmessage = (event) => {
         if (cancelled) return;
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'connected') return;
+          if (data.type === 'connected') {
+            console.log('[JobsInProgressButton] SSE connected');
+            return;
+          }
           if (data.jobId) {
-            // Job status update - refresh jobs list
+            console.log('[JobsInProgressButton] Job update received:', data);
+            // Force immediate refresh with cache bust
             fetchJobs(false);
           }
-        } catch {}
+        } catch (err) {
+          console.warn('[JobsInProgressButton] SSE parse error:', err);
+        }
       };
       
-      es.onerror = () => {
+      es.onerror = (err) => {
+        console.warn('[JobsInProgressButton] SSE error:', err);
         if (!cancelled) {
           // Fallback to polling on SSE error
           setTimeout(() => fetchJobs(false), 2000);
@@ -227,7 +236,7 @@ export function JobsInProgressButton() {
         sseRef.current = null;
       }
     };
-  }, [fetchJobs]);
+  }, []); // Remove fetchJobs dependency to prevent reconnections
   
   useEffect(() => {
     fetchJobs(true);

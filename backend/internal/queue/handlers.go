@@ -326,6 +326,12 @@ Response style:
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
 		if h.Stream != nil {
 			_ = h.Stream.Publish(ctx, p.JobID, finalOutput, true)
+			// Also publish to user-specific channel for streamAllJobs (chat jobs)
+			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"chat"}`, p.JobID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+			}
 		}
 		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
 			h.invalidateJobCaches(ctx, job)
@@ -545,6 +551,12 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", out, "", 0, "")
 	if h.Stream != nil {
 		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+		// Also publish to user-specific channel for streamAllJobs
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"image"}`, p.JobID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+		}
 	}
 	if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
 		h.invalidateJobCaches(ctx, job)
@@ -628,6 +640,12 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
 	if h.Stream != nil {
 		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+		// Also publish to user-specific channel for streamAllJobs
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"video"}`, p.JobID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+		}
 	}
 	if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
 		h.invalidateJobCaches(ctx, job)
