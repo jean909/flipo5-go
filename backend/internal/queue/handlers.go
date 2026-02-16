@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	repgo "github.com/replicate/replicate-go"
+	"flipo5/backend/internal/cache"
 	"flipo5/backend/internal/config"
 	"flipo5/backend/internal/replicate"
 	"flipo5/backend/internal/stream"
@@ -29,6 +30,26 @@ func jobErrorMsg(err error) string {
 		return ErrMsgServerUnavailable
 	}
 	return err.Error()
+}
+
+// invalidateJobCaches clears thread and content cache when job status changes
+func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
+	if h.Cache == nil || job == nil {
+		return
+	}
+	// Invalidate thread cache if job belongs to a thread
+	if job.ThreadID != nil {
+		keys := []string{
+			"thread:" + job.UserID.String() + ":" + job.ThreadID.String(),
+			"threads:" + job.UserID.String() + ":archived:false",
+			"threads:" + job.UserID.String() + ":archived:true",
+		}
+		_ = h.Cache.Delete(ctx, keys...)
+	}
+	// Invalidate content cache if job produces media content
+	if job.Type == "image" || job.Type == "video" {
+		_ = h.Cache.DeleteByPrefix(ctx, "content:"+job.UserID.String()+":")
+	}
 }
 
 // Context strategy (research-based): user questions = topic anchor; full assistant replies = token-heavy.
@@ -124,6 +145,7 @@ type Handlers struct {
 	Store  *storage.Store
 	Asynq  *asynq.Client
 	Stream *stream.Publisher // Redis pub/sub for real-time SSE
+	Cache  *cache.Redis     // for cache invalidation when jobs complete
 }
 
 func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
@@ -226,6 +248,10 @@ Response style:
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, model, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		if h.Stream != nil {
+			errMsg := jobErrorMsg(err)
+			_ = h.Stream.Publish(ctx, p.JobID, fmt.Sprintf(`{"status":"failed","error":"%s"}`, errMsg), true)
+		}
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, pred.ID)
@@ -300,6 +326,9 @@ Response style:
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
 		if h.Stream != nil {
 			_ = h.Stream.Publish(ctx, p.JobID, finalOutput, true)
+		}
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			h.invalidateJobCaches(ctx, job)
 		}
 	} else {
 		// Fallback: model doesn't support stream; poll until done
@@ -394,6 +423,15 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+		if h.Stream != nil {
+			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
+			// Also publish to user-specific channel for streamAllJobs
+			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, p.JobID.String(), job.Type)
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+			}
+		}
 	if h.Repl == nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
 		return nil
@@ -454,6 +492,18 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		// nano-banana returns single URL string; normalize to {"output": "url"} for r2mirror
 		outNormalized := normalizeNanoBananaOutput(out)
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
+		if h.Stream != nil {
+			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+			// Also publish to user-specific channel for streamAllJobs
+			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"image"}`, p.JobID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+			}
+		}
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			h.invalidateJobCaches(ctx, job)
+		}
 		go mirrorMediaToR2(h, p.JobID, outNormalized, "image")
 		return nil
 	}
@@ -482,6 +532,10 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		if h.Stream != nil {
+			errMsg := jobErrorMsg(err)
+			_ = h.Stream.Publish(ctx, p.JobID, fmt.Sprintf(`{"status":"failed","error":"%s"}`, errMsg), true)
+		}
 		return err
 	}
 	// Seedream returns array directly; r2mirror expects {"output": [...]}
@@ -489,6 +543,12 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		out = map[string]interface{}{"output": arr}
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", out, "", 0, "")
+	if h.Stream != nil {
+		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+	}
+	if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+		h.invalidateJobCaches(ctx, job)
+	}
 	go mirrorMediaToR2(h, p.JobID, out, "image")
 	return nil
 }
@@ -510,8 +570,20 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+		if h.Stream != nil {
+			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
+			// Also publish to user-specific channel for streamAllJobs
+			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, p.JobID.String(), job.Type)
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+			}
+		}
 	if h.Repl == nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
+		if h.Stream != nil {
+			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"failed","error":"Replicate not configured"}`, true)
+		}
 		return nil
 	}
 	model := h.Cfg.ModelVideo
@@ -543,6 +615,10 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		if h.Stream != nil {
+			errMsg := jobErrorMsg(err)
+			_ = h.Stream.Publish(ctx, p.JobID, fmt.Sprintf(`{"status":"failed","error":"%s"}`, errMsg), true)
+		}
 		return err
 	}
 	outNormalized := out
@@ -550,6 +626,12 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 		outNormalized = map[string]interface{}{"output": s}
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
+	if h.Stream != nil {
+		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+	}
+	if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+		h.invalidateJobCaches(ctx, job)
+	}
 	go mirrorMediaToR2(h, p.JobID, outNormalized, "video")
 	return nil
 }

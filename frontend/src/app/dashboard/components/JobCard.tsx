@@ -97,7 +97,7 @@ export function JobCard({
           }
           setJob(j);
           if (j.status === 'pending' || j.status === 'running') {
-            setTimeout(poll, 1500);
+            setTimeout(poll, 2500);
           }
         });
     }
@@ -322,7 +322,9 @@ export function JobCard({
         ? t(locale, 'jobs.status.running')
         : job.status === 'completed'
           ? t(locale, 'jobs.status.completed')
-          : t(locale, 'jobs.status.failed');
+          : job.status === 'cancelled'
+            ? t(locale, 'jobs.status.cancelled')
+            : t(locale, 'jobs.status.failed');
 
   const cardCls = dark
     ? 'mt-3 p-3 border border-theme-border-subtle rounded-lg bg-theme-bg-subtle'

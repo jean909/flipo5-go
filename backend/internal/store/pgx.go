@@ -16,7 +16,18 @@ type DB struct {
 }
 
 func NewDB(ctx context.Context, connString string) (*DB, error) {
-	pool, err := pgxpool.New(ctx, connString)
+	config, err := pgxpool.ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	// Increase pool for workers (8) + concurrent API polling (multiple users × multiple jobs)
+	if config.MaxConns < 20 {
+		config.MaxConns = 20
+	}
+	if config.MinConns < 2 {
+		config.MinConns = 2
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}

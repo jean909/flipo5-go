@@ -85,7 +85,14 @@ func main() {
 		log.Print("s3/r2 storage configured (R2/S3)")
 	}
 
-	qHandlers := &queue.Handlers{DB: db, Cfg: cfg, Repl: repl, Store: s3Store, Asynq: asynqClient, Stream: streamPub}
+	var apiCache *cache.Redis
+	if c, err := cache.NewRedis(cfg.Redis); err == nil {
+		apiCache = c
+		defer apiCache.Close()
+		log.Print("cache: Redis enabled for threads/content")
+	}
+
+	qHandlers := &queue.Handlers{DB: db, Cfg: cfg, Repl: repl, Store: s3Store, Asynq: asynqClient, Stream: streamPub, Cache: apiCache}
 	mux := asynq.NewServeMux()
 	qHandlers.Register(mux)
 	concurrency := cfg.AsynqConcurrency
@@ -125,12 +132,6 @@ func main() {
 			log.Printf("supabase JWKS: %v (auth will use legacy secret if set)", errJWKS)
 			jwks = nil
 		}
-	}
-	var apiCache *cache.Redis
-	if c, err := cache.NewRedis(cfg.Redis); err == nil {
-		apiCache = c
-		defer apiCache.Close()
-		log.Print("cache: Redis enabled for threads/content")
 	}
 	srv := api.NewServer(db, asynqClient, s3Store, streamSub, apiCache, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
 	handler := cors.New(cors.Options{

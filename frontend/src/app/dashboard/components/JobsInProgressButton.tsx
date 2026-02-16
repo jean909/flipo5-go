@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
-import { listJobs, getJob, type Job } from '@/lib/api';
+import { listJobs, getJob, getToken, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { useJobsInProgress } from './JobsInProgressContext';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -65,6 +65,7 @@ export function JobsInProgressButton() {
   const [, setTick] = useState(0); // triggers re-render so progress bar updates
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
+  const sseRef = useRef<EventSource | null>(null);
 
   const fetchJobs = useCallback((showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -186,14 +187,59 @@ export function JobsInProgressButton() {
   }, []);
 
   const hasPending = jobs.some((j) => j.status === 'pending' || j.status === 'running');
+  
+  // Real-time SSE connection for job updates
+  useEffect(() => {
+    let cancelled = false;
+    getToken().then((token) => {
+      if (cancelled || !token) return;
+      
+      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/jobs/stream?token=${encodeURIComponent(token)}`;
+      const es = new EventSource(url);
+      
+      es.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'connected') return;
+          if (data.jobId) {
+            // Job status update - refresh jobs list
+            fetchJobs(false);
+          }
+        } catch {}
+      };
+      
+      es.onerror = () => {
+        if (!cancelled) {
+          // Fallback to polling on SSE error
+          setTimeout(() => fetchJobs(false), 2000);
+        }
+        es.close();
+      };
+      
+      sseRef.current = es;
+    });
+    
+    return () => {
+      cancelled = true;
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, [fetchJobs]);
+  
   useEffect(() => {
     fetchJobs(true);
   }, [fetchJobs]);
+  
+  // Minimal fallback polling (SSE handles real-time updates)
   useEffect(() => {
-    const pollInterval = hasPending ? 2000 : 30000;
+    // Only poll occasionally to catch any SSE missed updates
+    const pollInterval = 30000; // 30s regardless of pending status
     const iv = setInterval(() => fetchJobs(false), pollInterval);
     return () => clearInterval(iv);
-  }, [fetchJobs, hasPending]);
+  }, [fetchJobs]);
 
   useEffect(() => {
     if (!open) return;
@@ -203,6 +249,16 @@ export function JobsInProgressButton() {
     document.addEventListener('click', h);
     return () => document.removeEventListener('click', h);
   }, [open]);
+  
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, []);
 
   const apiPendingJobs = jobs.filter((j) => j.status === 'pending' || j.status === 'running');
   const apiIds = new Set(apiPendingJobs.map((j) => j.id));
@@ -324,7 +380,7 @@ export function JobsInProgressButton() {
             <div className="px-3 py-2 border-b border-theme-border-subtle text-sm font-medium text-theme-fg">
               {t(locale, 'jobsInProgress.title')}
             </div>
-            <div className="max-h-64 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto scrollbar-subtle">
               {loading && pendingJobs.length === 0 && completedToasts.length === 0 && failedToasts.length === 0 ? (
                 <p className="p-4 text-sm text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
               ) : pendingJobs.length === 0 && completedToasts.length === 0 && failedToasts.length === 0 ? (

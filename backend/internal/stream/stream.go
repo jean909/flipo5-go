@@ -49,6 +49,14 @@ func (p *Publisher) Publish(ctx context.Context, jobID uuid.UUID, output string,
 	return p.rdb.Publish(ctx, channelKey(jobID), string(b)).Err()
 }
 
+// PublishRaw publishes raw message to any channel (for user-specific job updates)
+func (p *Publisher) PublishRaw(ctx context.Context, channel, message string) error {
+	if p == nil || p.rdb == nil {
+		return nil
+	}
+	return p.rdb.Publish(ctx, channel, message).Err()
+}
+
 func (p *Publisher) Close() error {
 	if p != nil && p.rdb != nil {
 		return p.rdb.Close()
@@ -101,6 +109,14 @@ func (s *Subscriber) Subscribe(ctx context.Context, jobID uuid.UUID, onChunk fun
 			}
 		}
 	}
+}
+
+// SubscribeRaw subscribes to a channel and returns pubsub object for custom handling
+func (s *Subscriber) SubscribeRaw(ctx context.Context, channel string) *redis.PubSub {
+	if s == nil || s.rdb == nil {
+		return nil
+	}
+	return s.rdb.Subscribe(ctx, channel)
 }
 
 func (s *Subscriber) Close() error {

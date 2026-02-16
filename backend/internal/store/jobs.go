@@ -104,9 +104,30 @@ func (db *DB) UpdateJobStatus(ctx context.Context, id uuid.UUID, status string, 
 	if replicateID != "" {
 		repID = &replicateID
 	}
-	_, err := db.Pool.Exec(ctx,
-		`UPDATE jobs SET status=$2, output=$3, error=$4, cost_cents=$5, replicate_id=$6, updated_at=NOW() WHERE id=$1`,
-		id, status, outBytes, errPtr, costCents, repID)
+	// Optimistic locking: only update if current status allows transition
+	validTransitions := map[string][]string{
+		"pending": {"running", "failed", "cancelled"},
+		"running": {"completed", "failed", "cancelled"},
+	}
+	
+	// First try with status check for safety
+	result, err := db.Pool.Exec(ctx,
+		`UPDATE jobs SET status=$2, output=$3, error=$4, cost_cents=$5, replicate_id=$6, updated_at=NOW() 
+		 WHERE id=$1 AND (status = ANY($7) OR status = $2)`,
+		id, status, outBytes, errPtr, costCents, repID, validTransitions[status])
+	
+	if err != nil {
+		return err
+	}
+	
+	// Check if update actually happened
+	if result.RowsAffected() == 0 {
+		// Fallback: force update (job may be in unexpected state)
+		_, err = db.Pool.Exec(ctx,
+			`UPDATE jobs SET status=$2, output=$3, error=$4, cost_cents=$5, replicate_id=$6, updated_at=NOW() WHERE id=$1`,
+			id, status, outBytes, errPtr, costCents, repID)
+	}
+	
 	return err
 }
 

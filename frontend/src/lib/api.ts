@@ -10,10 +10,34 @@ export function getMediaDisplayUrl(url: string | null | undefined, token: string
   return `${API_URL}/api/media?key=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
 }
 
+const TOKEN_REFRESH_BUFFER_MS = 60_000; // refresh if expires in < 1 min
+let refreshPromise: Promise<string | null> | null = null;
+
+/** Returns a valid access token. Refreshes if expired or about to expire. Keeps session alive during concurrent job polling. */
 export async function getToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token ?? null;
+  if (!session?.access_token) return null;
+
+  try {
+    const payload = JSON.parse(atob(session.access_token.split('.')[1]));
+    const exp = (payload.exp ?? 0) * 1000;
+    if (Date.now() >= exp - TOKEN_REFRESH_BUFFER_MS) {
+      refreshPromise ??= supabase.auth.refreshSession()
+        .then(({ data: { session: s } }) => {
+          refreshPromise = null;
+          return s?.access_token ?? null;
+        })
+        .catch(() => {
+          refreshPromise = null;
+          return null;
+        });
+      return await refreshPromise;
+    }
+  } catch {
+    // invalid JWT, return as-is
+  }
+  return session.access_token;
 }
 
 /** Download media via backend proxy (avoids CORS, forces attachment). */
@@ -324,6 +348,7 @@ export interface Job {
   output: Record<string, unknown> | null;
   error: string | null;
   cost_cents: number;
+  replicate_id?: string | null;
   created_at: string;
   updated_at: string;
 }

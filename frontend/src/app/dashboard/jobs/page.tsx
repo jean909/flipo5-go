@@ -22,6 +22,7 @@ export default function JobsPage() {
     if (status === 'pending') return t(locale, 'jobs.status.pending');
     if (status === 'running') return t(locale, 'jobs.status.running');
     if (status === 'completed') return t(locale, 'jobs.status.completed');
+    if (status === 'cancelled') return t(locale, 'jobs.status.cancelled');
     return t(locale, 'jobs.status.failed');
   };
   const typeT = (type: string) => {
