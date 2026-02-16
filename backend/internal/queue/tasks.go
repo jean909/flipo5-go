@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	TypeChat            = "chat"
-	TypeImage           = "image"
-	TypeVideo           = "video"
-	TypeSummarizeThread = "summarize_thread"
-	JobTimeoutMinutes   = 5
+	TypeChat              = "chat"
+	TypeImage             = "image"
+	TypeVideo             = "video"
+	TypeSummarizeThread   = "summarize_thread"
+	TypeCancelStaleJobs   = "cancel_stale_jobs"
+	JobTimeoutMinutes     = 5
+	StaleJobCleanupMinutes = 5
 )
 
 var taskTimeout = asynq.Timeout(JobTimeoutMinutes * time.Minute)
@@ -65,4 +67,9 @@ func NewSummarizeThreadTask(threadID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeSummarizeThread, payload, asynq.Queue("default"), asynq.MaxRetry(2), taskTimeout), nil
+}
+
+// NewCancelStaleJobsTask creates a task to cancel jobs stuck in pending/running > 5 min. No payload.
+func NewCancelStaleJobsTask() (*asynq.Task, error) {
+	return asynq.NewTask(TypeCancelStaleJobs, nil, asynq.Queue("default"), asynq.MaxRetry(1), asynq.Timeout(2*time.Minute)), nil
 }

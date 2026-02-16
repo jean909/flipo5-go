@@ -77,6 +77,7 @@ export function JobCard({
   const streamBufferRef = useRef('');
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,30 +99,28 @@ export function JobCard({
           if (j.status === 'pending' || j.status === 'running') {
             setTimeout(poll, 1500);
           }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setNotFound(true);
-            onNotFound?.();
-          }
         });
     }
     poll();
     return () => { cancelled = true; };
-  }, [jobId]);
+  }, [jobId, onNotFound, retryKey]);
 
   // Retry fetch when completed image/video job has no URLs (mirror may still be updating)
   useEffect(() => {
     if (!job || (job.type !== 'image' && job.type !== 'video') || job.status !== 'completed' || retryCount >= 3) return;
     const urls = getOutputUrls(job.output);
     if (urls.length > 0) return;
+    let cancelled = false;
     const t = setTimeout(() => {
       getJob(jobId).then((j) => {
-        if (j) setJob(j);
-        setRetryCount((c) => c + 1);
+        if (!cancelled && j) setJob(j);
+        if (!cancelled) setRetryCount((c) => c + 1);
       });
     }, 800);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [job?.id, job?.output, job?.status, job?.type, jobId, retryCount]);
 
   // Buffer flush: SSE → state every 50ms (ChatGPT-style, fewer re-renders). Only when streaming.
@@ -165,19 +164,21 @@ export function JobCard({
   useEffect(() => {
     if (variant !== 'chat' || !jobId || !job) return;
     if (job.status !== 'pending' && job.status !== 'running') return;
-    let cancelled = false;
+    const cancelledRef = { current: false };
     getToken().then((token) => {
-      if (cancelled || !token) return;
+      if (cancelledRef.current || !token) return;
       const url = getJobStreamUrl(jobId, token);
       if (!url) return;
       const es = new EventSource(url);
       esRef.current = es;
       es.onmessage = (e) => {
+        if (cancelledRef.current) return;
         try {
           const d = JSON.parse(e.data) as { output?: string; status?: string };
           if (d.output !== undefined) streamBufferRef.current = d.output;
           if (d.status) setStreamStatus(d.status);
           if (d.status === 'completed' || d.status === 'failed') {
+            if (cancelledRef.current) return;
             if (d.output !== undefined) setStreamOutput(d.output);
             es.close();
             esRef.current = null;
@@ -200,7 +201,7 @@ export function JobCard({
       };
     });
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;
@@ -212,7 +213,20 @@ export function JobCard({
   const textCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';
   const errCls = dark ? 'text-theme-danger' : 'text-theme-danger';
 
-  if (notFound) return <p className={`text-sm mt-2 ${textCls}`}>{t(locale, 'jobs.notFound')}</p>;
+  if (notFound) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className={`text-sm mt-2 ${textCls}`}>{t(locale, 'jobs.notFound')}</p>
+        <button
+          type="button"
+          onClick={() => setRetryKey((k) => k + 1)}
+          className="text-sm text-theme-accent hover:underline self-start"
+        >
+          {t(locale, 'common.retry') || 'Retry'}
+        </button>
+      </div>
+    );
+  }
 
   // Image job: pending/running = ChatGPT-style gradient loader card
   if (job && job.type === 'image' && (job.status === 'pending' || job.status === 'running')) {

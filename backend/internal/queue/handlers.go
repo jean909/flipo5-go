@@ -554,6 +554,20 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+func (h *Handlers) CancelStaleJobsHandler(ctx context.Context, t *asynq.Task) error {
+	jobs, err := h.DB.ListStalePendingJobs(ctx, JobTimeoutMinutes)
+	if err != nil || len(jobs) == 0 {
+		return err
+	}
+	for _, j := range jobs {
+		if j.ReplicateID != nil && *j.ReplicateID != "" && h.Repl != nil {
+			_ = h.Repl.CancelPrediction(ctx, *j.ReplicateID)
+		}
+		_ = h.DB.UpdateJobStatus(ctx, j.ID, "failed", nil, "Job cancelled (timeout)", 0, "")
+	}
+	return nil
+}
+
 func (h *Handlers) SummarizeThreadHandler(ctx context.Context, t *asynq.Task) error {
 	var p SummarizeThreadPayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -632,4 +646,5 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeImage, h.ImageHandler)
 	mux.HandleFunc(TypeVideo, h.VideoHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
+	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }

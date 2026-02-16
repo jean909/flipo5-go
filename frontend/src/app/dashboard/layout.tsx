@@ -10,6 +10,7 @@ import { t } from '@/lib/i18n';
 import { Sidebar } from './components/Sidebar';
 import { JobsInProgressButton } from './components/JobsInProgressButton';
 import { JobsInProgressProvider } from './components/JobsInProgressContext';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function DashboardLayout({
   children,
@@ -80,7 +81,7 @@ export default function DashboardLayout({
           <JobsInProgressButton />
         </div>
         )}
-        {children}
+        <ErrorBoundary>{children}</ErrorBoundary>
       </main>
     </div>
     </JobsInProgressProvider>

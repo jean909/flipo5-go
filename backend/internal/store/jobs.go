@@ -221,3 +221,25 @@ func (db *DB) ListJobsByThread(ctx context.Context, threadID, userID uuid.UUID) 
 	}
 	return list, rows.Err()
 }
+
+// ListStalePendingJobs returns jobs in pending/running for longer than maxAgeMinutes. Used for cleanup.
+func (db *DB) ListStalePendingJobs(ctx context.Context, maxAgeMinutes int) ([]Job, error) {
+	rows, err := db.Pool.Query(ctx,
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text
+		 FROM jobs WHERE status IN ('pending','running') AND updated_at < NOW() - ($1 || ' minutes')::interval
+		 ORDER BY updated_at ASC LIMIT 100`,
+		fmt.Sprint(maxAgeMinutes))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []Job
+	for rows.Next() {
+		var j Job
+		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.CreatedAt, &j.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, j)
+	}
+	return list, rows.Err()
+}

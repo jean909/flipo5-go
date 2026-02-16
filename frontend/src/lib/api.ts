@@ -366,16 +366,19 @@ export async function listContent(params: ListContentParams = {}): Promise<{
   return res.json();
 }
 
-/** Returns job or null if 404 (e.g. stale id). Throws on other errors. */
+/** Returns job or null if not found / error. Never throws - caller can show "not found" + retry. */
 export async function getJob(id: string): Promise<Job | null> {
-  const token = await getToken();
-  if (!token) throw new Error('Not logged in');
-  const res = await fetch(`${API_URL}/api/jobs/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error('Job not found');
-  return res.json();
+  try {
+    const token = await getToken();
+    if (!token) return null;
+    const res = await fetch(`${API_URL}/api/jobs/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 /** SSE stream URL for a job (for EventSource). Append token via query for auth. */

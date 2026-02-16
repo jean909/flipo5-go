@@ -101,6 +101,21 @@ func main() {
 	}()
 	defer asynqSrv.Shutdown()
 
+	scheduler := asynq.NewScheduler(redisOpt, nil)
+	if task, err := queue.NewCancelStaleJobsTask(); err == nil {
+		if _, err := scheduler.Register("@every 5m", task); err != nil {
+			log.Printf("scheduler: failed to register cancel_stale_jobs: %v", err)
+		} else {
+			log.Print("scheduler: cancel_stale_jobs every 5m")
+		}
+	}
+	go func() {
+		if err := scheduler.Run(); err != nil {
+			log.Printf("scheduler: %v", err)
+		}
+	}()
+	defer scheduler.Shutdown()
+
 	var jwks *keyfunc.JWKS
 	if cfg.SupabaseURL != "" {
 		jwksURL := cfg.SupabaseURL + "/auth/v1/.well-known/jwks.json"
