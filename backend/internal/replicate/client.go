@@ -39,6 +39,12 @@ func (c *Client) GetPrediction(ctx context.Context, id string) (*repgo.Predictio
 	return c.client.GetPrediction(ctx, id)
 }
 
+// CancelPrediction cancels a running prediction on Replicate so it doesn't stay pending
+func (c *Client) CancelPrediction(ctx context.Context, id string) error {
+	_, err := c.client.CancelPrediction(ctx, id)
+	return err
+}
+
 // CreatePredictionWithStream creates a prediction with stream=true and returns the prediction (with URLs.Stream).
 func (c *Client) CreatePredictionWithStream(ctx context.Context, identifier string, input repgo.PredictionInput) (*repgo.Prediction, error) {
 	return c.client.CreatePrediction(ctx, identifier, input, nil, true)

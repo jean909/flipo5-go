@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -244,15 +245,40 @@ Response style:
 		}, func() {})
 		// Use GetPrediction final output - Replicate returns complete output; stream can lose chunks
 		finalOutput := acc.String()
+		var lastPred *repgo.Prediction
 		for i := 0; i < 5; i++ {
 			select {
 			case <-ctx.Done():
+				_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
 				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
 				return nil
 			default:
 			}
 			predState, err := h.Repl.GetPrediction(ctx, pred.ID)
-			if err != nil || predState.Status != "succeeded" {
+			if err != nil {
+				if i < 4 {
+					time.Sleep(500 * time.Millisecond)
+				}
+				continue
+			}
+			lastPred = predState
+			if predState.Status == "failed" || predState.Status == "canceled" {
+				_ = h.Repl.CancelPrediction(ctx, pred.ID)
+				errMsg := ""
+				if predState.Error != nil {
+					if s, ok := predState.Error.(string); ok {
+						errMsg = s
+					} else {
+						errMsg = fmt.Sprintf("%v", predState.Error)
+					}
+				}
+				if errMsg == "" {
+					errMsg = "Prediction failed"
+				}
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, errMsg, 0, pred.ID)
+				return nil
+			}
+			if predState.Status != "succeeded" {
 				if i < 4 {
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -262,11 +288,13 @@ Response style:
 				if m, ok := out.(map[string]interface{}); ok {
 					if s, _ := m["output"].(string); s != "" {
 						finalOutput = s // API = source of truth, stream can truncate
-						break
 					}
 				}
 			}
 			break
+		}
+		if lastPred != nil && (lastPred.Status == "failed" || lastPred.Status == "canceled") {
+			return nil // already updated above
 		}
 		final := map[string]interface{}{"output": finalOutput}
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
@@ -279,6 +307,7 @@ Response style:
 		for {
 			select {
 			case <-ctx.Done():
+				_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
 				_ = h.DB.UpdateJobStatus(ctx, jobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
 				return nil
 			default:
@@ -294,6 +323,7 @@ Response style:
 				_ = h.DB.UpdateJobStatus(ctx, jobID, "completed", normalized, "", 0, pred.ID)
 				goto done
 			case "failed", "canceled":
+				_ = h.Repl.CancelPrediction(ctx, pred.ID)
 				errMsg := ""
 				if predState.Error != nil {
 					if s, ok := predState.Error.(string); ok {

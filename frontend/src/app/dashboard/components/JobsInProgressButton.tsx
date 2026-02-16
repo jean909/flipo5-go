@@ -7,6 +7,7 @@ import { t } from '@/lib/i18n';
 import { listJobs, getJob, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { useJobsInProgress } from './JobsInProgressContext';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /** Play a subtle click sound when opening the dropdown */
@@ -50,6 +51,7 @@ function playCompletionSound() {
 }
 
 type CompletedToast = { id: string; type: 'image' | 'video'; threadId: string | null; durationSec: number; imageUrl?: string };
+type FailedToast = { id: string; type: 'image' | 'video'; error: string; threadId: string | null };
 
 export function JobsInProgressButton() {
   const { locale } = useLocale();
@@ -59,6 +61,7 @@ export function JobsInProgressButton() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [completedToasts, setCompletedToasts] = useState<CompletedToast[]>([]);
+  const [failedToasts, setFailedToasts] = useState<FailedToast[]>([]);
   const [progressByJobId, setProgressByJobId] = useState<Record<string, number>>({});
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
@@ -74,7 +77,17 @@ export function JobsInProgressButton() {
         if (pending.length > 0) {
           const verified = await Promise.all(pending.map((j) => getJob(j.id).then((fresh) => fresh ?? j)));
           const actuallyCompleted = verified.filter((j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
+          const actuallyFailed = verified.filter((j) => j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
           pending = verified.filter((j) => j.status === 'pending' || j.status === 'running');
+          if (actuallyFailed.length > 0) {
+            const toAdd: FailedToast[] = actuallyFailed.map((j) => ({
+              id: j.id,
+              type: j.type as 'image' | 'video',
+              error: j.error || 'Failed',
+              threadId: j.thread_id ?? null,
+            }));
+            setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+          }
           if (actuallyCompleted.length > 0) {
             playCompletionSound();
             const toAdd = actuallyCompleted.map((j) => {
@@ -97,6 +110,16 @@ export function JobsInProgressButton() {
         const completedIds = [...prevIds].filter((id) => !newIds.has(id));
         if (completedIds.length > 0) {
           const results = await Promise.all(completedIds.map((id) => getJob(id)));
+          const failed = results.filter((j): j is Job => !!j && j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
+          if (failed.length > 0) {
+            const toAdd: FailedToast[] = failed.map((j) => ({
+              id: j.id,
+              type: j.type as 'image' | 'video',
+              error: j.error || 'Failed',
+              threadId: j.thread_id ?? null,
+            }));
+            setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+          }
           const toAdd = results
             .filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'))
             .map((j) => {
@@ -205,7 +228,7 @@ export function JobsInProgressButton() {
     }, 1200);
     return () => clearInterval(iv);
   }, [pendingIds]);
-  const totalCount = pendingJobs.length + completedToasts.length;
+  const totalCount = pendingJobs.length + completedToasts.length + failedToasts.length;
 
   const statusT = (status: string) =>
     status === 'pending' ? t(locale, 'jobs.status.pending') : t(locale, 'jobs.status.running');
@@ -232,6 +255,12 @@ export function JobsInProgressButton() {
   };
 
   const dismissToast = (id: string) => setCompletedToasts((prev) => prev.filter((x) => x.id !== id));
+  const dismissFailedDialog = () => {
+    if (failedToasts.length > 0) {
+      setFailedToasts((prev) => prev.slice(1));
+    }
+  };
+  const currentFailedToast = failedToasts[0] ?? null;
   const goToSession = (toast: CompletedToast) => {
     dismissToast(toast.id);
     if (toast.threadId) router.push(`/dashboard?thread=${toast.threadId}`);
@@ -250,7 +279,7 @@ export function JobsInProgressButton() {
         className={`relative flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-sm border transition-all group ${
           pendingJobs.length > 0
             ? 'bg-theme-accent-muted text-theme-accent border-theme-accent-border hover:bg-theme-accent-hover'
-            : completedToasts.length > 0
+            : completedToasts.length > 0 || failedToasts.length > 0
             ? 'bg-theme-bg-hover-strong text-theme-fg border-theme-border-strong hover:bg-theme-bg-hover'
             : 'bg-theme-bg-hover text-theme-fg/80 border-theme-border hover:bg-theme-bg-hover-strong hover:text-theme-fg hover:border-theme-border-hover'
         }`}
@@ -284,9 +313,9 @@ export function JobsInProgressButton() {
               {t(locale, 'jobsInProgress.title')}
             </div>
             <div className="max-h-64 overflow-y-auto">
-              {loading && pendingJobs.length === 0 && completedToasts.length === 0 ? (
+              {loading && pendingJobs.length === 0 && completedToasts.length === 0 && failedToasts.length === 0 ? (
                 <p className="p-4 text-sm text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
-              ) : pendingJobs.length === 0 && completedToasts.length === 0 ? (
+              ) : pendingJobs.length === 0 && completedToasts.length === 0 && failedToasts.length === 0 ? (
                 <p className="p-4 text-sm text-theme-fg-subtle">{t(locale, 'jobsInProgress.empty')}</p>
               ) : (
                 <>
@@ -394,6 +423,17 @@ export function JobsInProgressButton() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ConfirmDialog
+        open={open && !!currentFailedToast}
+        title={currentFailedToast ? `${currentFailedToast.type === 'image' ? t(locale, 'jobs.type.image') : t(locale, 'jobs.type.video')} ${t(locale, 'jobs.status.failed')}` : t(locale, 'jobs.status.failed')}
+        message={currentFailedToast?.error ?? ''}
+        confirmLabel="OK"
+        cancelLabel=""
+        alert
+        confirmClass="bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover"
+        onConfirm={dismissFailedDialog}
+        onCancel={dismissFailedDialog}
+      />
     </div>
   );
 }

@@ -13,6 +13,8 @@ type Props = {
   onConfirm: () => void;
   onCancel: () => void;
   customContent?: React.ReactNode;
+  /** When true, only show confirm button (alert style) */
+  alert?: boolean;
 };
 
 export function ConfirmDialog({
@@ -25,6 +27,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   customContent,
+  alert = false,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -54,13 +57,15 @@ export function ConfirmDialog({
         {message && <p className="text-sm text-theme-fg-muted mb-6">{message}</p>}
         {customContent}
         <div className="flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
-          >
-            {cancelLabel}
-          </button>
+          {!alert && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}
