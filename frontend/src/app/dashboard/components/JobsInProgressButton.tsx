@@ -62,7 +62,7 @@ export function JobsInProgressButton() {
   const [loading, setLoading] = useState(false);
   const [completedToasts, setCompletedToasts] = useState<CompletedToast[]>([]);
   const [failedToasts, setFailedToasts] = useState<FailedToast[]>([]);
-  const [progressByJobId, setProgressByJobId] = useState<Record<string, number>>({});
+  const [, setTick] = useState(0); // triggers re-render so progress bar updates
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
 
@@ -74,12 +74,42 @@ export function JobsInProgressButton() {
         let pending = all.filter(
           (j) => (j.status === 'pending' || j.status === 'running') && j.type !== 'chat'
         );
+        // On initial load: show recent completed/failed so they don't "disappear" after refresh
+        if (showLoading) {
+          const recentCutoff = Date.now() - 10 * 60 * 1000; // 10 min
+          const recentFailed = all.filter(
+            (j) => j.status === 'failed' && (j.type === 'image' || j.type === 'video') && new Date(j.created_at).getTime() > recentCutoff
+          );
+          const recentCompleted = all.filter(
+            (j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video') && new Date(j.created_at).getTime() > recentCutoff
+          );
+          if (recentFailed.length > 0) {
+            const toAdd: FailedToast[] = recentFailed.map((j) => ({
+              id: j.id,
+              type: j.type as 'image' | 'video',
+              error: j.error || 'Failed',
+              threadId: j.thread_id ?? null,
+            }));
+            setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+          }
+          if (recentCompleted.length > 0) {
+            const toAdd = recentCompleted.map((j) => {
+              const created = new Date(j.created_at).getTime();
+              const updated = new Date(j.updated_at).getTime();
+              const durationSec = Math.round((updated - created) / 1000);
+              const urls = j.output ? getOutputUrls(j.output) : [];
+              return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+            });
+            setCompletedToasts((prev) => [...prev.filter((c) => !toAdd.some((a) => a.id === c.id)), ...toAdd]);
+          }
+        }
         if (pending.length > 0) {
           const verified = await Promise.all(pending.map((j) => getJob(j.id).then((fresh) => fresh ?? j)));
           const actuallyCompleted = verified.filter((j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
           const actuallyFailed = verified.filter((j) => j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
           pending = verified.filter((j) => j.status === 'pending' || j.status === 'running');
           if (actuallyFailed.length > 0) {
+            actuallyFailed.forEach((j) => removeOptimisticJob(j.id));
             const toAdd: FailedToast[] = actuallyFailed.map((j) => ({
               id: j.id,
               type: j.type as 'image' | 'video',
@@ -89,6 +119,7 @@ export function JobsInProgressButton() {
             setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
           }
           if (actuallyCompleted.length > 0) {
+            actuallyCompleted.forEach((j) => removeOptimisticJob(j.id));
             playCompletionSound();
             const toAdd = actuallyCompleted.map((j) => {
               if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -112,6 +143,7 @@ export function JobsInProgressButton() {
           const results = await Promise.all(completedIds.map((id) => getJob(id)));
           const failed = results.filter((j): j is Job => !!j && j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
           if (failed.length > 0) {
+            failed.forEach((j) => removeOptimisticJob(j.id));
             const toAdd: FailedToast[] = failed.map((j) => ({
               id: j.id,
               type: j.type as 'image' | 'video',
@@ -120,9 +152,9 @@ export function JobsInProgressButton() {
             }));
             setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
           }
-          const toAdd = results
-            .filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'))
-            .map((j) => {
+          const completed = results.filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
+          completed.forEach((j) => removeOptimisticJob(j.id));
+          const toAdd = completed.map((j) => {
               if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
                 new Notification(t(locale, 'jobsInProgress.ready'), {
                   body: t(locale, j.type === 'image' ? 'jobsInProgress.imageReady' : 'jobsInProgress.videoReady'),
@@ -158,7 +190,7 @@ export function JobsInProgressButton() {
     fetchJobs(true);
   }, [fetchJobs]);
   useEffect(() => {
-    const pollInterval = hasPending ? 4000 : 30000;
+    const pollInterval = hasPending ? 2000 : 30000;
     const iv = setInterval(() => fetchJobs(false), pollInterval);
     return () => clearInterval(iv);
   }, [fetchJobs, hasPending]);
@@ -192,42 +224,22 @@ export function JobsInProgressButton() {
     })),
   ];
 
-  const pendingIds = pendingJobs.map((j) => j.id).join(',');
+  // Progress based on job age - deterministic, persists on refresh (no random reset)
+  const getProgressForJob = (job: Job): number => {
+    const created = new Date(job.created_at).getTime();
+    const elapsedSec = (Date.now() - created) / 1000;
+    const totalSec = job.type === 'video' ? 240 : 60; // video ~4min, image ~1min
+    const pct = 10 + (elapsedSec / totalSec) * 85;
+    return Math.min(95, Math.max(10, Math.round(pct)));
+  };
 
-  // Init fake progress for new jobs
-  useEffect(() => {
-    setProgressByJobId((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const j of pendingJobs) {
-        if (next[j.id] == null) {
-          next[j.id] = 5 + Math.floor(Math.random() * 8);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [pendingIds]);
-
-  // Fake progress increment (cap 95%)
+  // Update progress bar every 2s when we have pending jobs
   useEffect(() => {
     if (pendingJobs.length === 0) return;
-    const ids = new Set(pendingJobs.map((j) => j.id));
-    const iv = setInterval(() => {
-      setProgressByJobId((prev) => {
-        const next = { ...prev };
-        for (const id of ids) {
-          const cur = next[id] ?? 5;
-          if (cur < 95) {
-            const inc = 6 + Math.floor(Math.random() * 12);
-            next[id] = Math.min(95, cur + inc);
-          }
-        }
-        return next;
-      });
-    }, 1200);
+    const iv = setInterval(() => setTick((t) => t + 1), 2000);
     return () => clearInterval(iv);
-  }, [pendingIds]);
+  }, [pendingJobs.length]);
+
   const totalCount = pendingJobs.length + completedToasts.length + failedToasts.length;
 
   const statusT = (status: string) =>
@@ -341,14 +353,14 @@ export function JobsInProgressButton() {
                         <ChevronRightIcon className="w-4 h-4 shrink-0 text-theme-fg-subtle" />
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="h-1 flex-1 rounded-full bg-theme-bg-hover overflow-hidden">
+                        <div className="h-1.5 flex-1 min-w-[60px] rounded-full bg-theme-bg-hover overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-theme-accent/80 transition-all duration-500 ease-out"
-                            style={{ width: `${progressByJobId[job.id] ?? 5}%` }}
+                            className="h-full rounded-full bg-theme-accent/80 transition-[width] duration-500 ease-out"
+                            style={{ width: `${getProgressForJob(job)}%` }}
                           />
                         </div>
                         <span className="text-xs text-theme-fg-subtle tabular-nums shrink-0 w-8">
-                          {Math.round(progressByJobId[job.id] ?? 5)}%
+                          {getProgressForJob(job)}%
                         </span>
                       </div>
                       {job.type === 'video' && (Date.now() - new Date(job.created_at).getTime() > 60_000) && (
@@ -410,6 +422,34 @@ export function JobsInProgressButton() {
                           e.stopPropagation();
                           dismissToast(toast.id);
                         }}
+                        className="shrink-0 p-1.5 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+                        aria-label={t(locale, 'jobsInProgress.dismiss')}
+                      >
+                        <XIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {failedToasts.map((toast) => (
+                    <div
+                      key={toast.id}
+                      className="flex items-center gap-2 px-3 py-2.5 border-b border-theme-border-subtle last:border-0 bg-theme-danger-muted/20"
+                    >
+                      <span className="shrink-0 w-8 h-8 rounded-lg bg-theme-danger-muted flex items-center justify-center">
+                        {toast.type === 'video' ? (
+                          <VideoIcon className="w-4 h-4 text-theme-danger" />
+                        ) : (
+                          <ImageIcon className="w-4 h-4 text-theme-danger" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-theme-fg">
+                          {toast.type === 'image' ? t(locale, 'jobs.type.image') : t(locale, 'jobs.type.video')} – {t(locale, 'jobs.status.failed')}
+                        </p>
+                        <p className="text-xs text-theme-fg-muted truncate">{toast.error}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFailedToasts((prev) => prev.filter((f) => f.id !== toast.id))}
                         className="shrink-0 p-1.5 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
                         aria-label={t(locale, 'jobsInProgress.dismiss')}
                       >
