@@ -61,7 +61,11 @@ export default function StudioProjectPage() {
           return next ?? itemList[0] ?? null;
         });
       })
-      .catch(() => {
+      .catch((e: unknown) => {
+        if ((e as Error)?.message === 'session_expired') {
+          window.location.href = '/start';
+          return;
+        }
         setProject(null);
         setItems([]);
         setSelectedItem(null);
@@ -83,8 +87,12 @@ export default function StudioProjectPage() {
           return next ?? itemList[0] ?? null;
         });
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         if (cancelled) return;
+        if ((e as Error)?.message === 'session_expired') {
+          window.location.href = '/start';
+          return;
+        }
         setProject(null);
         setItems([]);
         setSelectedItem(null);

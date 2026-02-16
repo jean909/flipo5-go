@@ -65,39 +65,55 @@ export function JobsInProgressButton() {
 
   const fetchJobs = useCallback((showLoading = true) => {
     if (showLoading) setLoading(true);
-    listJobs()
-      .then((r) => {
+    listJobs(true)
+      .then(async (r) => {
         const all = r.jobs ?? [];
-        const pending = all.filter(
+        let pending = all.filter(
           (j) => (j.status === 'pending' || j.status === 'running') && j.type !== 'chat'
         );
+        if (pending.length > 0) {
+          const verified = await Promise.all(pending.map((j) => getJob(j.id).then((fresh) => fresh ?? j)));
+          const actuallyCompleted = verified.filter((j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
+          pending = verified.filter((j) => j.status === 'pending' || j.status === 'running');
+          if (actuallyCompleted.length > 0) {
+            playCompletionSound();
+            const toAdd = actuallyCompleted.map((j) => {
+              if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                new Notification(t(locale, 'jobsInProgress.ready'), {
+                  body: t(locale, j.type === 'image' ? 'jobsInProgress.imageReady' : 'jobsInProgress.videoReady'),
+                });
+              }
+              const created = new Date(j.created_at).getTime();
+              const updated = new Date(j.updated_at).getTime();
+              const durationSec = Math.round((updated - created) / 1000);
+              const urls = j.output ? getOutputUrls(j.output) : [];
+              return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+            });
+            setCompletedToasts((prev) => [...prev, ...toAdd]);
+          }
+        }
         const prevIds = prevPendingIdsRef.current;
         const newIds = new Set(pending.map((j) => j.id));
-        for (const id of prevIds) {
-          if (!newIds.has(id)) {
-            getJob(id)
-              .then((j) => {
-                if (j && j.status === 'completed' && (j.type === 'image' || j.type === 'video')) {
-                  playCompletionSound();
-                  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                    new Notification(t(locale, 'jobsInProgress.ready'), {
-                      body: t(locale, j.type === 'image' ? 'jobsInProgress.imageReady' : 'jobsInProgress.videoReady'),
-                    });
-                  }
-                  const created = new Date(j.created_at).getTime();
-                  const updated = new Date(j.updated_at).getTime();
-                  const durationSec = Math.round((updated - created) / 1000);
-                  const urls = j.output ? getOutputUrls(j.output) : [];
-                  setCompletedToasts((prev) => [...prev, {
-                    id: j.id,
-                    type: j.type as 'image' | 'video',
-                    threadId: j.thread_id ?? null,
-                    durationSec,
-                    imageUrl: urls[0],
-                  }]);
-                }
-              })
-              .catch(() => {});
+        const completedIds = [...prevIds].filter((id) => !newIds.has(id));
+        if (completedIds.length > 0) {
+          const results = await Promise.all(completedIds.map((id) => getJob(id)));
+          const toAdd = results
+            .filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'))
+            .map((j) => {
+              if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                new Notification(t(locale, 'jobsInProgress.ready'), {
+                  body: t(locale, j.type === 'image' ? 'jobsInProgress.imageReady' : 'jobsInProgress.videoReady'),
+                });
+              }
+              const created = new Date(j.created_at).getTime();
+              const updated = new Date(j.updated_at).getTime();
+              const durationSec = Math.round((updated - created) / 1000);
+              const urls = j.output ? getOutputUrls(j.output) : [];
+              return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+            });
+          if (toAdd.length > 0) {
+            playCompletionSound();
+            setCompletedToasts((prev) => [...prev, ...toAdd]);
           }
         }
         prevPendingIdsRef.current = newIds;
@@ -119,7 +135,7 @@ export function JobsInProgressButton() {
     fetchJobs(true);
   }, [fetchJobs]);
   useEffect(() => {
-    const pollInterval = hasPending ? 6000 : 30000;
+    const pollInterval = hasPending ? 4000 : 30000;
     const iv = setInterval(() => fetchJobs(false), pollInterval);
     return () => clearInterval(iv);
   }, [fetchJobs, hasPending]);
@@ -306,6 +322,9 @@ export function JobsInProgressButton() {
                           {Math.round(progressByJobId[job.id] ?? 5)}%
                         </span>
                       </div>
+                      {job.type === 'video' && (Date.now() - new Date(job.created_at).getTime() > 60_000) && (
+                        <p className="text-xs text-theme-fg-muted">{t(locale, 'jobsInProgress.videoDelay')}</p>
+                      )}
                     </button>
                   ))}
                   {completedToasts.map((toast) => (

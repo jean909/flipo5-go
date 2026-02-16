@@ -328,11 +328,13 @@ export interface Job {
   updated_at: string;
 }
 
-export async function listJobs(): Promise<{ jobs: Job[] }> {
+export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const res = await fetch(`${API_URL}/api/jobs`, {
+  const url = cacheBust ? `${API_URL}/api/jobs?_=${Date.now()}` : `${API_URL}/api/jobs`;
+  const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
+    cache: cacheBust ? 'no-store' : 'default',
   });
   if (!res.ok) throw new Error('Failed to load jobs');
   return res.json();
@@ -433,7 +435,11 @@ export async function createProject(name?: string): Promise<{ id: string; name: 
 }
 
 export async function getProject(id: string): Promise<{ project: Project; items: ProjectItem[] }> {
-  const token = await getToken();
+  let token = await getToken();
+  if (!token) {
+    await new Promise((r) => setTimeout(r, 300));
+    token = await getToken();
+  }
   if (!token) throw new Error('Not logged in');
   const doFetch = () => {
     const url = `${API_URL}/api/projects/${id}?_=${Date.now()}`;
@@ -447,11 +453,17 @@ export async function getProject(id: string): Promise<{ project: Project; items:
     });
   };
   let res = await doFetch();
+  if (res.status === 401) throw new Error('session_expired');
   if (res.status === 404) {
     await new Promise((r) => setTimeout(r, 400));
     res = await doFetch();
   }
-  if (!res.ok) throw new Error('Project not found');
+  if (!res.ok) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[getProject]', res.status, `${API_URL}/api/projects/${id}`);
+    }
+    throw new Error('Project not found');
+  }
   return res.json();
 }
 
