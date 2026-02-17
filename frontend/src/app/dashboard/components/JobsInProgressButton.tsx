@@ -211,6 +211,8 @@ export function JobsInProgressButton() {
             console.log('[JobsInProgressButton] Job update received:', data);
             // Force immediate refresh with cache bust
             fetchJobs(false);
+            // Trigger progress bar update
+            setTick(t => t + 1);
           }
         } catch (err) {
           console.warn('[JobsInProgressButton] SSE parse error:', err);
@@ -221,7 +223,10 @@ export function JobsInProgressButton() {
         console.warn('[JobsInProgressButton] SSE error:', err);
         if (!cancelled) {
           // Fallback to polling on SSE error
-          setTimeout(() => fetchJobs(false), 2000);
+          setTimeout(() => {
+            fetchJobs(false);
+            setTick(t => t + 1);
+          }, 2000);
         }
         es.close();
       };
@@ -304,6 +309,13 @@ export function JobsInProgressButton() {
     const iv = setInterval(() => setTick((t) => t + 1), 2000);
     return () => clearInterval(iv);
   }, [pendingJobs.length]);
+
+  // Also update progress when dropdown opens (focus case)
+  useEffect(() => {
+    if (open && pendingJobs.length > 0) {
+      setTick(t => t + 1);
+    }
+  }, [open, pendingJobs.length]);
 
   const totalCount = pendingJobs.length + completedToasts.length + failedToasts.length;
 

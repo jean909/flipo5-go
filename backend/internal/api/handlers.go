@@ -75,6 +75,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs", s.listJobs)
 		r.Get("/content", s.listContent)
 		r.Get("/jobs/{id}", s.getJob)
+		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
 			r.Get("/{id}", s.getProject)
@@ -876,6 +877,52 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	io.Copy(w, body)
+}
+
+func (s *Server) streamAllJobs(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if s.Stream == nil {
+		http.Error(w, `{"error":"streaming not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	ctx := r.Context()
+	flusher := w.(http.Flusher)
+	
+	log.Printf("[streamAllJobs] User %s connected to job stream", userID)
+	fmt.Fprintf(w, "data: {\"type\":\"connected\",\"user\":\"%s\"}\n\n", userID)
+	flusher.Flush()
+	
+	// Subscribe to user-specific job updates channel
+	userJobsChannel := fmt.Sprintf("user:%s:jobs", userID.String())
+	pubsub := s.Stream.SubscribeRaw(ctx, userJobsChannel)
+	if pubsub == nil {
+		http.Error(w, `{"error":"subscription failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer pubsub.Close()
+	
+	ch := pubsub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			// Forward job update to client
+			fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
+			flusher.Flush()
+		}
+	}
 }
 
 func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {

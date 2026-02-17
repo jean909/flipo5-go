@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -504,6 +505,7 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
 				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
 				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"image"}`, p.JobID.String())
+				log.Printf("[ImageHandler] Publishing job update: %s -> %s", userJobsChannel, updateMsg)
 				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
 			}
 		}

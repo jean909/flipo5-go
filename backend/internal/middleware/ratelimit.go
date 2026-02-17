@@ -62,6 +62,7 @@ func RateLimitByIP(requestsPerMinute int) func(next http.Handler) http.Handler {
 
 // RateLimit limits N requests per minute per user (by UserID from ctx).
 // Runs periodic cleanup to avoid unbounded map growth.
+// SSE connections and streaming endpoints need higher limits.
 func RateLimit(requestsPerMinute int) func(next http.Handler) http.Handler {
 	type entry struct {
 		count int
