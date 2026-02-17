@@ -89,6 +89,7 @@ func (s *Server) Routes() http.Handler {
 			// More specific routes before /{id} so GET /projects/items/... is not matched as id="items"
 			r.Delete("/items/{itemId}", s.removeProjectItem)
 			r.Get("/items/{itemId}/versions", s.listProjectVersions)
+			r.Delete("/items/{itemId}/versions/{versionNum}", s.removeProjectVersion)
 			r.Post("/items/{itemId}/versions", s.addProjectVersion)
 			r.Post("/items/{itemId}/versions/upload", s.uploadProjectVersion)
 			r.Get("/{id}", s.getProject)
@@ -1507,6 +1508,36 @@ func (s *Server) listProjectVersions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"versions": list})
 }
 
+func (s *Server) removeProjectVersion(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	versionNumStr := chi.URLParam(r, "versionNum")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, "invalid item id", http.StatusBadRequest)
+		return
+	}
+	versionNum, err := strconv.Atoi(versionNumStr)
+	if err != nil || versionNum < 1 {
+		http.Error(w, "invalid version number", http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	err = s.DB.RemoveProjectVersion(r.Context(), itemID, versionNum, userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"version not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"failed to remove version"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) addProjectVersion(w http.ResponseWriter, r *http.Request) {
 	itemIDStr := chi.URLParam(r, "itemId")
 	itemID, err := uuid.Parse(itemIDStr)
@@ -1667,7 +1698,8 @@ func (s *Server) removeProjectItemBackground(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"remove background not configured"}`, http.StatusServiceUnavailable)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	// Use background context so Replicate + download + save complete even if client disconnects (avoids "context canceled").
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	input := repgo.PredictionInput{
 		"image_url":      imageURL,

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listContent, getToken, getMediaDisplayUrl, type Project, type ProjectItem, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../../components/ImageViewModal';
@@ -22,6 +22,17 @@ function getSafeDisplayUrl(url: string | null | undefined, token: string | null)
   if (url.startsWith('http://') || url.startsWith('https://')) return getMediaDisplayUrl(url, token);
   if (!token) return null;
   return getMediaDisplayUrl(url, token);
+}
+
+/** Extension from blob/url for download filename (match ImageViewModal). */
+function getDownloadExt(blob: Blob, url: string): string {
+  if (blob.type.includes('video')) return blob.type.includes('webm') ? 'webm' : 'mp4';
+  if (blob.type.includes('png')) return 'png';
+  if (blob.type.includes('webp')) return 'webp';
+  if (blob.type.includes('gif')) return 'gif';
+  if (/\.(mp4|webm|mov)(\?|$)/i.test(url)) return url.toLowerCase().includes('webm') ? 'webm' : 'mp4';
+  if (/\.(png|webp|gif)(\?|$)/i.test(url)) return url.match(/\.(png|webp|gif)/i)?.[1]?.toLowerCase() ?? 'jpg';
+  return 'jpg';
 }
 
 /** useParams().id can be string | string[] in some Next versions; normalize to string. */
@@ -46,9 +57,13 @@ export default function StudioProjectPage() {
   const [contentLoading, setContentLoading] = useState(false);
   const [viewingMedia, setViewingMedia] = useState<{ urls: string[] } | null>(null);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<ProjectItem | null>(null);
+  const [pendingDeleteVersionNum, setPendingDeleteVersionNum] = useState<number | null>(null);
   const [pendingDeleteProject, setPendingDeleteProject] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [removingBg, setRemovingBg] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [itemVersions, setItemVersions] = useState<ProjectVersion[] | null>(null);
+  const [viewingVersionNum, setViewingVersionNum] = useState<number | null>(null);
   const [dragOverCount, setDragOverCount] = useState(0);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -58,7 +73,27 @@ export default function StudioProjectPage() {
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const referenceUrl = getReferenceUrl(selectedItem);
+  // History: Original (source) + v1, v2, … for selected item
+  const versionHistory = (() => {
+    if (!selectedItem) return [];
+    const list: { version_num: number; url: string; label: string }[] = [
+      { version_num: 0, url: selectedItem.source_url, label: t(locale, 'studio.original') },
+    ];
+    if (itemVersions && itemVersions.length > 0) {
+      const sorted = [...itemVersions].sort((a, b) => a.version_num - b.version_num);
+      sorted.forEach((v) => list.push({ version_num: v.version_num, url: v.url, label: `v${v.version_num}` }));
+    }
+    return list;
+  })();
+
+  const referenceUrl = (() => {
+    if (!selectedItem) return null;
+    if (viewingVersionNum !== null) {
+      const entry = versionHistory.find((e) => e.version_num === viewingVersionNum);
+      return entry?.url ?? getReferenceUrl(selectedItem);
+    }
+    return getReferenceUrl(selectedItem);
+  })();
   const displayUrl = getSafeDisplayUrl(referenceUrl, mediaToken);
 
   useEffect(() => {
@@ -143,9 +178,27 @@ export default function StudioProjectPage() {
     });
   }, [items]);
 
-  // Reset scale when selecting a different item
+  // Reset scale and version view when selecting a different item
   useEffect(() => {
     setCanvasScale(1);
+    setViewingVersionNum(null);
+  }, [selectedItem?.id]);
+
+  // Fetch version history for selected item
+  useEffect(() => {
+    if (!selectedItem?.id) {
+      setItemVersions(null);
+      return;
+    }
+    let cancelled = false;
+    listProjectVersions(selectedItem.id)
+      .then((r) => {
+        if (!cancelled) setItemVersions(r.versions ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setItemVersions([]);
+      });
+    return () => { cancelled = true; };
   }, [selectedItem?.id]);
 
   useEffect(() => {
@@ -215,6 +268,23 @@ export default function StudioProjectPage() {
         return;
       }
       setError(e instanceof Error ? e.message : 'Add failed');
+    }
+  }
+
+  async function handleRemoveVersion() {
+    if (!selectedItem || pendingDeleteVersionNum === null) return;
+    const v = pendingDeleteVersionNum;
+    setPendingDeleteVersionNum(null);
+    try {
+      await removeProjectVersion(selectedItem.id, v);
+      setViewingVersionNum(null);
+      await fetchProject();
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError((e as Error)?.message ?? 'Failed to remove version');
     }
   }
 
@@ -315,39 +385,71 @@ export default function StudioProjectPage() {
     }
   }
 
-  function handleDownload() {
-    if (!displayUrl) return;
-    const a = document.createElement('a');
-    a.href = displayUrl;
-    const base = referenceUrl?.split('/').pop() || 'image';
-    a.download = selectedItem?.type === 'image' ? base.replace(/\.[^.]+$/, '') + '.png' : base;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  async function handleDownload() {
+    if (!referenceUrl || !displayUrl) return;
+    setDownloading(true);
+    try {
+      let blob: Blob;
+      try {
+        blob = await downloadMediaUrl(referenceUrl);
+      } catch {
+        const res = await fetch(referenceUrl);
+        if (!res.ok) throw new Error('Fetch failed');
+        blob = await res.blob();
+      }
+      const ext = getDownloadExt(blob, referenceUrl);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `flipo5-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? 'Download failed');
+    } finally {
+      setDownloading(false);
+    }
   }
 
   async function handleRemoveBg() {
     if (!id || !selectedItem || selectedItem.type !== 'image') return;
+    const itemId = selectedItem.id;
     setError(null);
     setRemovingBg(true);
     try {
-      await removeProjectItemBackground(id, selectedItem.id);
+      await removeProjectItemBackground(id, itemId);
       await fetchProject();
+      const { versions } = await listProjectVersions(itemId);
+      setItemVersions(versions ?? []);
     } catch (e: unknown) {
       if ((e as Error)?.message === 'session_expired') {
         window.location.href = '/start';
         return;
       }
       setError((e as Error)?.message ?? 'Remove background failed');
+      setTimeout(async () => {
+        await fetchProject();
+        try {
+          const r = await listProjectVersions(itemId);
+          setItemVersions(r.versions ?? []);
+        } catch (_) {}
+      }, 2000);
     } finally {
       setRemovingBg(false);
     }
   }
 
-  const versionLabel = selectedItem
-    ? `1/${(selectedItem.version_num ?? 0) + 1}`
-    : '0/0';
+  const currentVersionLabel = (() => {
+    if (!selectedItem || versionHistory.length === 0) return '0/0';
+    if (viewingVersionNum !== null) {
+      const entry = versionHistory.find((e) => e.version_num === viewingVersionNum);
+      const idx = versionHistory.findIndex((e) => e.version_num === viewingVersionNum);
+      return entry ? `${entry.label} (${idx + 1}/${versionHistory.length})` : `${versionHistory.length}/${versionHistory.length}`;
+    }
+    return `${versionHistory.length}/${versionHistory.length}`;
+  })();
 
   if (loading && !project) {
     return (
@@ -423,7 +525,7 @@ export default function StudioProjectPage() {
             <button type="button" className="p-1 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" title="Redo" aria-label="Redo">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6 6" /></svg>
             </button>
-            <span className="text-xs text-theme-fg-subtle shrink-0">{versionLabel} versions</span>
+            <span className="text-xs text-theme-fg-subtle shrink-0">{currentVersionLabel} versions</span>
             <Link href="/dashboard/studio" className="px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-xs font-medium shrink-0">
               {t(locale, 'studio.backToProjects')}
             </Link>
@@ -436,7 +538,7 @@ export default function StudioProjectPage() {
               onClick={handleRemoveBg}
               disabled={!selectedItem || selectedItem.type !== 'image' || removingBg}
               className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
-              title="Remove background (new version)"
+              title={t(locale, 'studio.removeBgTitle')}
             >
               {removingBg ? '...' : 'Remove BG'}
             </button>
@@ -447,8 +549,12 @@ export default function StudioProjectPage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={handleDownload} disabled={!displayUrl} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40" title="Download">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            <button type="button" onClick={handleDownload} disabled={!displayUrl || downloading} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40" title="Download">
+              {downloading ? (
+                <span className="w-5 h-5 block border-2 border-theme-fg-subtle border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              )}
             </button>
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50" title="Upload">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
@@ -524,9 +630,17 @@ export default function StudioProjectPage() {
             </div>
           ) : (
             <>
-              <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto">
+              <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto relative">
+                {removingBg && (
+                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-theme-bg/85 rounded-lg">
+                    <div className="flex flex-col items-center gap-3 text-theme-fg">
+                      <div className="w-10 h-10 border-2 border-theme-accent border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm font-medium">{t(locale, 'studio.removingBackground')}</p>
+                    </div>
+                  </div>
+                )}
                 {selectedItem && displayUrl ? (
-                  <div className="relative group flex items-center justify-center">
+                  <div className={`relative group flex items-center justify-center transition-[filter] duration-200 ${removingBg ? 'blur-sm' : ''}`}>
                     <div
                       className="relative origin-center"
                       style={{ transform: `scale(${canvasScale})` }}
@@ -559,6 +673,69 @@ export default function StudioProjectPage() {
                   </div>
                 ) : null}
               </div>
+
+              {/* Version history: only when item has at least 2 versions */}
+              {selectedItem && versionHistory.length >= 2 && (
+                <div className="shrink-0 border-t border-theme-border bg-theme-bg px-3 py-2">
+                  <p className="text-xs text-theme-fg-subtle mb-2">{t(locale, 'studio.versionHistory')}</p>
+                  <div className="flex items-center gap-2 overflow-x-auto scrollbar-subtle">
+                    {versionHistory.map((entry) => {
+                      const latestEntry = versionHistory[versionHistory.length - 1];
+                      const active = viewingVersionNum === entry.version_num || (viewingVersionNum === null && latestEntry && entry.version_num === latestEntry.version_num);
+                      const thumbUrl = getSafeDisplayUrl(entry.url, mediaToken);
+                      const canDeleteVersion = entry.version_num >= 1;
+                      return (
+                        <div key={entry.version_num} className="relative shrink-0 w-14 h-14">
+                          <button
+                            type="button"
+                            onClick={() => setViewingVersionNum(entry.version_num)}
+                            className={`w-full h-full rounded-lg overflow-hidden border-2 transition-colors ${
+                              active ? 'border-theme-accent ring-2 ring-theme-accent/50' : 'border-theme-border hover:border-theme-border-hover'
+                            }`}
+                            title={entry.label}
+                          >
+                            {thumbUrl ? (
+                              selectedItem.type === 'video' ? (
+                                <video src={thumbUrl} className="w-full h-full object-cover" muted preload="metadata" playsInline />
+                              ) : (
+                                <img src={thumbUrl} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                              )
+                            ) : (
+                              <span className="flex w-full h-full items-center justify-center text-theme-fg-subtle text-xs">…</span>
+                            )}
+                            <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-theme-bg-overlay/90 text-[10px] text-theme-fg text-center font-medium">
+                              {entry.label}
+                            </span>
+                          </button>
+                          {canDeleteVersion && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setPendingDeleteVersionNum(entry.version_num); }}
+                              className="absolute top-0 right-0 z-10 w-5 h-5 rounded bg-theme-bg-overlay hover:bg-theme-danger text-theme-fg flex items-center justify-center text-xs font-bold"
+                              title={t(locale, 'studio.deleteVersion')}
+                              aria-label={t(locale, 'studio.deleteVersion')}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {versionHistory.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setViewingVersionNum(null)}
+                        className={`shrink-0 px-2 py-1.5 rounded-lg border-2 text-xs font-medium ${
+                          viewingVersionNum === null ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border hover:border-theme-border-hover text-theme-fg-subtle'
+                        }`}
+                        title={t(locale, 'studio.latestVersionTitle')}
+                      >
+                        {t(locale, 'studio.latestVersion')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Bottom: full-width strip with all project images/versions */}
               <div className="shrink-0 border-t border-theme-border bg-theme-bg p-3">
@@ -660,6 +837,7 @@ export default function StudioProjectPage() {
       )}
 
       <ConfirmDialog open={!!pendingDeleteItem} title="Remove item" message="Remove this item from the project?" confirmLabel="Remove" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveItem} onCancel={() => setPendingDeleteItem(null)} />
+      <ConfirmDialog open={pendingDeleteVersionNum !== null} title={t(locale, 'studio.deleteVersion')} message={t(locale, 'studio.deleteVersionConfirm')} confirmLabel={t(locale, 'studio.delete')} cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveVersion} onCancel={() => setPendingDeleteVersionNum(null)} />
       <ConfirmDialog open={pendingDeleteProject} title="Delete project" message="Delete this project and all its items? This cannot be undone." confirmLabel="Delete" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleDeleteProject} onCancel={() => setPendingDeleteProject(false)} />
     </div>
   );

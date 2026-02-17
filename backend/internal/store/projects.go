@@ -271,3 +271,31 @@ func (db *DB) ListProjectVersions(ctx context.Context, itemID, userID uuid.UUID)
 	}
 	return list, rows.Err()
 }
+
+// RemoveProjectVersion deletes one version of an item. versionNum must be >= 1 (Original is not in DB).
+func (db *DB) RemoveProjectVersion(ctx context.Context, itemID uuid.UUID, versionNum int, userID uuid.UUID) error {
+	var projectID uuid.UUID
+	err := db.Pool.QueryRow(ctx, `SELECT project_id FROM projects_items WHERE id = $1`, itemID).Scan(&projectID)
+	if err == pgx.ErrNoRows {
+		return pgx.ErrNoRows
+	}
+	if err != nil {
+		return err
+	}
+	p, err := db.GetProject(ctx, projectID, userID)
+	if err != nil || p == nil {
+		return pgx.ErrNoRows
+	}
+	_ = p
+	if versionNum < 1 {
+		return pgx.ErrNoRows
+	}
+	result, err := db.Pool.Exec(ctx, `DELETE FROM projects_versions WHERE item_id = $1 AND version_num = $2`, itemID, versionNum)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

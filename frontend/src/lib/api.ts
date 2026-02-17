@@ -517,6 +517,14 @@ export interface ProjectItem {
   version_num?: number;
 }
 
+export interface ProjectVersion {
+  id: string;
+  item_id: string;
+  version_num: number;
+  url: string;
+  created_at: string;
+}
+
 export async function listProjects(limit?: number): Promise<{ projects: Project[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
@@ -633,6 +641,30 @@ export async function removeProjectItem(itemId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to remove item');
 }
 
+/** List versions for a project item (v1, v2, …). Does not include “Original” (use item.source_url). */
+export async function listProjectVersions(itemId: string): Promise<{ versions: ProjectVersion[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/items/${itemId}/versions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new Error('session_expired');
+  if (!res.ok) throw new Error('Failed to load versions');
+  return res.json();
+}
+
+/** Delete one version of a project item (versionNum 1, 2, …). Cannot delete Original. */
+export async function removeProjectVersion(itemId: string, versionNum: number): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/items/${itemId}/versions/${versionNum}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new Error('session_expired');
+  if (!res.ok) throw new Error('Failed to remove version');
+}
+
 /** Upload file to project (image/video from device). Returns full item for optimistic UI. */
 export async function uploadProjectItem(projectId: string, file: File): Promise<{ id: string; item: ProjectItem }> {
   const token = await getToken();
@@ -665,16 +697,23 @@ export async function uploadProjectVersion(itemId: string, file: File): Promise<
   if (!res.ok) throw new Error('Upload failed');
 }
 
-/** Remove background from project item image. Creates a new version (PNG with transparency). */
+/** Remove background from project item image. Creates a new version (PNG with transparency). Long timeout (120s) – Replicate can take 30–60s. */
 export async function removeProjectItemBackground(projectId: string, itemId: string): Promise<{ url: string; ok: boolean }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/${itemId}/remove-bg`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const body = await res.json().catch(() => ({})) as { url?: string; ok?: boolean; error?: string };
-  if (res.status === 401) throw new Error('session_expired');
-  if (!res.ok) throw new Error(body?.error || 'Remove background failed');
-  return { url: body.url ?? '', ok: body.ok === true };
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await fetch(`${API_URL}/api/projects/${projectId}/items/${itemId}/remove-bg`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => ({})) as { url?: string; ok?: boolean; error?: string };
+    if (res.status === 401) throw new Error('session_expired');
+    if (!res.ok) throw new Error(body?.error || 'Remove background failed');
+    return { url: body.url ?? '', ok: body.ok === true };
+  } finally {
+    clearTimeout(t);
+  }
 }
