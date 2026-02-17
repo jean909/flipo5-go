@@ -1240,7 +1240,10 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	}
 	items, errItems := s.DB.ListProjectItems(r.Context(), projectID, userID)
 	if errItems != nil {
+		log.Printf("[getProject] ListProjectItems failed project=%s err=%v", projectID, errItems)
 		items = nil
+	} else {
+		log.Printf("[getProject] ok project=%s items=%d", projectID, len(items))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

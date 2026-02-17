@@ -31,6 +31,10 @@
 
 16. **API 401 consistență**: Toate apelurile studio aruncă `session_expired` la 401: `listProjects`, `updateProject`, `deleteProject`, `addProjectItem`, `removeProjectItem`, `uploadProjectItem`, `listContent`. Pe pagina de detaliu proiect, toate handler-ele (handleSaveName, handleAddItem, handleRemoveItem, handleUpload, handleDeleteProject) și efectul pentru listContent verifică `session_expired` și fac redirect la `/start`.
 
+### Duplicat proiect + imagine uploadată dispare
+17. **Duplicat la update (rename)**: După rename se făcea doar update local; lista putea rămâne în stare inconsistentă sau cu dubluri. **Fix**: După rename reușit se apelează `refresh()` – lista vine din server și se aplică `dedupeProjects`. **Double-create**: La create, dacă user dă dublu-click se puteau crea două proiecte. **Fix**: La începutul `handleCreate` se face `if (creating) return;`. Lista se refetch-ează și la `visibilitychange` când revii pe tab/pagină.
+18. **Imagine uploadată dispărea după upload**: După upload am introdus `fetchProject()` imediat, dar refetch-ul poate returna date încă fără item-ul nou (cache/replica), iar setarea state-ului ștergea poza. **Fix**: Nu mai apelăm `fetchProject()` imediat după upload; rămânem pe răspunsul de la upload (item-ul e deja în state). La ieșire din proiect și re-intrare, `getProject(id)` reîncarcă lista de pe server, unde item-ul e deja salvat.
+
 ## Implemented (Phase 1)
 - ✅ Sidebar: Edit Studio link
 - ✅ Projects: CRUD (create, list, get, update, delete)

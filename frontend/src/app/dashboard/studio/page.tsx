@@ -50,15 +50,23 @@ export default function StudioPage() {
   }, []);
 
   useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  useEffect(() => {
     const close = () => setContextMenu(null);
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
   }, []);
 
   async function handleCreate() {
+    if (creating) return;
     setNameError('');
     const name = newName.trim() || 'Untitled';
-    // Check duplicate on client
     if (projects.some((p) => p.name === name)) {
       setNameError(t(locale, 'studio.nameExists'));
       return;
@@ -99,10 +107,10 @@ export default function StudioPage() {
     }
     try {
       await updateProject(editingProject.id, name);
-      setProjects((prev) => prev.map((p) => (p.id === editingProject.id ? { ...p, name } : p)));
       setEditingProject(null);
       setEditName('');
       setNameError('');
+      await refresh();
     } catch (e: unknown) {
       const msg = (e as Error)?.message;
       if (msg === 'session_expired') {
