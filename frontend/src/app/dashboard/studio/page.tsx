@@ -28,9 +28,22 @@ export default function StudioPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
+  const [listError, setListError] = useState<string | null>(null);
   const contextRef = useRef<HTMLDivElement>(null);
 
-  const refresh = () => listProjects().then((r) => setProjects(dedupeProjects(r.projects ?? []))).catch(() => setProjects([]));
+  const refresh = () => {
+    setListError(null);
+    return listProjects()
+      .then((r) => setProjects(dedupeProjects(r.projects ?? [])))
+      .catch((e: unknown) => {
+        if ((e as Error)?.message === 'session_expired') {
+          window.location.href = '/start';
+          return;
+        }
+        setProjects([]);
+        setListError((e as Error)?.message ?? 'Failed to load projects');
+      });
+  };
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
@@ -52,10 +65,15 @@ export default function StudioPage() {
     }
     setCreating(true);
     try {
-      const { id } = await createProject(name);
+      const res = await createProject(name);
+      const projectId = res?.id;
+      if (!projectId) {
+        setNameError('Could not create project');
+        return;
+      }
       setShowCreate(false);
       setNewName('');
-      window.location.href = `/dashboard/studio/${id}`;
+      window.location.href = `/dashboard/studio/${projectId}`;
     } catch (e: unknown) {
       const msg = (e as Error)?.message ?? 'Unknown error';
       if (msg === 'name_exists') {
@@ -86,19 +104,33 @@ export default function StudioPage() {
       setEditName('');
       setNameError('');
     } catch (e: unknown) {
-      if ((e as Error)?.message === 'name_exists') {
+      const msg = (e as Error)?.message;
+      if (msg === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      if (msg === 'name_exists') {
         setNameError(t(locale, 'studio.nameExists'));
+      } else {
+        setNameError(msg ?? 'Failed to rename');
       }
     }
   }
 
   async function handleDelete(project: Project) {
+    setListError(null);
     try {
       await deleteProject(project.id);
       setProjects((prev) => prev.filter((p) => p.id !== project.id));
       setContextMenu(null);
       setPendingDelete(null);
-    } catch {}
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setListError('Failed to delete project');
+    }
   }
 
   function openContextMenu(e: React.MouseEvent, project: Project) {
@@ -115,6 +147,12 @@ export default function StudioPage() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle" ref={contextRef}>
       <div>
+        {listError && (
+          <div className="mb-4 rounded-lg border border-theme-danger/50 bg-theme-danger-muted px-4 py-3 text-theme-danger text-sm flex items-center justify-between gap-2">
+            <span>{listError}</span>
+            <button type="button" onClick={() => setListError(null)} className="p-1 rounded hover:bg-theme-danger/20">×</button>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-semibold text-theme-fg">{t(locale, 'studio.title')}</h1>
           <button

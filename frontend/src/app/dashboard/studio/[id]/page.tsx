@@ -16,11 +16,25 @@ function getReferenceUrl(item: ProjectItem | null): string | null {
   return item.latest_url || item.source_url || null;
 }
 
-export default function StudioProjectPage() {
+/** Relative URLs (e.g. uploads/...) need token for /api/media proxy; avoid broken img until token is ready. */
+function getSafeDisplayUrl(url: string | null | undefined, token: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return getMediaDisplayUrl(url, token);
+  if (!token) return null;
+  return getMediaDisplayUrl(url, token);
+}
+
+/** useParams().id can be string | string[] in some Next versions; normalize to string. */
+function useProjectId(): string {
   const params = useParams();
+  const raw = params?.id;
+  return typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] ?? '' : '';
+}
+
+export default function StudioProjectPage() {
+  const id = useProjectId();
   const router = useRouter();
   const { locale } = useLocale();
-  const id = params.id as string;
   const [project, setProject] = useState<Project | null>(null);
   const [items, setItems] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +43,7 @@ export default function StudioProjectPage() {
   const [selectedItem, setSelectedItem] = useState<ProjectItem | null>(null);
   const [showAddFromContent, setShowAddFromContent] = useState(false);
   const [contentJobs, setContentJobs] = useState<Array<Job & { outputUrls: string[] }>>([]);
+  const [contentLoading, setContentLoading] = useState(false);
   const [viewingMedia, setViewingMedia] = useState<{ urls: string[] } | null>(null);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<ProjectItem | null>(null);
   const [pendingDeleteProject, setPendingDeleteProject] = useState(false);
@@ -42,7 +57,7 @@ export default function StudioProjectPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const referenceUrl = getReferenceUrl(selectedItem);
-  const displayUrl = referenceUrl ? getMediaDisplayUrl(referenceUrl, mediaToken) : null;
+  const displayUrl = getSafeDisplayUrl(referenceUrl, mediaToken);
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -52,10 +67,11 @@ export default function StudioProjectPage() {
     if (!id) return;
     getProject(id)
       .then((r) => {
+        const proj = r.project ?? null;
         const itemList = r.items ?? [];
-        setProject(r.project);
+        setProject(proj);
         setItems(itemList);
-        setProjectName(r.project?.name ?? '');
+        setProjectName(proj?.name ?? '');
         setSelectedItem((prev) => {
           const next = itemList.find((i) => i.id === prev?.id);
           return next ?? itemList[0] ?? null;
@@ -68,20 +84,26 @@ export default function StudioProjectPage() {
         }
         setProject(null);
         setItems([]);
+        setProjectName('');
         setSelectedItem(null);
       });
   }
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     let cancelled = false;
     getProject(id)
       .then((r) => {
         if (cancelled) return;
         const itemList = r.items ?? [];
-        setProject(r.project);
+        const proj = r.project ?? null;
+        setProject(proj);
         setItems(itemList);
-        setProjectName(r.project?.name ?? '');
+        setProjectName(proj?.name ?? '');
         setSelectedItem((prev) => {
           const next = itemList.find((i) => i.id === prev?.id);
           return next ?? itemList[0] ?? null;
@@ -127,6 +149,7 @@ export default function StudioProjectPage() {
   useEffect(() => {
     if (!showAddFromContent) return;
     let cancelled = false;
+    setContentLoading(true);
     listContent({ limit: 30 })
       .then((r) => {
         if (cancelled) return;
@@ -136,7 +159,15 @@ export default function StudioProjectPage() {
         }));
         setContentJobs(jobs.filter((j) => j.outputUrls.length > 0 && (j.type === 'image' || j.type === 'video')));
       })
-      .catch(() => { if (!cancelled) setContentJobs([]); });
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        if ((e as Error)?.message === 'session_expired') {
+          window.location.href = '/start';
+          return;
+        }
+        setContentJobs([]);
+      })
+      .finally(() => { if (!cancelled) setContentLoading(false); });
     return () => { cancelled = true; };
   }, [showAddFromContent]);
 
@@ -146,13 +177,24 @@ export default function StudioProjectPage() {
       await updateProject(id, projectName.trim());
       setProject({ ...project, name: projectName.trim() });
       setEditingName(false);
-    } catch {}
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError('Failed to save name');
+    }
   }
 
   async function handleAddItem(url: string, type: 'image' | 'video', jobId?: string) {
     setError(null);
     try {
-      const { id: itemId } = await addProjectItem(id, type, url, jobId);
+      const res = await addProjectItem(id, type, url, jobId);
+      const itemId = res?.id;
+      if (!itemId) {
+        setError('Add failed');
+        return;
+      }
       const newItem: ProjectItem = {
         id: itemId,
         project_id: id,
@@ -166,6 +208,10 @@ export default function StudioProjectPage() {
       setSelectedItem(newItem);
       setShowAddFromContent(false);
     } catch (e) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Add failed');
     }
   }
@@ -178,7 +224,13 @@ export default function StudioProjectPage() {
       setItems(next);
       setSelectedItem((prev) => (prev?.id === pendingDeleteItem.id ? next[0] ?? null : prev));
       setPendingDeleteItem(null);
-    } catch {}
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError('Failed to remove item');
+    }
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -194,11 +246,20 @@ export default function StudioProjectPage() {
     setUploading(true);
     e.target.value = '';
     try {
-      const { item } = await uploadProjectItem(id, file);
+      const res = await uploadProjectItem(id, file);
+      const item = res?.item;
+      if (!item?.id) {
+        setError('Upload succeeded but invalid response');
+        return;
+      }
       const newItem: ProjectItem = { ...item, sort_order: items.length };
       setItems((prev) => [...prev, newItem]);
       setSelectedItem(newItem);
     } catch (err) {
+      if ((err as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
@@ -206,19 +267,24 @@ export default function StudioProjectPage() {
   }
 
   async function handleDeleteProject() {
+    setPendingDeleteProject(false);
     try {
       await deleteProject(id);
       router.push('/dashboard/studio');
-    } catch {}
-    setPendingDeleteProject(false);
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError('Failed to delete project');
+    }
   }
 
   function handleDownload() {
-    const url = referenceUrl;
-    if (!url) return;
+    if (!displayUrl) return;
     const a = document.createElement('a');
-    a.href = url;
-    a.download = url.split('/').pop() || 'download';
+    a.href = displayUrl;
+    a.download = referenceUrl?.split('/').pop() || 'download';
     a.target = '_blank';
     document.body.appendChild(a);
     a.click();
@@ -237,7 +303,7 @@ export default function StudioProjectPage() {
     );
   }
 
-  if (!project) {
+  if (!id || !project) {
     return (
       <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
         <p className="text-theme-fg-subtle">{t(locale, 'studio.projectNotFound')}</p>
@@ -319,7 +385,7 @@ export default function StudioProjectPage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={handleDownload} disabled={!referenceUrl} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40" title="Download">
+            <button type="button" onClick={handleDownload} disabled={!displayUrl} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40" title="Download">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
             </button>
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50" title="Upload">
@@ -450,7 +516,7 @@ export default function StudioProjectPage() {
                     )}
                   </div>
                   {items.map((item) => {
-                    const thumbUrl = getMediaDisplayUrl(item.latest_url || item.source_url, mediaToken);
+                    const thumbUrl = getSafeDisplayUrl(item.latest_url || item.source_url, mediaToken);
                     return (
                     <button
                       key={item.id}
@@ -460,10 +526,12 @@ export default function StudioProjectPage() {
                         selectedItem?.id === item.id ? 'border-theme-border-strong ring-2 ring-theme-border-strong' : 'border-theme-border hover:border-theme-border-hover'
                       }`}
                     >
-                      {item.type === 'video' ? (
+                      {thumbUrl ? (item.type === 'video' ? (
                         <video src={thumbUrl} className="w-full h-full object-cover" muted preload="metadata" playsInline />
                       ) : (
-                        <img src={thumbUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        <img src={thumbUrl} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                      )) : (
+                        <div className="w-full h-full bg-theme-bg-subtle flex items-center justify-center text-theme-fg-subtle text-xs">…</div>
                       )}
                       <span className="absolute top-0.5 right-0.5 px-1 rounded bg-theme-bg-overlay text-[10px] text-theme-fg font-medium">
                         {(item.version_num ?? 0) === 0 ? 'Original' : `v${(item.version_num ?? 0) + 1}`}
@@ -485,21 +553,30 @@ export default function StudioProjectPage() {
               <button type="button" onClick={() => setShowAddFromContent(false)} className="text-theme-fg-subtle hover:text-theme-fg text-2xl">×</button>
             </div>
             <div className="p-4 overflow-y-auto flex-1 grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {contentJobs.map((job) =>
-                job.outputUrls.slice(0, 4).map((url, i) => (
-                  <button
-                    key={`${job.id}-${i}`}
-                    type="button"
-                    onClick={() => handleAddItem(url, job.type as 'image' | 'video', job.id)}
-                    className="aspect-square rounded-lg overflow-hidden border border-theme-border hover:border-theme-accent"
-                  >
-                    {job.type === 'video' ? (
-                      <video src={url} className="w-full h-full object-cover" muted preload="metadata" playsInline />
-                    ) : (
-                      <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                    )}
-                  </button>
-                ))
+              {contentLoading ? (
+                <p className="col-span-full text-theme-fg-subtle text-sm py-4">{t(locale, 'common.loading')}</p>
+              ) : contentJobs.length === 0 ? (
+                <p className="col-span-full text-theme-fg-subtle text-sm py-4">{t(locale, 'studio.noContent')}</p>
+              ) : contentJobs.map((job) =>
+                job.outputUrls.slice(0, 4).map((url, i) => {
+                  const cellUrl = getSafeDisplayUrl(url, mediaToken);
+                  return (
+                    <button
+                      key={`${job.id}-${i}`}
+                      type="button"
+                      onClick={() => handleAddItem(url, job.type as 'image' | 'video', job.id)}
+                      className="aspect-square rounded-lg overflow-hidden border border-theme-border hover:border-theme-accent"
+                    >
+                      {cellUrl ? (job.type === 'video' ? (
+                        <video src={cellUrl} className="w-full h-full object-cover" muted preload="metadata" playsInline />
+                      ) : (
+                        <img src={cellUrl} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                      )) : (
+                        <div className="w-full h-full bg-theme-bg-subtle flex items-center justify-center text-theme-fg-subtle text-xs">…</div>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

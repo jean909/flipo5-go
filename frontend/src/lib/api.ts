@@ -468,6 +468,7 @@ export async function listContent(params: ListContentParams = {}): Promise<{
   if (params.q?.trim()) sp.set('q', params.q.trim());
   const url = `${API_URL}/api/content${sp.toString() ? `?${sp}` : ''}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 401) throw new Error('session_expired');
   if (!res.ok) throw new Error('Failed to load content');
   return res.json();
 }
@@ -526,6 +527,7 @@ export async function listProjects(limit?: number): Promise<{ projects: Project[
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   });
+  if (res.status === 401) throw new Error('session_expired');
   if (!res.ok) throw new Error('Failed to load projects');
   return res.json();
 }
@@ -588,6 +590,7 @@ export async function updateProject(id: string, name: string): Promise<void> {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ name }),
   });
+  if (res.status === 401) throw new Error('session_expired');
   if (res.status === 409) throw new Error('name_exists');
   if (!res.ok) throw new Error('Failed to update project');
 }
@@ -599,6 +602,7 @@ export async function deleteProject(id: string): Promise<void> {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (res.status === 401) throw new Error('session_expired');
   if (!res.ok) throw new Error('Failed to delete project');
 }
 
@@ -610,6 +614,7 @@ export async function addProjectItem(projectId: string, type: 'image' | 'video',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ type, source_url: sourceUrl, job_id: jobId || undefined }),
   });
+  if (res.status === 401) throw new Error('session_expired');
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(err?.error || `Failed to add item (${res.status})`);
@@ -624,6 +629,7 @@ export async function removeProjectItem(itemId: string): Promise<void> {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (res.status === 401) throw new Error('session_expired');
   if (!res.ok) throw new Error('Failed to remove item');
 }
 
@@ -639,6 +645,7 @@ export async function uploadProjectItem(projectId: string, file: File): Promise<
     body: form,
   });
   const body = await res.json().catch(() => ({})) as { id?: string; item?: ProjectItem; error?: string };
+  if (res.status === 401) throw new Error('session_expired');
   if (!res.ok) throw new Error(body?.error || 'Upload failed');
   if (!body.item) throw new Error('Upload failed');
   return { id: body.id!, item: body.item };

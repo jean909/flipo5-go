@@ -1,5 +1,36 @@
 # Edit Studio - Roadmap
 
+## Audit fixes (proiectele nu se deschideau)
+
+1. **Frontend `/dashboard/studio/[id]`**: La primul render `useParams().id` poate fi `undefined` (Next App Router). Efectul apela `getProject(id)` doar când `id` exista, dar nu seta niciodată `setLoading(false)` când `!id` → loading rămânea true la infinit. **Fix**: când `!id` apelăm `setLoading(false)` și afișăm "Project not found" + link înapoi; tratăm și `r.project ?? null` pentru răspunsuri inconsistente.
+2. **Backend Chi rute**: `GET /api/projects/{id}` era înregistrat înainte de `GET /api/projects/items/{itemId}/versions`, deci request-uri către list versions erau potrivite ca `id="items"` și dădeau 400. **Fix**: rutele mai specifice (`/items/...`) sunt înregistrate înainte de `/{id}`.
+3. **Add from Content modal**: Thumbnail-urile foloseau URL-ul raw (ex. `uploads/...`); pentru media din R2 trebuie proxy cu token. **Fix**: folosim `getMediaDisplayUrl(url, mediaToken)` pentru img/video în grid + `decoding="async"` pe img.
+
+4. **Id din useParams**: În unele versiuni Next, `params.id` poate fi `string | string[]`. **Fix**: hook `useProjectId()` care normalizează la string (dacă e array, ia `[0]`).
+
+5. **Media fără token**: URL-uri relative (ex. `uploads/...`) au nevoie de `/api/media?key=...&token=...`. Dacă token nu e încă încărcat, `getMediaDisplayUrl(url, null)` returna key-ul raw → img cu `src="uploads/..."` (request relativ, 404). **Fix**: helper `getSafeDisplayUrl(url, token)` – returnează `null` când URL e relativ și token lipsește; canvas și thumbnails afișează media doar când avem URL valid; placeholder „…” când lipsește; Download folosește `displayUrl` (cu proxy) și butonul e disabled când `!displayUrl`.
+
+6. **fetchProject**: Setare `projectName` la `''` în catch; folosire `proj ?? null` pentru consistență.
+
+7. **Upload response**: Verificare defensivă `res?.item?.id` înainte de adăugare în listă; mesaj de eroare dacă răspuns invalid.
+
+8. **Loading la schimbare id**: Când `id` devine disponibil (ex. după hydration) sau se schimbă (navigare la alt proiect), `setLoading(true)` la începutul efectului ca să se vadă loading până la rezolvarea `getProject`.
+
+### Verificare suplimentară
+9. **handleDeleteProject**: Dialogul se închide imediat (`setPendingDeleteProject(false)`), apoi se face delete; la eroare se afișează `setError('Failed to delete project')`.
+10. **handleRemoveItem / handleSaveName**: La eroare se afișează mesaj în bara de error (nu fail silent).
+11. **handleAddItem**: Verificare `res?.id` înainte de adăugare; dacă lipsește, `setError('Add failed')`.
+12. **Create project (listă)**: Dacă `createProject` nu returnează `id`, nu se face redirect la `/studio/undefined`; se afișează "Could not create project".
+13. **Modal Add from Content**: State `contentLoading`; când e deschis se afișează "Loading…" până la încărcare, apoi "No images or videos in My Content yet." (i18n `studio.noContent`) dacă lista e goală.
+
+### Toate fluxurile verificate (session, erori, backend)
+
+14. **Backend addProjectItem – source_url**: Backend-ul accepta doar `source_url` cu `http://` sau `https://`. Din "Add from Content" se trimit chei relative (ex. `uploads/user-id/uuid.jpg`). **Fix**: Backend acceptă orice `source_url` netrimis gol, fără `..` sau newline; se salvează ca atare în DB; frontend folosește `getMediaDisplayUrl` la afișare.
+
+15. **Listă proiecte**: `listProjects` la 401 arunca "Failed to load projects". **Fix**: API aruncă `session_expired` la 401; la refresh, catch face redirect la `/start`; la eroare generică se afișează `listError` (banner cu ×). **Delete proiect (din listă)**: la eroare se afișează "Failed to delete project"; la 401 redirect. **Rename (din listă)**: la 401 redirect; la alte erori se afișează mesaj în `nameError`.
+
+16. **API 401 consistență**: Toate apelurile studio aruncă `session_expired` la 401: `listProjects`, `updateProject`, `deleteProject`, `addProjectItem`, `removeProjectItem`, `uploadProjectItem`, `listContent`. Pe pagina de detaliu proiect, toate handler-ele (handleSaveName, handleAddItem, handleRemoveItem, handleUpload, handleDeleteProject) și efectul pentru listContent verifică `session_expired` și fac redirect la `/start`.
+
 ## Implemented (Phase 1)
 - ✅ Sidebar: Edit Studio link
 - ✅ Projects: CRUD (create, list, get, update, delete)

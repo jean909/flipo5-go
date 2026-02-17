@@ -79,12 +79,13 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
-			r.Get("/{id}", s.getProject)
 			r.Post("/", s.createProject)
+			// More specific routes before /{id} so GET /projects/items/... is not matched as id="items"
 			r.Delete("/items/{itemId}", s.removeProjectItem)
 			r.Get("/items/{itemId}/versions", s.listProjectVersions)
 			r.Post("/items/{itemId}/versions", s.addProjectVersion)
 			r.Post("/items/{itemId}/versions/upload", s.uploadProjectVersion)
+			r.Get("/{id}", s.getProject)
 			r.Post("/{id}/items/upload", s.uploadProjectItem)
 			r.Post("/{id}/items", s.addProjectItem)
 			r.Patch("/{id}", s.updateProject)
@@ -1329,11 +1330,13 @@ func (s *Server) addProjectItem(w http.ResponseWriter, r *http.Request) {
 	if body.Type != "image" && body.Type != "video" {
 		body.Type = "image"
 	}
-	if !strings.HasPrefix(body.SourceURL, "http://") && !strings.HasPrefix(body.SourceURL, "https://") {
+	// Allow full URLs (http/https) or relative storage keys (e.g. uploads/user-id/uuid.jpg from My Content)
+	sourceURL := strings.TrimSpace(body.SourceURL)
+	if sourceURL == "" || strings.Contains(sourceURL, "..") || strings.ContainsAny(sourceURL, "\n\r") {
 		http.Error(w, `{"error":"invalid source_url"}`, http.StatusBadRequest)
 		return
 	}
-	itemID, err := s.DB.AddProjectItem(r.Context(), projectID, userID, body.Type, body.SourceURL, body.JobID)
+	itemID, err := s.DB.AddProjectItem(r.Context(), projectID, userID, body.Type, sourceURL, body.JobID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
