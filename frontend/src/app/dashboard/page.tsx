@@ -60,7 +60,41 @@ export default function DashboardPage() {
   const [lastSentPrompt, setLastSentPrompt] = useState<string>('');
   const [pendingUserMessage, setPendingUserMessage] = useState<string>('');
   const [pendingUserMessageThreadId, setPendingUserMessageThreadId] = useState<string | null>(null);
-  const [submittedRequests, setSubmittedRequests] = useState<Set<string>>(new Set());
+  // localStorage key for submitted requests (prevent refresh re-submission)
+  const SUBMITTED_REQUESTS_KEY = 'flipo5_submitted_requests';
+  
+  // Load submitted requests from localStorage
+  const getSubmittedRequests = (): Set<string> => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = localStorage.getItem(SUBMITTED_REQUESTS_KEY);
+      if (!stored) return new Set();
+      const data: { key: string; timestamp: number }[] = JSON.parse(stored);
+      const now = Date.now();
+      const hourAgo = now - 60 * 60 * 1000; // 1 hour
+      // Keep only recent submissions
+      const recent = data.filter(item => item.timestamp > hourAgo);
+      if (recent.length !== data.length) {
+        localStorage.setItem(SUBMITTED_REQUESTS_KEY, JSON.stringify(recent));
+      }
+      return new Set(recent.map(item => item.key));
+    } catch {
+      return new Set();
+    }
+  };
+  
+  // Save submitted request to localStorage
+  const saveSubmittedRequest = (key: string) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem(SUBMITTED_REQUESTS_KEY);
+      const existing: { key: string; timestamp: number }[] = stored ? JSON.parse(stored) : [];
+      const updated = [...existing.filter(item => item.key !== key), { key, timestamp: Date.now() }];
+      localStorage.setItem(SUBMITTED_REQUESTS_KEY, JSON.stringify(updated));
+    } catch {}
+  };
+  
+  const [submittedRequests, setSubmittedRequests] = useState<Set<string>>(getSubmittedRequests());
   const [imageSettings, setImageSettings] = useState<ImageSettings>({
     size: '2K',
     aspectRatio: 'match_input_image',
@@ -298,6 +332,7 @@ export default function DashboardPage() {
     }
     
     setSubmittedRequests(prev => new Set(prev).add(requestKey));
+    saveSubmittedRequest(requestKey);
     
     const useNormalSession = pendingNormalSessionSubmit.current;
     if (useNormalSession) pendingNormalSessionSubmit.current = false;
@@ -421,6 +456,11 @@ export default function DashboardPage() {
     }
     setHasStarted(true);
     setPrompt('');
+    
+    // Reset form to prevent browser auto-resubmission
+    if (formRef.current) {
+      formRef.current.reset();
+    }
     } catch (err) {
       setPendingUserMessage('');
       setPendingUserMessageThreadId(null);
@@ -550,7 +590,7 @@ export default function DashboardPage() {
 
   const bottomBar = (
     <div className="shrink-0 border-t border-theme-border-subtle bg-theme-bg p-4">
-      <form ref={formRef} onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto flex flex-col gap-3">
+      <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full max-w-2xl mx-auto flex flex-col gap-3">
         {mode === 'image' && hasStarted && (
           <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />
         )}
@@ -657,7 +697,7 @@ export default function DashboardPage() {
             </div>
           )}
           <h2 className="font-display text-2xl font-bold text-theme-fg mb-8 tracking-tight">FLIPO5</h2>
-          <form ref={formRef} onSubmit={handleSubmit} className="w-full flex flex-col items-center gap-4">
+          <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full flex flex-col items-center gap-4">
             {mode === 'image' && (
               <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />
             )}
