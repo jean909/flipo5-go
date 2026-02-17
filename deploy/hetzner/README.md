@@ -6,6 +6,21 @@ Backend (Go API) pe Hetzner. Frontend poate rula local și se conectează la bac
 
 ### Deploy rapid (după modificări)
 
+**Windows (PowerShell)** – folosește prefixul `.\` (obligatoriu):
+
+```powershell
+cd "C:\Users\DeveloperPC\Downloads\Flipo5 GO"
+
+# Cu parametri
+.\deploy\hetzner\deploy-docker.ps1 -Server "root@YOUR_SERVER_IP" -Message "Deploy: sync"
+
+# Sau cu env var
+$env:DEPLOY_SERVER = "root@YOUR_SERVER_IP"
+.\deploy\hetzner\deploy-docker.ps1
+```
+
+**Linux / Git Bash:**
+
 ```bash
 # Setează IP-ul o dată
 export DEPLOY_SERVER=root@YOUR_SERVER_IP
