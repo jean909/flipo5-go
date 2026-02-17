@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,9 +20,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
+	repgo "github.com/replicate/replicate-go"
 	"flipo5/backend/internal/cache"
 	"flipo5/backend/internal/middleware"
 	"flipo5/backend/internal/queue"
+	"flipo5/backend/internal/replicate"
 	"flipo5/backend/internal/storage"
 	"flipo5/backend/internal/store"
 	"flipo5/backend/internal/stream"
@@ -33,6 +36,8 @@ type Server struct {
 	Store                *storage.Store
 	Stream               *stream.Subscriber
 	Cache                *cache.Redis
+	Repl                 *replicate.Client
+	ModelRemoveBg        string
 	redisURL             string
 	supabaseJWTSecret    string
 	jwks                 *keyfunc.JWKS
@@ -41,9 +46,10 @@ type Server struct {
 }
 
 // NewServer builds the API server.
-func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
+func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
 	return &Server{
 		DB: db, Asynq: asynq, Store: store, Stream: streamSub, Cache: cache,
+		Repl: repl, ModelRemoveBg: modelRemoveBg,
 		redisURL: redisURL, supabaseJWTSecret: supabaseJWTSecret, jwks: jwks,
 		supabaseURL: supabaseURL, supabaseServiceRole: supabaseServiceRole,
 	}
@@ -87,6 +93,7 @@ func (s *Server) Routes() http.Handler {
 			r.Post("/items/{itemId}/versions/upload", s.uploadProjectVersion)
 			r.Get("/{id}", s.getProject)
 			r.Post("/{id}/items/upload", s.uploadProjectItem)
+			r.Post("/{id}/items/{itemId}/remove-bg", s.removeProjectItemBackground)
 			r.Post("/{id}/items", s.addProjectItem)
 			r.Patch("/{id}", s.updateProject)
 			r.Delete("/{id}", s.deleteProject)
@@ -1602,4 +1609,137 @@ func (s *Server) uploadProjectVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+// removeProjectItemBackground runs bria/remove-background on the item image, uploads result to R2, adds a new version.
+func (s *Server) removeProjectItemBackground(w http.ResponseWriter, r *http.Request) {
+	projectIDStr := chi.URLParam(r, "id")
+	itemIDStr := chi.URLParam(r, "itemId")
+	projectID, err := uuid.Parse(projectIDStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid project id"}`, http.StatusBadRequest)
+		return
+	}
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid item id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	p, err := s.DB.GetProject(r.Context(), projectID, userID)
+	if err != nil || p == nil {
+		http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+		return
+	}
+	items, err := s.DB.ListProjectItems(r.Context(), projectID, userID)
+	if err != nil {
+		http.Error(w, `{"error":"failed to load items"}`, http.StatusInternalServerError)
+		return
+	}
+	var item *store.ProjectItem
+	for i := range items {
+		if items[i].ID == itemID {
+			item = &items[i]
+			break
+		}
+	}
+	if item == nil {
+		http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+		return
+	}
+	if item.Type != "image" {
+		http.Error(w, `{"error":"only images supported for remove background"}`, http.StatusBadRequest)
+		return
+	}
+	imageURL := item.LatestURL
+	if imageURL == "" {
+		imageURL = item.SourceURL
+	}
+	if imageURL == "" {
+		http.Error(w, `{"error":"item has no image url"}`, http.StatusBadRequest)
+		return
+	}
+	if s.Repl == nil || s.ModelRemoveBg == "" {
+		http.Error(w, `{"error":"remove background not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	input := repgo.PredictionInput{
+		"image_url":      imageURL,
+		"preserve_alpha": true,
+	}
+	out, err := s.Repl.Run(ctx, s.ModelRemoveBg, input)
+	if err != nil {
+		log.Printf("[remove-bg] replicate run failed: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{"error": "background removal failed: " + err.Error()})
+		return
+	}
+	var resultURL string
+	switch v := out.(type) {
+	case string:
+		resultURL = v
+	case map[string]interface{}:
+		if u, _ := v["output"].(string); u != "" {
+			resultURL = u
+		} else if u, _ := v["url"].(string); u != "" {
+			resultURL = u
+		}
+	}
+	if resultURL == "" {
+		log.Printf("[remove-bg] unexpected replicate output type: %T", out)
+		http.Error(w, `{"error":"invalid model output"}`, http.StatusInternalServerError)
+		return
+	}
+	// Download result and upload to our R2
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resultURL, nil)
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch result"}`, http.StatusInternalServerError)
+		return
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, `{"error":"failed to download result"}`, http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, `{"error":"failed to download result"}`, http.StatusBadGateway)
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, `{"error":"failed to read result"}`, http.StatusInternalServerError)
+		return
+	}
+	if s.Store == nil {
+		http.Error(w, `{"error":"storage not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	key := fmt.Sprintf("uploads/%s/%s.png", userID.String(), uuid.New().String())
+	_, err = s.Store.Put(ctx, key, bytes.NewReader(body), "image/png")
+	if err != nil {
+		log.Printf("[remove-bg] store put: %v", err)
+		http.Error(w, `{"error":"failed to save result"}`, http.StatusInternalServerError)
+		return
+	}
+	url := s.Store.URL(key)
+	meta := json.RawMessage(`{"action":"remove_bg"}`)
+	if err := s.DB.AddProjectVersion(ctx, itemID, userID, url, meta); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"failed to add version"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"url": url, "ok": true})
 }

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, listContent, getToken, getMediaDisplayUrl, type Project, type ProjectItem, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listContent, getToken, getMediaDisplayUrl, type Project, type ProjectItem, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../../components/ImageViewModal';
@@ -48,6 +48,8 @@ export default function StudioProjectPage() {
   const [pendingDeleteItem, setPendingDeleteItem] = useState<ProjectItem | null>(null);
   const [pendingDeleteProject, setPendingDeleteProject] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [removingBg, setRemovingBg] = useState(false);
+  const [dragOverCount, setDragOverCount] = useState(0);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -233,18 +235,21 @@ export default function StudioProjectPage() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function isValidUploadFile(file: File): boolean {
+    return file.type.startsWith('image/') || ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
+  }
+
+  async function doUploadFile(file: File) {
     if (!id || !project) {
       setError('Please wait for the project to load');
       return;
     }
-    const valid = file.type.startsWith('image/') || ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
-    if (!valid) return;
+    if (!isValidUploadFile(file)) {
+      setError('Use an image or video (MP4, WebM, QuickTime)');
+      return;
+    }
     setError(null);
     setUploading(true);
-    e.target.value = '';
     try {
       const res = await uploadProjectItem(id, file);
       const item = res?.item;
@@ -266,6 +271,36 @@ export default function StudioProjectPage() {
     }
   }
 
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    doUploadFile(file);
+    e.target.value = '';
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    setDragOverCount((c) => c + 1);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverCount((c) => Math.max(0, c - 1));
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverCount(0);
+    const file = e.dataTransfer.files?.[0];
+    if (file) doUploadFile(file);
+  }
+
   async function handleDeleteProject() {
     setPendingDeleteProject(false);
     try {
@@ -284,11 +319,30 @@ export default function StudioProjectPage() {
     if (!displayUrl) return;
     const a = document.createElement('a');
     a.href = displayUrl;
-    a.download = referenceUrl?.split('/').pop() || 'download';
+    const base = referenceUrl?.split('/').pop() || 'image';
+    a.download = selectedItem?.type === 'image' ? base.replace(/\.[^.]+$/, '') + '.png' : base;
     a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  }
+
+  async function handleRemoveBg() {
+    if (!id || !selectedItem || selectedItem.type !== 'image') return;
+    setError(null);
+    setRemovingBg(true);
+    try {
+      await removeProjectItemBackground(id, selectedItem.id);
+      await fetchProject();
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError((e as Error)?.message ?? 'Remove background failed');
+    } finally {
+      setRemovingBg(false);
+    }
   }
 
   const versionLabel = selectedItem
@@ -377,7 +431,15 @@ export default function StudioProjectPage() {
 
           {/* Tools bar - center */}
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-subtle flex-1 min-w-0 justify-center">
-            <ToolBtn label="Remove BG" />
+            <button
+              type="button"
+              onClick={handleRemoveBg}
+              disabled={!selectedItem || selectedItem.type !== 'image' || removingBg}
+              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              title="Remove background (new version)"
+            >
+              {removingBg ? '...' : 'Remove BG'}
+            </button>
             <ToolBtn label="Filters" />
             <ToolBtn label="Crop & Rotate" />
             <ToolBtn label="Adjustments" />
@@ -434,8 +496,18 @@ export default function StudioProjectPage() {
           </div>
         </aside>
 
-        {/* Main canvas: black with subtle grid (canvas feel) + selected image center + bottom strip */}
-        <main className="flex-1 min-h-0 flex flex-col overflow-hidden bg-theme-bg bg-grid-dark">
+        {/* Main canvas: drop zone for upload + selected image + bottom strip */}
+        <main
+          className="flex-1 min-h-0 flex flex-col overflow-hidden bg-theme-bg bg-grid-dark relative"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {dragOverCount > 0 && !uploading && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-theme-bg/90 border-2 border-dashed border-theme-accent rounded-lg m-2 pointer-events-none">
+              <p className="text-theme-fg font-medium">{t(locale, 'studio.upload')} — drop here</p>
+            </div>
+          )}
           {items.length === 0 ? (
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center max-w-sm">

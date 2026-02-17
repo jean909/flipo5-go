@@ -31,10 +31,11 @@ type Config struct {
 	S3PublicURL  string // e.g. https://storage.flipo5.com for public read URLs
 
 	// Model identifiers from env (e.g. meta/meta-llama-3-70b-instruct)
-	ModelText    string
-	ModelImage   string
-	ModelImageHD string // google/nano-banana for HD
-	ModelVideo   string
+	ModelText      string
+	ModelImage     string
+	ModelImageHD   string // google/nano-banana for HD
+	ModelVideo     string
+	ModelRemoveBg  string // bria/remove-background for studio remove background
 
 	// CORS: comma-separated origins, e.g. "http://localhost:3000,https://app.example.com". Empty = allow "*"
 	CORSOrigins string
@@ -63,6 +64,7 @@ func Load() *Config {
 		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),
 		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
+		ModelRemoveBg:  getEnv("REPLICATE_MODEL_REMOVE_BG", "bria/remove-background"),
 		CORSOrigins:    strings.TrimSpace(getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 	}
 }

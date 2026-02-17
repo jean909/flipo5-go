@@ -664,3 +664,17 @@ export async function uploadProjectVersion(itemId: string, file: File): Promise<
   });
   if (!res.ok) throw new Error('Upload failed');
 }
+
+/** Remove background from project item image. Creates a new version (PNG with transparency). */
+export async function removeProjectItemBackground(projectId: string, itemId: string): Promise<{ url: string; ok: boolean }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/${projectId}/items/${itemId}/remove-bg`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => ({})) as { url?: string; ok?: boolean; error?: string };
+  if (res.status === 401) throw new Error('session_expired');
+  if (!res.ok) throw new Error(body?.error || 'Remove background failed');
+  return { url: body.url ?? '', ok: body.ok === true };
+}
