@@ -35,6 +35,9 @@ type Config struct {
 	ModelImage   string
 	ModelImageHD string // google/nano-banana for HD
 	ModelVideo   string
+
+	// CORS: comma-separated origins, e.g. "http://localhost:3000,https://app.example.com". Empty = allow "*"
+	CORSOrigins string
 }
 
 func Load() *Config {
@@ -60,6 +63,7 @@ func Load() *Config {
 		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),
 		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
+		CORSOrigins:    strings.TrimSpace(getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 	}
 }
 

@@ -134,10 +134,11 @@ func main() {
 		}
 	}
 	srv := api.NewServer(db, asynqClient, s3Store, streamSub, apiCache, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
+	origins := buildCORSOrigins(cfg.CORSOrigins)
 	handler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Cache-Control", "Pragma"},
 		AllowCredentials: false,
 	}).Handler(srv.Routes())
 
@@ -153,4 +154,22 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	_ = httpSrv.Shutdown(ctx)
+}
+
+// buildCORSOrigins parses CORS_ORIGINS (comma-separated). Empty => ["*"] for allow-all.
+func buildCORSOrigins(cfg string) []string {
+	cfg = strings.TrimSpace(cfg)
+	if cfg == "" {
+		return []string{"*"}
+	}
+	var out []string
+	for _, s := range strings.Split(cfg, ",") {
+		if o := strings.TrimSpace(s); o != "" {
+			out = append(out, o)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"*"}
+	}
+	return out
 }

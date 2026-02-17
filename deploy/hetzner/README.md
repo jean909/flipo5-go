@@ -90,6 +90,15 @@ SUPABASE_SERVICE_ROLE_KEY=...  # din Project Settings → API → service_role
 JWT_SECRET=minim-32-caractere-pentru-producție
 ```
 
+**CORS** – dacă frontend-ul rulează pe alt domeniu/port (ex. `http://localhost:3000` sau `https://app.example.com`), API-ul trebuie să permită originea. Setează în `.env`:
+
+```env
+# Origini permise, separate prin virgulă. Implicit: http://localhost:3000, http://127.0.0.1:3000
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://domeniul-tau.ro
+```
+
+Fără `CORS_ORIGINS`, backend-ul permite doar localhost. Pentru producție pune și URL-ul frontend-ului. După modificare: restart API (`systemctl restart flipo5-api` sau `docker compose restart api`).
+
 ### Copiază systemd service
 
 ```bash
