@@ -118,3 +118,22 @@ input[type="search"]::-webkit-search-decoration {
 input[type="search"]::-ms-clear {
   display: none;
 }
+
+/* Copy button – animație check la copiere */
+@keyframes scaleIn {
+  0% { transform: scale(0.6); opacity: 0; }
+  70% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+/* Like/Dislike – mică animație când userul dă feedback */
+@keyframes feedbackUsed {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+.animate-feedback-used {
+  animation: feedbackUsed 0.35s ease-out;
+}

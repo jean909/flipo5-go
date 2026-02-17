@@ -14,6 +14,7 @@ import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from './ImageGallery';
 import { ImageViewModal } from './ImageViewModal';
+import { ResultActionsBar } from '@/components/ResultActionsBar';
 import { jobErrorDisplay } from '@/lib/i18n';
 
 // Markdown components: render AI output (including tables) without requiring prompt instructions
@@ -58,6 +59,9 @@ export function JobCard({
   dark,
   onNotFound,
   onUseAsReference,
+  onRegenerate,
+  onStartThread,
+  regenerateUsed = false,
   variant = 'card',
 }: {
   jobId: string;
@@ -65,6 +69,9 @@ export function JobCard({
   dark?: boolean;
   onNotFound?: () => void;
   onUseAsReference?: (url: string) => void;
+  onRegenerate?: () => void;
+  onStartThread?: (mediaUrls: string[]) => void;
+  regenerateUsed?: boolean;
   variant?: 'card' | 'chat';
 }) {
   const [job, setJob] = useState<Job | null>(null);
@@ -349,7 +356,20 @@ export function JobCard({
   if (job && job.type === 'image' && job.status === 'completed') {
     const urls = imageUrls;
     if (urls.length > 0) {
-      return <ImageGallery urls={urls} variant="chat" locale={locale} onUseAsReference={onUseAsReference} />;
+      return (
+        <div className="flex flex-col items-start">
+          <ImageGallery urls={urls} variant="chat" locale={locale} onUseAsReference={onUseAsReference} />
+          <ResultActionsBar
+            jobId={jobId}
+            jobType="image"
+            initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
+            mediaUrls={urls}
+            threadId={job.thread_id ?? null}
+            locale={locale}
+            onStartThread={onStartThread}
+          />
+        </div>
+      );
     }
     // Avoid flash of "no response" while output/urls may still be loading - show loader, "no response" only after retries
     if (retryCount < 3) {
@@ -398,25 +418,36 @@ export function JobCard({
     if (videoUrl) {
       return (
         <>
-          <div className="flex justify-start">
-            <button
-              type="button"
-              onClick={() => setViewingVideoUrl(videoUrl)}
-              className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden text-left block cursor-pointer relative group"
-            >
-              <video
-                src={videoUrl}
-                className="w-full aspect-video object-cover pointer-events-none"
-                muted
-                preload="metadata"
-                playsInline
-              />
-              <div className="absolute inset-0 flex items-center justify-center bg-theme-bg-overlay group-hover:bg-theme-bg-overlay-strong transition-colors pointer-events-none">
-                <span className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
-                  <PlayIcon className="w-7 h-7 text-black ml-1" />
-                </span>
-              </div>
-            </button>
+          <div className="flex flex-col items-start">
+            <div className="flex justify-start">
+              <button
+                type="button"
+                onClick={() => setViewingVideoUrl(videoUrl)}
+                className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden text-left block cursor-pointer relative group"
+              >
+                <video
+                  src={videoUrl}
+                  className="w-full aspect-video object-cover pointer-events-none"
+                  muted
+                  preload="metadata"
+                  playsInline
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-theme-bg-overlay group-hover:bg-theme-bg-overlay-strong transition-colors pointer-events-none">
+                  <span className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                    <PlayIcon className="w-7 h-7 text-black ml-1" />
+                  </span>
+                </div>
+              </button>
+            </div>
+            <ResultActionsBar
+              jobId={jobId}
+              jobType="video"
+              initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
+              mediaUrls={[videoUrl]}
+              threadId={job.thread_id ?? null}
+              locale={locale}
+              onStartThread={onStartThread}
+            />
           </div>
           {viewingVideoUrl && (
             <ImageViewModal url={viewingVideoUrl} onClose={() => setViewingVideoUrl(null)} locale={locale} />
@@ -448,7 +479,7 @@ export function JobCard({
     const validAttachments = attachmentUrls.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
     if (!hasText && !hasImages) {
       return (
-        <div className="flex justify-start">
+        <div className="flex justify-start flex-col items-start">
           <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5">
             <p className="text-[15px] text-theme-fg/50 italic">{t(locale, 'chat.noResponse')}</p>
             {validAttachments.length > 0 && (
@@ -459,11 +490,21 @@ export function JobCard({
               </div>
             )}
           </div>
+          <ResultActionsBar
+            jobId={jobId}
+            jobType="chat"
+            initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
+            mediaUrls={validAttachments}
+            threadId={job.thread_id ?? null}
+            locale={locale}
+            onStartThread={onStartThread}
+          />
         </div>
       );
     }
+    const chatMediaUrls = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http'));
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start flex-col items-start">
         <div className="max-w-[85%] min-w-0 rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5 overflow-visible break-words">
           {outputStr && (
             <div className="prose prose-invert prose-sm max-w-none overflow-visible break-words [&_*]:break-words">
@@ -472,7 +513,7 @@ export function JobCard({
               </ReactMarkdown>
             </div>
           )}
-          {outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http')).map((url) => (
+          {chatMediaUrls.map((url) => (
             <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded-lg" />
           ))}
           {validAttachments.length > 0 && (
@@ -483,6 +524,19 @@ export function JobCard({
             </div>
           )}
         </div>
+        <ResultActionsBar
+          jobId={jobId}
+          jobType="chat"
+          initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
+          text={outputStr}
+          mediaUrls={chatMediaUrls}
+          threadId={job.thread_id ?? null}
+          showRegenerate={outputStr.length > 0}
+          regenerateUsed={regenerateUsed}
+          onRegenerate={onRegenerate}
+          onStartThread={onStartThread}
+          locale={locale}
+        />
       </div>
     );
   }
@@ -497,6 +551,7 @@ export function JobCard({
   }
 
   // Card variant (default)
+  const cardOutputUrls = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http'));
   return (
     <div className={cardCls}>
       <div className="flex items-center justify-between text-sm">
@@ -509,12 +564,25 @@ export function JobCard({
       {job.status === 'completed' && job.output && (
         <>
           {outputStr && <p className={`mt-2 text-sm whitespace-pre-wrap ${dark ? 'text-theme-fg' : 'text-black'}`}>{outputStr}</p>}
-          {outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http')).map((url) => (
+          {cardOutputUrls.map((url) => (
             <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded border border-theme-border-subtle" />
           ))}
           {!outputStr && outputArr.length === 0 && out && typeof out === 'object' && 'output' in out && (
             <pre className={`mt-2 text-xs overflow-auto ${preCls}`}>{JSON.stringify(job.output)}</pre>
           )}
+          <ResultActionsBar
+            jobId={jobId}
+            jobType={job.type as 'chat' | 'image' | 'video'}
+            initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
+            text={outputStr}
+            mediaUrls={cardOutputUrls}
+            threadId={job.thread_id ?? null}
+            showRegenerate={job.type === 'chat' && outputStr.length > 0}
+            regenerateUsed={regenerateUsed}
+            onRegenerate={onRegenerate}
+            onStartThread={onStartThread}
+            locale={locale}
+          />
         </>
       )}
       {job.status === 'failed' && job.error && (

@@ -349,8 +349,21 @@ export interface Job {
   error: string | null;
   cost_cents: number;
   replicate_id?: string | null;
+  rating?: 'like' | 'dislike' | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Salvează feedback (like/dislike) pentru un job – stocat în DB pentru analiză. */
+export async function setJobFeedback(jobId: string, rating: 'like' | 'dislike' | null): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/feedback`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ rating: rating ?? null }),
+  });
+  if (!res.ok) throw new Error('Failed to save feedback');
 }
 
 export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {

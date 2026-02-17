@@ -31,6 +31,7 @@ type Job struct {
 	Error       *string         `json:"error,omitempty"`
 	CostCents   int             `json:"cost_cents"`
 	ReplicateID *string         `json:"replicate_id,omitempty"`
+	Rating      *string         `json:"rating,omitempty"`
 	CreatedAt   string          `json:"created_at"`
 	UpdatedAt   string          `json:"updated_at"`
 }
@@ -71,9 +72,9 @@ func (db *DB) CreateJob(ctx context.Context, userID uuid.UUID, jobType string, i
 func (db *DB) GetJob(ctx context.Context, id uuid.UUID) (*Job, error) {
 	var j Job
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, rating, created_at::text, updated_at::text
 		 FROM jobs WHERE id = $1`, id).
-		Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.CreatedAt, &j.UpdatedAt)
+		Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.Rating, &j.CreatedAt, &j.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -143,7 +144,7 @@ func (db *DB) ListJobs(ctx context.Context, userID uuid.UUID, limit int) ([]Job,
 		limit = 20
 	}
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, rating, created_at::text, updated_at::text
 		 FROM jobs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, err
@@ -152,7 +153,7 @@ func (db *DB) ListJobs(ctx context.Context, userID uuid.UUID, limit int) ([]Job,
 	var list []Job
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.CreatedAt, &j.UpdatedAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.Rating, &j.CreatedAt, &j.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, j)
@@ -191,7 +192,7 @@ func (db *DB) ListContentJobs(ctx context.Context, userID uuid.UUID, offset, lim
 	limitIdx := len(args) - 1
 	offsetIdx := len(args)
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text `+
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, rating, created_at::text, updated_at::text `+
 			base+` ORDER BY created_at DESC LIMIT $`+strconv.Itoa(limitIdx)+` OFFSET $`+strconv.Itoa(offsetIdx), args...)
 	if err != nil {
 		return nil, 0, err
@@ -200,7 +201,7 @@ func (db *DB) ListContentJobs(ctx context.Context, userID uuid.UUID, offset, lim
 	var list []Job
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.CreatedAt, &j.UpdatedAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.Rating, &j.CreatedAt, &j.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		list = append(list, j)
@@ -225,7 +226,7 @@ func (db *DB) ThreadHasActiveJobs(ctx context.Context, threadID uuid.UUID) (bool
 
 func (db *DB) ListJobsByThread(ctx context.Context, threadID, userID uuid.UUID) ([]Job, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, rating, created_at::text, updated_at::text
 		 FROM jobs WHERE thread_id = $1 AND user_id = $2 ORDER BY created_at ASC`,
 		threadID, userID)
 	if err != nil {
@@ -235,7 +236,7 @@ func (db *DB) ListJobsByThread(ctx context.Context, threadID, userID uuid.UUID) 
 	var list []Job
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.CreatedAt, &j.UpdatedAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.Rating, &j.CreatedAt, &j.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, j)
@@ -246,7 +247,7 @@ func (db *DB) ListJobsByThread(ctx context.Context, threadID, userID uuid.UUID) 
 // ListStalePendingJobs returns jobs in pending/running for longer than maxAgeMinutes. Used for cleanup.
 func (db *DB) ListStalePendingJobs(ctx context.Context, maxAgeMinutes int) ([]Job, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, created_at::text, updated_at::text
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, rating, created_at::text, updated_at::text
 		 FROM jobs WHERE status IN ('pending','running') AND updated_at < NOW() - ($1 || ' minutes')::interval
 		 ORDER BY updated_at ASC LIMIT 100`,
 		fmt.Sprint(maxAgeMinutes))
@@ -257,10 +258,21 @@ func (db *DB) ListStalePendingJobs(ctx context.Context, maxAgeMinutes int) ([]Jo
 	var list []Job
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.CreatedAt, &j.UpdatedAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.Rating, &j.CreatedAt, &j.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, j)
 	}
 	return list, rows.Err()
+}
+
+// UpdateJobRating sets user feedback (like/dislike) for a job. Only the job owner can set it.
+func (db *DB) UpdateJobRating(ctx context.Context, jobID, userID uuid.UUID, rating string) error {
+	var err error
+	if rating == "" {
+		_, err = db.Pool.Exec(ctx, `UPDATE jobs SET rating = NULL, updated_at = NOW() WHERE id = $1 AND user_id = $2`, jobID, userID)
+	} else {
+		_, err = db.Pool.Exec(ctx, `UPDATE jobs SET rating = $2, updated_at = NOW() WHERE id = $1 AND user_id = $3`, jobID, rating, userID)
+	}
+	return err
 }

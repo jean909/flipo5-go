@@ -74,6 +74,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_config_updated_at TIMESTAMPTZ;
 -- Jobs: name = first 4 words of prompt (for image/video indexing)
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS name TEXT;
 CREATE INDEX IF NOT EXISTS idx_jobs_name ON jobs(name);
+
+-- Jobs: user feedback (like/dislike) per response – stocat în DB pentru analiză
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rating TEXT CHECK (rating IS NULL OR rating IN ('like', 'dislike'));
 -- Backfill name for existing image/video jobs
 UPDATE jobs SET name = array_to_string(
   (regexp_split_to_array(trim(COALESCE(input->>'prompt','')), E'\\s+'))[1:4],

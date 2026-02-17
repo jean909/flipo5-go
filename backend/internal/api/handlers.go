@@ -75,6 +75,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs", s.listJobs)
 		r.Get("/content", s.listContent)
 		r.Get("/jobs/{id}", s.getJob)
+		r.Patch("/jobs/{id}/feedback", s.setJobFeedback)
 		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
@@ -798,6 +799,41 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(job)
+}
+
+func (s *Server) setJobFeedback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Rating *string `json:"rating"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	rating := ""
+	if body.Rating != nil && (*body.Rating == "like" || *body.Rating == "dislike") {
+		rating = *body.Rating
+	}
+	if err := s.DB.UpdateJobRating(r.Context(), id, userID, rating); err != nil {
+		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 }
 
 func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {

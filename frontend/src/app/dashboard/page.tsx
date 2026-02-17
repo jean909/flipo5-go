@@ -95,6 +95,8 @@ export default function DashboardPage() {
   };
   
   const [submittedRequests, setSubmittedRequests] = useState<Set<string>>(getSubmittedRequests());
+  /** When user regenerates a chat reply: old job id -> new job id (show new in same slot, once) */
+  const [replaceMap, setReplaceMap] = useState<Record<string, string>>({});
   const [imageSettings, setImageSettings] = useState<ImageSettings>({
     size: '2K',
     aspectRatio: 'match_input_image',
@@ -211,6 +213,7 @@ export default function DashboardPage() {
       setThreadId(loadId);
       setThreadData(null);
       setThreadJobs([]);
+      setReplaceMap({});
       setPendingUserMessage('');
       setPendingUserMessageThreadId(null);
       setThreadLoading(true);
@@ -241,6 +244,7 @@ export default function DashboardPage() {
       setThreadId(null);
       setThreadData(null);
       setThreadJobs([]);
+      setReplaceMap({});
     }
   }, [urlThreadId, incognito, incognitoThreadId, router]);
 
@@ -256,6 +260,48 @@ export default function DashboardPage() {
       setThreadJobs(r.jobs ?? []);
     }).catch(() => { if (effectiveThreadIdRef.current === id) setThreadJobs([]); });
   }, []);
+
+  // Start new chat with given media as reference (from ResultActionsBar "Thread")
+  const handleStartThreadWithRef = useCallback((mediaUrls: string[]) => {
+    setReferenceImageUrls(mediaUrls);
+    setThreadId(null);
+    setThreadData(null);
+    setThreadJobs([]);
+    setReplaceMap({});
+    setHasStarted(true);
+    if (!incognito) router.replace('/dashboard', { scroll: false });
+  }, [incognito, router]);
+
+  // Regenerate chat reply (text only, once): create new chat job and show it in same slot
+  const handleRegenerate = useCallback(async (oldJobId: string, prompt: string) => {
+    if (!effectiveThreadId) return;
+    try {
+      const res = await createChat(prompt, undefined, effectiveThreadId);
+      setReplaceMap((prev) => ({ ...prev, [oldJobId]: res.job_id }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    }
+  }, [effectiveThreadId]);
+
+  // Apply ref URLs from session (e.g. "Start new chat with this" from another page)
+  useEffect(() => {
+    const raw = typeof window !== 'undefined' ? sessionStorage.getItem('flipo5_ref_urls') : null;
+    if (!raw) return;
+    try {
+      const urls = JSON.parse(raw) as string[];
+      sessionStorage.removeItem('flipo5_ref_urls');
+      if (Array.isArray(urls) && urls.length > 0) {
+        setReferenceImageUrls(urls);
+        setThreadId(null);
+        setThreadData(null);
+        setThreadJobs([]);
+        setHasStarted(true);
+        if (!urlThreadId) router.replace('/dashboard', { scroll: false });
+      }
+    } catch {
+      sessionStorage.removeItem('flipo5_ref_urls');
+    }
+  }, [urlThreadId, router]);
 
   const isArchived = !!threadData?.archived_at;
 
@@ -900,13 +946,16 @@ export default function DashboardPage() {
               ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
                 ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
                 : []),
-              ...threadJobs,
+              ...threadJobs.map((j) => ({ ...j, id: replaceMap[j.id] || j.id })),
               ...(jobId &&
               !threadJobs.some((j) => j.id === jobId) &&
               effectiveThreadId === pendingJobThreadId
                 ? [{ id: jobId, type: pendingJobType, input: lastSentPrompt ? { prompt: lastSentPrompt } : {} }]
                 : []),
-            ].map((job) => (
+            ].map((job) => {
+              const promptForRegenerate = (job.input as { prompt?: string })?.prompt;
+              const isRegeneratedSlot = job.id !== '_pending' && Object.values(replaceMap).includes(job.id);
+              return (
               <div key={job.id} className="flex flex-col gap-2">
                 {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
                   <div className="flex justify-end">
@@ -923,10 +972,15 @@ export default function DashboardPage() {
                   variant="chat"
                   onNotFound={job.id === jobId ? () => { setJobId(null); setPendingJobThreadId(null); } : undefined}
                   onUseAsReference={addReferenceImage}
+                  regenerateUsed={isRegeneratedSlot}
+                  onRegenerate={job.type === 'chat' && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
+                    ? () => handleRegenerate(job.id, promptForRegenerate)
+                    : undefined}
+                  onStartThread={handleStartThreadWithRef}
                 />
                 )}
               </div>
-            ))}
+            ); })}
             </div>
           </div>
           {!isArchived && bottomBar}

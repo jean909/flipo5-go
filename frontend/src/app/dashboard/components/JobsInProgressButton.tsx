@@ -53,6 +53,13 @@ function playCompletionSound() {
 type CompletedToast = { id: string; type: 'image' | 'video'; threadId: string | null; durationSec: number; imageUrl?: string };
 type FailedToast = { id: string; type: 'image' | 'video'; error: string; threadId: string | null };
 
+// Dedupe by id (keep last) to avoid React "duplicate key" and stuck UI
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const byId = new Map<string, T>();
+  items.forEach((t) => byId.set(t.id, t));
+  return [...byId.values()];
+}
+
 // localStorage key for dismissed failed job IDs
 const DISMISSED_FAILED_KEY = 'flipo5_dismissed_failed_jobs';
 
@@ -145,7 +152,7 @@ export function JobsInProgressButton() {
                 error: j.error || 'Failed',
                 threadId: j.thread_id ?? null,
               }));
-              setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+              setFailedToasts((prev) => dedupeById([...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]));
             }
           }
           if (recentCompleted.length > 0) {
@@ -156,7 +163,7 @@ export function JobsInProgressButton() {
               const urls = j.output ? getOutputUrls(j.output) : [];
               return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
             });
-            setCompletedToasts((prev) => [...prev.filter((c) => !toAdd.some((a) => a.id === c.id)), ...toAdd]);
+            setCompletedToasts((prev) => dedupeById([...prev.filter((c) => !toAdd.some((a) => a.id === c.id)), ...toAdd]));
           }
         }
         if (pending.length > 0) {
@@ -174,7 +181,7 @@ export function JobsInProgressButton() {
                 error: j.error || 'Failed',
                 threadId: j.thread_id ?? null,
               }));
-              setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+              setFailedToasts((prev) => dedupeById([...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]));
             }
           }
           if (actuallyCompleted.length > 0) {
@@ -192,7 +199,7 @@ export function JobsInProgressButton() {
               const urls = j.output ? getOutputUrls(j.output) : [];
               return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
             });
-            setCompletedToasts((prev) => [...prev, ...toAdd]);
+            setCompletedToasts((prev) => dedupeById([...prev, ...toAdd]));
           }
         }
         const prevIds = prevPendingIdsRef.current;
@@ -211,7 +218,7 @@ export function JobsInProgressButton() {
                 error: j.error || 'Failed',
                 threadId: j.thread_id ?? null,
               }));
-              setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+              setFailedToasts((prev) => dedupeById([...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]));
             }
           }
           const completed = results.filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
@@ -230,7 +237,7 @@ export function JobsInProgressButton() {
             });
           if (toAdd.length > 0) {
             playCompletionSound();
-            setCompletedToasts((prev) => [...prev, ...toAdd]);
+            setCompletedToasts((prev) => dedupeById([...prev, ...toAdd]));
           }
         }
         prevPendingIdsRef.current = newIds;
@@ -345,7 +352,7 @@ export function JobsInProgressButton() {
   const apiPendingJobs = jobs.filter((j) => j.status === 'pending' || j.status === 'running');
   const apiIds = new Set(apiPendingJobs.map((j) => j.id));
   const optimisticToShow = optimisticJobs.filter((o) => !apiIds.has(o.id));
-  const pendingJobs: Job[] = [
+  const pendingJobs: Job[] = dedupeById([
     ...apiPendingJobs,
     ...optimisticToShow.map((o) => ({
       id: o.id,
@@ -360,7 +367,7 @@ export function JobsInProgressButton() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })),
-  ];
+  ]);
 
   // Progress based on job age - deterministic, persists on refresh (no random reset)
   const getProgressForJob = (job: Job): number => {
@@ -527,7 +534,7 @@ export function JobsInProgressButton() {
                       )}
                     </button>
                   ))}
-                  {completedToasts.map((toast) => (
+                  {dedupeById(completedToasts).map((toast) => (
                     <div
                       key={toast.id}
                       className="flex items-center gap-2 px-3 py-2.5 hover:bg-theme-bg-hover transition-colors border-b border-theme-border-subtle last:border-0 group"
@@ -588,7 +595,7 @@ export function JobsInProgressButton() {
                       </button>
                     </div>
                   ))}
-                  {failedToasts.map((toast) => (
+                  {dedupeById(failedToasts).map((toast) => (
                     <div
                       key={toast.id}
                       className="flex items-center gap-2 px-3 py-2.5 border-b border-theme-border-subtle last:border-0 bg-theme-danger-muted/20"
