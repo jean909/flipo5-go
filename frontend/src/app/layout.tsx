@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Syne, DM_Sans } from 'next/font/google';
 import './globals.css';
 import { LocaleProvider } from './components/LocaleContext';
@@ -11,6 +11,12 @@ export const metadata: Metadata = {
   title: 'Flipo5',
   description: 'AI Chat · Image · Video',
   icons: { icon: '/favicon.svg' },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#000000',
 };
 
 export default function RootLayout({

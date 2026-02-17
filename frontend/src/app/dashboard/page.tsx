@@ -592,7 +592,7 @@ export default function DashboardPage() {
             )}
             {!videoFile && referenceImageUrls.map((url) => (
               <div key={url} className="relative shrink-0">
-                <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
+                <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
                 <button
                   type="button"
                   onClick={() => removeReferenceImage(url)}
@@ -605,7 +605,7 @@ export default function DashboardPage() {
             ))}
             {!videoFile && attachments.map((a) => (
               <div key={a.id} className="relative shrink-0">
-                <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
+                <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
@@ -815,7 +815,7 @@ export default function DashboardPage() {
                     )}
                     {!videoFile && referenceImageUrls.map((url) => (
                       <div key={url} className="relative shrink-0">
-                        <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
+                        <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
                         <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
                           <XIcon className="w-2.5 h-2.5" />
                         </button>
@@ -823,7 +823,7 @@ export default function DashboardPage() {
                     ))}
                     {!videoFile && attachments.map((a) => (
                       <div key={a.id} className="relative shrink-0">
-                        <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" />
+                        <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
                         <button
                           type="button"
                           onClick={() => removeAttachment(a.id)}
@@ -905,7 +905,7 @@ export default function DashboardPage() {
                           job.type === 'video' ? (
                             <video src={job.outputUrls[0]} className="w-full h-full object-cover" muted preload="metadata" playsInline />
                           ) : (
-                            <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           )
                         ) : null}
                       </div>

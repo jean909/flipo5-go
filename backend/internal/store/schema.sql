@@ -71,6 +71,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS data_retention_accepted BOOLEAN;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_configuration JSONB DEFAULT '{}';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_config_updated_at TIMESTAMPTZ;
 
+-- Admin: set first admin with UPDATE users SET is_admin = true WHERE email = 'your@email.com';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin) WHERE is_admin = true;
+
 -- Jobs: name = first 4 words of prompt (for image/video indexing)
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS name TEXT;
 CREATE INDEX IF NOT EXISTS idx_jobs_name ON jobs(name);

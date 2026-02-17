@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 
 type Props = {
@@ -17,6 +17,8 @@ type Props = {
   alert?: boolean;
 };
 
+const DIALOG_TITLE_ID = 'confirm-dialog-title';
+
 export function ConfirmDialog({
   open,
   title,
@@ -29,6 +31,8 @@ export function ConfirmDialog({
   customContent,
   alert = false,
 }: Props) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => {
@@ -39,10 +43,19 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', h);
   }, [open, onConfirm, onCancel]);
 
+  useEffect(() => {
+    if (open) {
+      confirmRef.current?.focus();
+    }
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={DIALOG_TITLE_ID}
       className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-theme-bg-overlay"
       onClick={onCancel}
     >
@@ -53,7 +66,7 @@ export function ConfirmDialog({
         className="w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-display text-lg font-bold text-theme-fg mb-2">{title}</h3>
+        <h3 id={DIALOG_TITLE_ID} className="font-display text-lg font-bold text-theme-fg mb-2">{title}</h3>
         {message && <p className="text-sm text-theme-fg-muted mb-6">{message}</p>}
         {customContent}
         <div className="flex gap-3 justify-end">
@@ -67,6 +80,7 @@ export function ConfirmDialog({
             </button>
           )}
           <button
+            ref={confirmRef}
             type="button"
             onClick={onConfirm}
             className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${confirmClass}`}

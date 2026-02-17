@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import { downloadMediaUrl } from '@/lib/api';
@@ -43,6 +43,11 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
       window.removeEventListener('keydown', onKey);
     };
   }, [onClose, hasPrev, hasNext]);
+
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
 
   const getExt = (blob: Blob, url: string) => {
     if (blob.type.includes('video')) return blob.type.includes('webm') ? 'webm' : 'mp4';
@@ -93,7 +98,12 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
   }, [currentUrl]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={t(locale, 'image.viewer')}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
       <div
         className="absolute inset-0 bg-theme-bg-overlay backdrop-blur-md"
         onClick={onClose}
@@ -102,6 +112,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
       <div className="relative z-10 flex flex-col w-full max-w-4xl max-h-[90vh]">
         <div className="flex items-center justify-between mb-3">
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             className="w-10 h-10 rounded-full bg-theme-bg-hover hover:bg-theme-bg-hover-strong flex items-center justify-center text-theme-fg transition-colors"
@@ -142,7 +153,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
           {isVideo ? (
             <VideoPlayer src={currentUrl} className="max-w-full max-h-[calc(90vh-80px)]" autoPlay />
           ) : (
-            <img src={currentUrl} alt="" className="max-w-full max-h-[calc(90vh-80px)] object-contain" />
+            <img src={currentUrl} alt="" className="max-w-full max-h-[calc(90vh-80px)] object-contain" decoding="async" />
           )}
           {hasNext && (
             <button

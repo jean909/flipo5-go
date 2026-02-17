@@ -75,8 +75,18 @@ export interface User {
   data_retention_accepted?: boolean | null;
   ai_configuration?: AIConfiguration | null;
   ai_config_updated_at?: string | null;
+  is_admin?: boolean;
   created_at: string;
   updated_at?: string;
+}
+
+/** Admin access only for this account (id or email). Sidebar and /admin use this. */
+const ADMIN_ALLOWED_ID = 'ea3f2db4-355d-44c0-9791-61ff93fbbb13';
+const ADMIN_ALLOWED_EMAIL = 'moiseioan1195@gmail.com';
+
+export function isAdminUser(user: { id?: string; email?: string } | null): boolean {
+  if (!user) return false;
+  return user.id === ADMIN_ALLOWED_ID || user.email === ADMIN_ALLOWED_EMAIL;
 }
 
 /** Get current user. Returns null if not logged in or request fails. */
@@ -364,6 +374,64 @@ export async function setJobFeedback(jobId: string, rating: 'like' | 'dislike' |
     body: JSON.stringify({ rating: rating ?? null }),
   });
   if (!res.ok) throw new Error('Failed to save feedback');
+}
+
+// --- Admin (requires is_admin) ---
+export interface AdminStats {
+  total_users: number;
+  total_jobs: number;
+  jobs_by_status: Record<string, number>;
+  jobs_last_24h: number;
+  jobs_completed: number;
+  jobs_failed: number;
+  total_threads: number;
+}
+export async function getAdminStats(): Promise<AdminStats> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/admin/stats`, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 403) throw new Error('Forbidden');
+  if (!res.ok) throw new Error('Failed to load stats');
+  return res.json();
+}
+export async function getAdminUsers(params: { limit?: number; offset?: number; search?: string }): Promise<{ users: User[]; total: number }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const sp = new URLSearchParams();
+  if (params.limit) sp.set('limit', String(params.limit));
+  if (params.offset) sp.set('offset', String(params.offset));
+  if (params.search?.trim()) sp.set('search', params.search.trim());
+  const url = `${API_URL}/api/admin/users${sp.toString() ? `?${sp}` : ''}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 403) throw new Error('Forbidden');
+  if (!res.ok) throw new Error('Failed to load users');
+  return res.json();
+}
+export async function getAdminUser(id: string): Promise<{ user: User; job_count: number; thread_count: number }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/admin/users/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 403) throw new Error('Forbidden');
+  if (!res.ok) throw new Error('Failed to load user');
+  return res.json();
+}
+export interface AdminJob extends Job {
+  user_email: string;
+}
+export async function getAdminJobs(params: { limit?: number; offset?: number; status?: string; type?: string; user_id?: string }): Promise<{ jobs: AdminJob[]; total: number }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const sp = new URLSearchParams();
+  if (params.limit) sp.set('limit', String(params.limit));
+  if (params.offset) sp.set('offset', String(params.offset));
+  if (params.status) sp.set('status', params.status);
+  if (params.type) sp.set('type', params.type);
+  if (params.user_id) sp.set('user_id', params.user_id);
+  const url = `${API_URL}/api/admin/jobs${sp.toString() ? `?${sp}` : ''}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 403) throw new Error('Forbidden');
+  if (!res.ok) throw new Error('Failed to load jobs');
+  return res.json();
 }
 
 export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {

@@ -310,7 +310,7 @@ export function JobCard({
           {validAttachments.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {validAttachments.map((url) => (
-                <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" />
+                <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
               ))}
             </div>
           )}
@@ -485,7 +485,7 @@ export function JobCard({
             {validAttachments.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {validAttachments.map((url) => (
-                  <img key={url} src={url} alt="" className="w-12 h-12 object-cover rounded border border-theme-border shrink-0" />
+                  <img key={url} src={url} alt="" className="w-12 h-12 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
                 ))}
               </div>
             )}
@@ -514,12 +514,12 @@ export function JobCard({
             </div>
           )}
           {chatMediaUrls.map((url) => (
-            <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded-lg" />
+            <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded-lg" decoding="async" />
           ))}
           {validAttachments.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {validAttachments.map((url) => (
-                <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" />
+                <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
               ))}
             </div>
           )}
@@ -565,7 +565,7 @@ export function JobCard({
         <>
           {outputStr && <p className={`mt-2 text-sm whitespace-pre-wrap ${dark ? 'text-theme-fg' : 'text-black'}`}>{outputStr}</p>}
           {cardOutputUrls.map((url) => (
-            <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded border border-theme-border-subtle" />
+            <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded border border-theme-border-subtle" decoding="async" />
           ))}
           {!outputStr && outputArr.length === 0 && out && typeof out === 'object' && 'output' in out && (
             <pre className={`mt-2 text-xs overflow-auto ${preCls}`}>{JSON.stringify(job.output)}</pre>

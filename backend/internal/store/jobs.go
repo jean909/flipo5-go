@@ -276,3 +276,58 @@ func (db *DB) UpdateJobRating(ctx context.Context, jobID, userID uuid.UUID, rati
 	}
 	return err
 }
+
+// AdminJob is a job with user email for admin listing.
+type AdminJob struct {
+	Job
+	UserEmail string `json:"user_email"`
+}
+
+// ListJobsAdmin returns all jobs with optional filters (userID, status, type), paginated.
+func (db *DB) ListJobsAdmin(ctx context.Context, limit, offset int, userID *uuid.UUID, status, jobType string) ([]AdminJob, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	base := `FROM jobs j JOIN users u ON j.user_id = u.id WHERE 1=1`
+	args := []interface{}{}
+	n := 1
+	if userID != nil {
+		args = append(args, *userID)
+		base += fmt.Sprintf(" AND j.user_id = $%d", n)
+		n++
+	}
+	if status != "" {
+		args = append(args, status)
+		base += fmt.Sprintf(" AND j.status = $%d", n)
+		n++
+	}
+	if jobType != "" {
+		args = append(args, jobType)
+		base += fmt.Sprintf(" AND j.type = $%d", n)
+		n++
+	}
+	var total int
+	if err := db.Pool.QueryRow(ctx, "SELECT COUNT(*) "+base, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	sel := `SELECT j.id, j.user_id, j.thread_id, j.type, j.status, j.name, j.input, j.output, j.error, j.cost_cents, j.replicate_id, j.rating, j.created_at::text, j.updated_at::text, u.email `
+	args = append(args, limit, offset)
+	n = len(args)
+	rows, err := db.Pool.Query(ctx, sel+base+` ORDER BY j.created_at DESC LIMIT $`+strconv.Itoa(n-1)+` OFFSET $`+strconv.Itoa(n), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var list []AdminJob
+	for rows.Next() {
+		var aj AdminJob
+		if err := rows.Scan(&aj.ID, &aj.UserID, &aj.ThreadID, &aj.Type, &aj.Status, &aj.Name, &aj.Input, &aj.Output, &aj.Error, &aj.CostCents, &aj.ReplicateID, &aj.Rating, &aj.CreatedAt, &aj.UpdatedAt, &aj.UserEmail); err != nil {
+			return nil, 0, err
+		}
+		list = append(list, aj)
+	}
+	return list, total, rows.Err()
+}
