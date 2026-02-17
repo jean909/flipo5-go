@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [lastSentPrompt, setLastSentPrompt] = useState<string>('');
   const [pendingUserMessage, setPendingUserMessage] = useState<string>('');
   const [pendingUserMessageThreadId, setPendingUserMessageThreadId] = useState<string | null>(null);
+  const [submittedRequests, setSubmittedRequests] = useState<Set<string>>(new Set());
   const [imageSettings, setImageSettings] = useState<ImageSettings>({
     size: '2K',
     aspectRatio: 'match_input_image',
@@ -281,6 +282,23 @@ export default function DashboardPage() {
     e.preventDefault();
     const trimmed = prompt.trim();
     if (!trimmed && attachments.length === 0) return;
+    
+    // Prevent duplicate submissions: create unique request key based on content
+    const requestKey = `${mode}-${trimmed}-${JSON.stringify({
+      attachments: attachments.map(a => a.file.name),
+      imageSettings: mode === 'image' ? imageSettings : undefined,
+      videoSettings: mode === 'video' ? videoSettings : undefined,
+      referenceImageUrls,
+      videoFile: videoFile?.name
+    })}`;
+    
+    if (submittedRequests.has(requestKey)) {
+      console.warn('[Submit] Duplicate request prevented:', mode, trimmed.slice(0, 50));
+      return;
+    }
+    
+    setSubmittedRequests(prev => new Set(prev).add(requestKey));
+    
     const useNormalSession = pendingNormalSessionSubmit.current;
     if (useNormalSession) pendingNormalSessionSubmit.current = false;
     if (!useNormalSession && incognito && (mode === 'image' || mode === 'video')) {
@@ -388,17 +406,31 @@ export default function DashboardPage() {
             setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 2000);
           }
         }
-        clearAttachments();
-        setReferenceImageUrls([]);
-        setVideoFile(null);
-        if (tid) setTimeout(refreshThread, 2000);
-      }
-      setHasStarted(true);
-      setPrompt('');
+      clearAttachments();
+      setReferenceImageUrls([]);
+      setVideoFile(null);
+      if (tid) setTimeout(refreshThread, 2000);
+      // Clear request key after successful submission
+      setTimeout(() => {
+        setSubmittedRequests(prev => {
+          const next = new Set(prev);
+          next.delete(requestKey);
+          return next;
+        });
+      }, 5000); // Clear after 5s to allow legitimate re-submission
+    }
+    setHasStarted(true);
+    setPrompt('');
     } catch (err) {
       setPendingUserMessage('');
       setPendingUserMessageThreadId(null);
       setError(err instanceof Error ? err.message : t(locale, 'error.generic'));
+      // Remove failed request key to allow retry
+      setSubmittedRequests(prev => {
+        const next = new Set(prev);
+        next.delete(requestKey);
+        return next;
+      });
     } finally {
       setLoading(false);
     }
