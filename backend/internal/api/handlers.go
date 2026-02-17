@@ -62,7 +62,7 @@ func (s *Server) Routes() http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SupabaseAuth(s.supabaseJWTSecret, s.jwks, s.DB))
-		r.Use(middleware.RateLimit(60))
+		r.Use(middleware.RateLimit(300)) // SSE + listJobs + N×getJob (2 jobs × polling) — avoid 429
 		r.Get("/me", s.me)
 		r.Patch("/me", s.patchMe)
 		r.Post("/chat", s.createChat)

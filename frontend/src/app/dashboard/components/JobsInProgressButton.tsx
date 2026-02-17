@@ -116,6 +116,7 @@ export function JobsInProgressButton() {
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
   const sseRef = useRef<EventSource | null>(null);
+  const fetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchJobs = useCallback((showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -269,10 +270,13 @@ export function JobsInProgressButton() {
           }
           if (data.jobId) {
             console.log('[JobsInProgressButton] Job update received:', data);
-            // Force immediate refresh with cache bust
-            fetchJobs(false);
-            // Trigger progress bar update
+            // Debounce: multiple SSE updates (e.g. 2 jobs complete) → one fetch to avoid 429
             setTick(t => t + 1);
+            if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
+            fetchDebounceRef.current = setTimeout(() => {
+              fetchDebounceRef.current = null;
+              fetchJobs(false);
+            }, 400);
           }
         } catch (err) {
           console.warn('[JobsInProgressButton] SSE parse error:', err);
@@ -296,6 +300,10 @@ export function JobsInProgressButton() {
     
     return () => {
       cancelled = true;
+      if (fetchDebounceRef.current) {
+        clearTimeout(fetchDebounceRef.current);
+        fetchDebounceRef.current = null;
+      }
       if (sseRef.current) {
         sseRef.current.close();
         sseRef.current = null;

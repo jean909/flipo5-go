@@ -97,7 +97,7 @@ export function JobCard({
           }
           setJob(j);
           if (j.status === 'pending' || j.status === 'running') {
-            setTimeout(poll, 2500);
+            setTimeout(poll, 4000); // 4s to reduce API load when multiple JobCards poll
           }
         });
     }
