@@ -172,7 +172,7 @@ func (db *DB) ListProjectItems(ctx context.Context, projectID, userID uuid.UUID)
 	}
 	_ = p
 	rows, err := db.Pool.Query(ctx, `
-		SELECT pi.id, pi.project_id, pi.type, pi.source_url, pi.job_id, pi.sort_order, pi.created_at,
+		SELECT pi.id, pi.project_id, pi.type, pi.source_url, pi.job_id, pi.sort_order, pi.created_at::text,
 		       COALESCE((SELECT pv.url FROM projects_versions pv WHERE pv.item_id = pi.id ORDER BY pv.version_num DESC LIMIT 1), pi.source_url),
 		       COALESCE((SELECT pv.version_num FROM projects_versions pv WHERE pv.item_id = pi.id ORDER BY pv.version_num DESC LIMIT 1), 0)
 		FROM projects_items pi
