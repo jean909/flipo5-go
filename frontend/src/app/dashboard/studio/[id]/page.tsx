@@ -4,11 +4,15 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../../components/ImageViewModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CropRotateModal } from './CropRotateModal';
+import { AdjustmentsModal } from './AdjustmentsModal';
+import { PaintCanvas, type PaintTool } from './PaintCanvas';
+import { ThemeColorPicker } from './ThemeColorPicker';
 
 // Reference for Nano Banana: always selectedItem.latest_url (latest version)
 function getReferenceUrl(item: ProjectItem | null): string | null {
@@ -56,6 +60,8 @@ export default function StudioProjectPage() {
   const [contentJobs, setContentJobs] = useState<Array<Job & { outputUrls: string[] }>>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [viewingMedia, setViewingMedia] = useState<{ urls: string[] } | null>(null);
+  const [cropRotateOpen, setCropRotateOpen] = useState(false);
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<ProjectItem | null>(null);
   const [pendingDeleteVersionNum, setPendingDeleteVersionNum] = useState<number | null>(null);
   const [pendingDeleteProject, setPendingDeleteProject] = useState(false);
@@ -69,6 +75,12 @@ export default function StudioProjectPage() {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [canvasScale, setCanvasScale] = useState(1);
+  const [editorTool, setEditorTool] = useState<PaintTool | null>(null);
+  const [brushSize, setBrushSize] = useState(24);
+  const [colorizeColor, setColorizeColor] = useState('#f96');
+  const [highlightColor, setHighlightColor] = useState('#ffeb3b');
+  const [highlightOpacity, setHighlightOpacity] = useState(0.4);
+  const [paintApplying, setPaintApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -178,10 +190,11 @@ export default function StudioProjectPage() {
     });
   }, [items]);
 
-  // Reset scale and version view when selecting a different item
+  // Reset scale, version view and paint tool when selecting a different item
   useEffect(() => {
     setCanvasScale(1);
     setViewingVersionNum(null);
+    setEditorTool(null);
   }, [selectedItem?.id]);
 
   // Fetch version history for selected item
@@ -543,8 +556,24 @@ export default function StudioProjectPage() {
               {removingBg ? '...' : 'Remove BG'}
             </button>
             <ToolBtn label="Filters" />
-            <ToolBtn label="Crop & Rotate" />
-            <ToolBtn label="Adjustments" />
+            <button
+              type="button"
+              onClick={() => setCropRotateOpen(true)}
+              disabled={!selectedItem || selectedItem.type !== 'image' || !referenceUrl}
+              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              title={t(locale, 'studio.cropRotate')}
+            >
+              {t(locale, 'studio.cropRotate')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjustmentsOpen(true)}
+              disabled={!selectedItem || selectedItem.type !== 'image' || !referenceUrl}
+              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              title={t(locale, 'studio.adjustments')}
+            >
+              {t(locale, 'studio.adjustments')}
+            </button>
             <ToolBtn label="AI Edit" />
           </div>
 
@@ -639,7 +668,38 @@ export default function StudioProjectPage() {
                     </div>
                   </div>
                 )}
-                {selectedItem && displayUrl ? (
+                {editorTool && selectedItem?.type === 'image' && referenceUrl ? (
+                  <PaintCanvas
+                    imageUrl={displayUrl || referenceUrl}
+                    tool={editorTool}
+                    brushSize={brushSize}
+                    colorizeColor={colorizeColor}
+                    highlightColor={highlightColor}
+                    highlightOpacity={highlightOpacity}
+                    onApply={async (canvas) => {
+                      setPaintApplying(true);
+                      setError(null);
+                      try {
+                        const blob = await new Promise<Blob>((res, rej) => {
+                          canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png');
+                        });
+                        const file = new File([blob], 'paint.png', { type: 'image/png' });
+                        await uploadProjectVersion(selectedItem.id, file);
+                        await fetchProject();
+                        const { versions } = await listProjectVersions(selectedItem.id);
+                        setItemVersions(versions ?? []);
+                        setEditorTool(null);
+                      } catch (e) {
+                        setError((e as Error)?.message ?? 'Apply failed');
+                      } finally {
+                        setPaintApplying(false);
+                      }
+                    }}
+                    onClose={() => setEditorTool(null)}
+                    applying={paintApplying}
+                    locale={locale}
+                  />
+                ) : selectedItem && displayUrl ? (
                   <div className={`relative group flex items-center justify-center transition-[filter] duration-200 ${removingBg ? 'blur-sm' : ''}`}>
                     <div
                       className="relative origin-center"
@@ -792,6 +852,83 @@ export default function StudioProjectPage() {
             </>
           )}
         </main>
+
+        {/* Right toolbar: tools (clone, colorize, highlight) - only for images */}
+        {selectedItem?.type === 'image' && (
+          <aside className="w-40 shrink-0 flex flex-col border-l border-theme-border bg-theme-bg p-3">
+            <p className="text-xs font-medium text-theme-fg-muted mb-2">{t(locale, 'studio.tools')}</p>
+            <div className="flex flex-col gap-1.5 mb-3">
+              <button
+                type="button"
+                onClick={() => setEditorTool(editorTool === 'clone' ? null : 'clone')}
+                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'clone' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                title={t(locale, 'studio.tool.cloneStamp')}
+              >
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <span className="text-xs font-medium truncate">{t(locale, 'studio.tool.cloneStamp')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditorTool(editorTool === 'colorize' ? null : 'colorize')}
+                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'colorize' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                title={t(locale, 'studio.tool.colorize')}
+              >
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                </svg>
+                <span className="text-xs font-medium truncate">{t(locale, 'studio.tool.colorize')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditorTool(editorTool === 'highlight' ? null : 'highlight')}
+                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'highlight' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                title={t(locale, 'studio.tool.highlight')}
+              >
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                <span className="text-xs font-medium truncate">{t(locale, 'studio.tool.highlight')}</span>
+              </button>
+            </div>
+            {editorTool && (
+              <>
+                <label className="text-xs font-medium text-theme-fg-muted mb-1 block">{t(locale, 'studio.brushSize')}</label>
+                <input
+                  type="range"
+                  min={4}
+                  max={80}
+                  value={brushSize}
+                  onChange={(e) => setBrushSize(Number(e.target.value))}
+                  className="w-full h-2 rounded-lg appearance-none bg-theme-bg-hover accent-theme-accent mb-3"
+                />
+                {editorTool === 'colorize' && (
+                  <div className="mb-3">
+                    <ThemeColorPicker label="Color" value={colorizeColor} onChange={setColorizeColor} />
+                  </div>
+                )}
+                {editorTool === 'highlight' && (
+                  <>
+                    <div className="mb-2">
+                      <ThemeColorPicker label="Highlight" value={highlightColor} onChange={setHighlightColor} />
+                    </div>
+                    <label className="text-xs font-medium text-theme-fg-muted mb-1 block">Opacity</label>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={1}
+                      step={0.1}
+                      value={highlightOpacity}
+                      onChange={(e) => setHighlightOpacity(Number(e.target.value))}
+                      className="w-full h-2 rounded-lg appearance-none bg-theme-bg-hover accent-theme-accent mb-3"
+                    />
+                  </>
+                )}
+              </>
+            )}
+          </aside>
+        )}
       </div>
 
       {showAddFromContent && (
@@ -832,6 +969,38 @@ export default function StudioProjectPage() {
         </div>
       )}
 
+      {cropRotateOpen && selectedItem && referenceUrl && (
+        <CropRotateModal
+          imageUrl={referenceUrl}
+          itemId={selectedItem.id}
+          onClose={() => setCropRotateOpen(false)}
+          onSuccess={async () => {
+            await fetchProject();
+            const { versions } = await listProjectVersions(selectedItem.id);
+            setItemVersions(versions ?? []);
+          }}
+          onUpload={async (itemId, file) => {
+            await uploadProjectVersion(itemId, file);
+          }}
+          locale={locale}
+        />
+      )}
+      {adjustmentsOpen && selectedItem && referenceUrl && (
+        <AdjustmentsModal
+          imageUrl={referenceUrl}
+          itemId={selectedItem.id}
+          onClose={() => setAdjustmentsOpen(false)}
+          onSuccess={async () => {
+            await fetchProject();
+            const { versions } = await listProjectVersions(selectedItem.id);
+            setItemVersions(versions ?? []);
+          }}
+          onUpload={async (itemId, file) => {
+            await uploadProjectVersion(itemId, file);
+          }}
+          locale={locale}
+        />
+      )}
       {viewingMedia && viewingMedia.urls[0] && (
         <ImageViewModal url={viewingMedia.urls[0]} urls={viewingMedia.urls.length > 1 ? viewingMedia.urls : undefined} onClose={() => setViewingMedia(null)} locale={locale} />
       )}
