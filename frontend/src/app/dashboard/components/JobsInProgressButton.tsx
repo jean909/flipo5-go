@@ -53,6 +53,55 @@ function playCompletionSound() {
 type CompletedToast = { id: string; type: 'image' | 'video'; threadId: string | null; durationSec: number; imageUrl?: string };
 type FailedToast = { id: string; type: 'image' | 'video'; error: string; threadId: string | null };
 
+// localStorage key for dismissed failed job IDs
+const DISMISSED_FAILED_KEY = 'flipo5_dismissed_failed_jobs';
+
+// Get dismissed failed job IDs from localStorage
+function getDismissedFailedIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const stored = localStorage.getItem(DISMISSED_FAILED_KEY);
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+// Save dismissed failed job IDs to localStorage
+function saveDismissedFailedIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DISMISSED_FAILED_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
+// Clean up old dismissed IDs (older than 7 days) to prevent localStorage bloat
+function cleanupDismissedFailedIds() {
+  if (typeof window === 'undefined') return new Set<string>();
+  try {
+    const stored = localStorage.getItem(DISMISSED_FAILED_KEY);
+    if (!stored) return new Set();
+    
+    const ids = JSON.parse(stored) as string[];
+    const now = Date.now();
+    const weekAgo = now - 7 * 24 * 60 * 60 * 1000; // 7 days
+    
+    // Keep only recent dismissed IDs (can't check job date without API call, so keep all for now)
+    // In future could add timestamp to dismissed entries
+    const cleaned = new Set(ids);
+    if (cleaned.size > 100) {
+      // If too many, keep only last 50 entries
+      const recent = [...cleaned].slice(-50);
+      const cleanedSet = new Set(recent);
+      saveDismissedFailedIds(cleanedSet);
+      return cleanedSet;
+    }
+    return cleaned;
+  } catch {
+    return new Set();
+  }
+}
+
 export function JobsInProgressButton() {
   const { locale } = useLocale();
   const router = useRouter();
@@ -62,6 +111,7 @@ export function JobsInProgressButton() {
   const [loading, setLoading] = useState(false);
   const [completedToasts, setCompletedToasts] = useState<CompletedToast[]>([]);
   const [failedToasts, setFailedToasts] = useState<FailedToast[]>([]);
+  const [dismissedFailed, setDismissedFailed] = useState<Set<string>>(cleanupDismissedFailedIds());
   const [, setTick] = useState(0); // triggers re-render so progress bar updates
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
@@ -85,13 +135,17 @@ export function JobsInProgressButton() {
             (j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video') && new Date(j.created_at).getTime() > recentCutoff
           );
           if (recentFailed.length > 0) {
-            const toAdd: FailedToast[] = recentFailed.map((j) => ({
-              id: j.id,
-              type: j.type as 'image' | 'video',
-              error: j.error || 'Failed',
-              threadId: j.thread_id ?? null,
-            }));
-            setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+            // Filter out already dismissed failed jobs
+            const notDismissed = recentFailed.filter((j) => !dismissedFailed.has(j.id));
+            if (notDismissed.length > 0) {
+              const toAdd: FailedToast[] = notDismissed.map((j) => ({
+                id: j.id,
+                type: j.type as 'image' | 'video',
+                error: j.error || 'Failed',
+                threadId: j.thread_id ?? null,
+              }));
+              setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+            }
           }
           if (recentCompleted.length > 0) {
             const toAdd = recentCompleted.map((j) => {
@@ -111,13 +165,16 @@ export function JobsInProgressButton() {
           pending = verified.filter((j) => j.status === 'pending' || j.status === 'running');
           if (actuallyFailed.length > 0) {
             actuallyFailed.forEach((j) => removeOptimisticJob(j.id));
-            const toAdd: FailedToast[] = actuallyFailed.map((j) => ({
-              id: j.id,
-              type: j.type as 'image' | 'video',
-              error: j.error || 'Failed',
-              threadId: j.thread_id ?? null,
-            }));
-            setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+            const notDismissed = actuallyFailed.filter((j) => !dismissedFailed.has(j.id));
+            if (notDismissed.length > 0) {
+              const toAdd: FailedToast[] = notDismissed.map((j) => ({
+                id: j.id,
+                type: j.type as 'image' | 'video',
+                error: j.error || 'Failed',
+                threadId: j.thread_id ?? null,
+              }));
+              setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+            }
           }
           if (actuallyCompleted.length > 0) {
             actuallyCompleted.forEach((j) => removeOptimisticJob(j.id));
@@ -145,13 +202,16 @@ export function JobsInProgressButton() {
           const failed = results.filter((j): j is Job => !!j && j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
           if (failed.length > 0) {
             failed.forEach((j) => removeOptimisticJob(j.id));
-            const toAdd: FailedToast[] = failed.map((j) => ({
-              id: j.id,
-              type: j.type as 'image' | 'video',
-              error: j.error || 'Failed',
-              threadId: j.thread_id ?? null,
-            }));
-            setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+            const notDismissed = failed.filter((j) => !dismissedFailed.has(j.id));
+            if (notDismissed.length > 0) {
+              const toAdd: FailedToast[] = notDismissed.map((j) => ({
+                id: j.id,
+                type: j.type as 'image' | 'video',
+                error: j.error || 'Failed',
+                threadId: j.thread_id ?? null,
+              }));
+              setFailedToasts((prev) => [...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]);
+            }
           }
           const completed = results.filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
           completed.forEach((j) => removeOptimisticJob(j.id));
@@ -344,10 +404,24 @@ export function JobsInProgressButton() {
   };
 
   const dismissToast = (id: string) => setCompletedToasts((prev) => prev.filter((x) => x.id !== id));
+  
   const dismissFailedDialog = () => {
     if (failedToasts.length > 0) {
+      const dismissedId = failedToasts[0].id;
+      // Mark as dismissed permanently
+      const newDismissed = new Set(dismissedFailed).add(dismissedId);
+      setDismissedFailed(newDismissed);
+      saveDismissedFailedIds(newDismissed);
+      // Remove from current toasts
       setFailedToasts((prev) => prev.slice(1));
     }
+  };
+  
+  const dismissFailedToast = (id: string) => {
+    const newDismissed = new Set(dismissedFailed).add(id);
+    setDismissedFailed(newDismissed);
+    saveDismissedFailedIds(newDismissed);
+    setFailedToasts((prev) => prev.filter((f) => f.id !== id));
   };
   const currentFailedToast = failedToasts[0] ?? null;
   const goToSession = (toast: CompletedToast) => {
@@ -526,7 +600,7 @@ export function JobsInProgressButton() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setFailedToasts((prev) => prev.filter((f) => f.id !== toast.id))}
+                        onClick={() => dismissFailedToast(toast.id)}
                         className="shrink-0 p-1.5 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
                         aria-label={t(locale, 'jobsInProgress.dismiss')}
                       >
