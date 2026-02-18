@@ -127,7 +127,9 @@ export default function StudioProjectPage() {
         setProjectName(proj?.name ?? '');
         setSelectedItem((prev) => {
           const next = itemList.find((i) => i.id === prev?.id);
-          return next ?? itemList[0] ?? null;
+          if (next) return next;
+          const firstImage = itemList.find((i) => i.type === 'image');
+          return firstImage ?? itemList[0] ?? null;
         });
       })
       .catch((e: unknown) => {
@@ -159,7 +161,9 @@ export default function StudioProjectPage() {
         setProjectName(proj?.name ?? '');
         setSelectedItem((prev) => {
           const next = itemList.find((i) => i.id === prev?.id);
-          return next ?? itemList[0] ?? null;
+          if (next) return next;
+          const firstImage = itemList.find((i) => i.type === 'image');
+          return firstImage ?? itemList[0] ?? null;
         });
       })
       .catch((e: unknown) => {
@@ -185,12 +189,14 @@ export default function StudioProjectPage() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [id, loading]);
 
-  // Sync selectedItem when items change (e.g. after add/upload)
+  // Sync selectedItem when items change (e.g. after add/upload); prefer an image when current is missing or not image
   useEffect(() => {
     if (items.length === 0) return;
     setSelectedItem((prev) => {
-      if (!prev) return items[0];
-      return items.some((i) => i.id === prev.id) ? prev : items[0];
+      const stillThere = prev && items.some((i) => i.id === prev.id);
+      if (stillThere) return prev;
+      const firstImage = items.find((i) => i.type === 'image');
+      return firstImage ?? items[0];
     });
   }, [items]);
 
@@ -817,7 +823,12 @@ export default function StudioProjectPage() {
                     </div>
                   </div>
                 )}
-                {editorTool && selectedItem?.type === 'image' && referenceUrl ? (
+                {editorTool && selectedItem?.type === 'image' && referenceUrl && !(displayUrl || referenceUrl.startsWith('http')) ? (
+                  <div className="flex flex-col items-center justify-center gap-2 text-theme-fg-subtle py-12">
+                    <div className="w-8 h-8 border-2 border-theme-accent border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm">Loading image…</p>
+                  </div>
+                ) : editorTool && selectedItem?.type === 'image' && referenceUrl ? (
                   <PaintCanvas
                     imageUrl={displayUrl || referenceUrl}
                     tool={editorTool}
@@ -1004,10 +1015,14 @@ export default function StudioProjectPage() {
           )}
         </main>
 
-        {/* Right toolbar: tools (clone, colorize, highlight) - only for images */}
-        {selectedItem?.type === 'image' && (
-          <aside className="w-40 shrink-0 flex flex-col border-l border-theme-border bg-theme-bg p-3">
+        {/* Right toolbar: tools (clone, colorize, highlight/brush) - show when project has at least one image */}
+        {items.some((i) => i.type === 'image') && (
+          <aside className="w-40 shrink-0 flex flex-col border-l border-theme-border bg-theme-bg p-3 min-w-0">
             <p className="text-xs font-medium text-theme-fg-muted mb-2">{t(locale, 'studio.tools')}</p>
+            {selectedItem?.type !== 'image' ? (
+              <p className="text-xs text-theme-fg-subtle">Select an image below to use tools.</p>
+            ) : (
+            <>
             <div className="flex flex-col gap-1.5 mb-3">
               <button
                 type="button"
@@ -1045,12 +1060,12 @@ export default function StudioProjectPage() {
                     ? 'border-theme-accent bg-theme-accent/10 text-theme-accent'
                     : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'
                 }`}
-                title={t(locale, 'studio.tool.highlight')}
+                title={editMode === 'edit_brush' ? 'Paint zone to edit' : t(locale, 'studio.tool.highlight')}
               >
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
-                <span className="text-xs font-medium truncate">{t(locale, 'studio.tool.highlight')}</span>
+                <span className="text-xs font-medium truncate">{editMode === 'edit_brush' ? 'Brush' : t(locale, 'studio.tool.highlight')}</span>
               </button>
             </div>
             {editorTool && (
@@ -1087,6 +1102,8 @@ export default function StudioProjectPage() {
                   </>
                 )}
               </>
+            )}
+            </>
             )}
           </aside>
         )}

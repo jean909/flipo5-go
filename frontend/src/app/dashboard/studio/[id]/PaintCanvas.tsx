@@ -68,19 +68,26 @@ export function PaintCanvas({
       setError('Could not load image');
       setLoading(false);
     };
-    // Prefer API proxy for external URLs to avoid CORS and ensure valid image blob
+    const apiUrl = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_URL || '' : '';
+    const isOurMediaProxy = imageUrl.includes('/api/media') || (apiUrl && imageUrl.startsWith(apiUrl));
     const isExternal = imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
-    const load = isExternal
-      ? downloadMediaUrl(imageUrl).then(setBlob).catch(() =>
-          fetch(imageUrl, { credentials: 'include' })
-            .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
-            .then(setBlob)
-            .catch(fail)
-        )
-      : fetch(imageUrl, { credentials: 'include' })
-          .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
-          .then(setBlob)
-          .catch(() => downloadMediaUrl(imageUrl).then(setBlob).catch(fail));
+    let load: Promise<void>;
+    if (isOurMediaProxy) {
+      load = fetch(imageUrl, { credentials: 'include' })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
+        .then(setBlob)
+        .catch(fail);
+    } else if (isExternal) {
+      load = fetch(imageUrl, { credentials: 'include' })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
+        .then(setBlob)
+        .catch(() => downloadMediaUrl(imageUrl).then(setBlob).catch(fail));
+    } else {
+      load = fetch(imageUrl, { credentials: 'include' })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
+        .then(setBlob)
+        .catch(() => downloadMediaUrl(imageUrl).then(setBlob).catch(fail));
+    }
     load.catch(fail);
     return () => {
       if (url) URL.revokeObjectURL(url);
