@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, addProjectVersionByUrl, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, createImage, createImageInpaint, uploadAttachments, getJob, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../../components/ImageViewModal';
@@ -83,6 +83,10 @@ export default function StudioProjectPage() {
   const [paintApplying, setPaintApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mediaToken, setMediaToken] = useState<string | null>(null);
+  const [aiEditJobId, setAiEditJobId] = useState<string | null>(null);
+  const [brushEditForInpaint, setBrushEditForInpaint] = useState(false);
+  const [maskBlobForInpaint, setMaskBlobForInpaint] = useState<Blob | null>(null);
+  const [editMode, setEditMode] = useState<'edit' | 'edit_brush'>('edit');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // History: Original (source) + v1, v2, … for selected item
@@ -454,6 +458,102 @@ export default function StudioProjectPage() {
     }
   }
 
+  async function pollJobUntilDone(jobId: string): Promise<{ outputUrl: string | null; failed: boolean }> {
+    const maxAttempts = 120;
+    for (let i = 0; i < maxAttempts; i++) {
+      const job = await getJob(jobId);
+      if (!job) return { outputUrl: null, failed: true };
+      if (job.status === 'completed') {
+        const urls = getOutputUrls(job);
+        return { outputUrl: urls[0] ?? null, failed: false };
+      }
+      if (job.status === 'failed') return { outputUrl: null, failed: true };
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    return { outputUrl: null, failed: true };
+  }
+
+  async function handleEdit() {
+    if (!selectedItem || selectedItem.type !== 'image' || !referenceUrl || !aiPrompt.trim()) return;
+    setError(null);
+    setAiEditJobId('…');
+    try {
+      const { job_id } = await createImage({
+        prompt: aiPrompt.trim(),
+        size: 'HD',
+        imageInput: [referenceUrl],
+      });
+      const { outputUrl, failed } = await pollJobUntilDone(job_id);
+      if (failed || !outputUrl) {
+        setError('Edit failed or timed out');
+        return;
+      }
+      await addProjectVersionByUrl(selectedItem.id, outputUrl);
+      await fetchProject();
+      const { versions } = await listProjectVersions(selectedItem.id);
+      setItemVersions(versions ?? []);
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError((e as Error)?.message ?? 'Edit failed');
+    } finally {
+      setAiEditJobId(null);
+    }
+  }
+
+  async function handleSubmitBrushEdit() {
+    if (!selectedItem || selectedItem.type !== 'image' || !referenceUrl || !aiPrompt.trim() || !maskBlobForInpaint) return;
+    setError(null);
+    setPaintApplying(true);
+    try {
+      const file = new File([maskBlobForInpaint], 'mask.png', { type: 'image/png' });
+      const [maskUrl] = await uploadAttachments([file]);
+      if (!maskUrl) {
+        setError('Upload mask failed');
+        return;
+      }
+      const { job_id } = await createImageInpaint({
+        prompt: aiPrompt.trim(),
+        imageUrl: referenceUrl,
+        maskUrl,
+      });
+      setMaskBlobForInpaint(null);
+      setAiEditJobId(job_id);
+      const { outputUrl, failed } = await pollJobUntilDone(job_id);
+      setAiEditJobId(null);
+      if (failed || !outputUrl) {
+        setError('Edit with brush failed or timed out');
+        return;
+      }
+      await addProjectVersionByUrl(selectedItem.id, outputUrl);
+      await fetchProject();
+      const { versions } = await listProjectVersions(selectedItem.id);
+      setItemVersions(versions ?? []);
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError((e as Error)?.message ?? 'Edit failed');
+    } finally {
+      setPaintApplying(false);
+    }
+  }
+
+  function handleOpenBrushForInpaint() {
+    if (editMode !== 'edit_brush' || !selectedItem || selectedItem.type !== 'image' || !referenceUrl) return;
+    setBrushEditForInpaint(true);
+    setEditorTool('highlight');
+  }
+
+  function handleMaskOk(maskBlob: Blob) {
+    setMaskBlobForInpaint(maskBlob);
+    setEditorTool(null);
+    setBrushEditForInpaint(false);
+  }
+
   const currentVersionLabel = (() => {
     if (!selectedItem || versionHistory.length === 0) return '0/0';
     if (viewingVersionNum !== null) {
@@ -574,6 +674,20 @@ export default function StudioProjectPage() {
             >
               {t(locale, 'studio.adjustments')}
             </button>
+            <button
+              type="button"
+              onClick={handleOpenBrushForInpaint}
+              disabled={editMode !== 'edit_brush' || !selectedItem || selectedItem.type !== 'image' || !referenceUrl}
+              className={`px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none ${
+                editMode === 'edit_brush' && selectedItem?.type === 'image' && referenceUrl
+                  ? 'bg-theme-accent/15 text-theme-accent border border-theme-accent/50'
+                  : 'text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover'
+              }`}
+              title="Paint zone to edit (Edit using Brush)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+              Brush
+            </button>
             <ToolBtn label="AI Edit" />
           </div>
 
@@ -595,16 +709,27 @@ export default function StudioProjectPage() {
 
       {/* Main: sidebar + canvas */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Left sidebar: Model top, AI prompt bottom */}
+        {/* Left sidebar: Edit | Edit using Brush (top), AI prompt (bottom) */}
         <aside className="w-52 shrink-0 flex flex-col border-r border-theme-border bg-theme-bg p-4">
-          <div className="mb-6">
-            <label className="block text-xs font-medium text-theme-fg-muted mb-2">Model</label>
-            <div className="flex gap-2">
-              <button type="button" className="flex-1 px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-sm font-medium">
-                Light
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">Edit</label>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setEditMode('edit'); setMaskBlobForInpaint(null); }}
+                className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 ${editMode === 'edit' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                title="Edit (Nano Banana)"
+              >
+                Edit
               </button>
-              <button type="button" className="flex-1 px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover text-sm">
-                Complete
+              <button
+                type="button"
+                onClick={() => { setEditMode('edit_brush'); setMaskBlobForInpaint(null); }}
+                className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 ${editMode === 'edit_brush' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                title="Edit using Brush"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                Edit
               </button>
             </div>
           </div>
@@ -612,20 +737,42 @@ export default function StudioProjectPage() {
           <div className="flex-1 min-h-0 flex flex-col justify-end">
             <div>
               <label className="block text-xs font-medium text-theme-fg-muted mb-2">AI prompt</label>
-              <div className="flex gap-2">
-                <textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="Describe how I should edit the image..."
-                  rows={3}
-                  className="flex-1 px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg placeholder:text-theme-fg-subtle text-sm focus:outline-none focus:ring-1 focus:ring-theme-border-strong focus:border-transparent resize-none"
-                />
-                <button type="button" className="p-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong shrink-0 self-end" title="Edit with AI (Nano Banana)">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder={editMode === 'edit_brush' && !maskBlobForInpaint ? 'Paint zone, press OK, then describe the edit...' : 'Describe how I should edit the image...'}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg placeholder:text-theme-fg-subtle text-sm focus:outline-none focus:ring-1 focus:ring-theme-border-strong focus:border-transparent resize-none mb-2"
+              />
+              {editMode === 'edit' && (
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  disabled={!referenceUrl || !aiPrompt.trim() || !!aiEditJobId}
+                  className="w-full px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium"
+                  title="Edit (Nano Banana)"
+                >
+                  {aiEditJobId ? '...' : 'Edit'}
                 </button>
-              </div>
+              )}
+              {editMode === 'edit_brush' && (
+                <>
+                  {maskBlobForInpaint ? (
+                    <button
+                      type="button"
+                      onClick={handleSubmitBrushEdit}
+                      disabled={!aiPrompt.trim() || !!aiEditJobId || paintApplying}
+                      className="w-full px-3 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium"
+                    >
+                      {paintApplying || aiEditJobId ? '...' : 'Edit with AI'}
+                    </button>
+                  ) : (
+                    <p className="text-xs text-theme-fg-subtle">Click Brush in the bar above, paint the zone, then OK.</p>
+                  )}
+                </>
+              )}
               {referenceUrl && (
-                <p className="mt-1.5 text-xs text-theme-fg-subtle">Reference: last selected image (latest version)</p>
+                <p className="mt-1.5 text-xs text-theme-fg-subtle">Reference: last selected image</p>
               )}
             </div>
           </div>
@@ -659,7 +806,7 @@ export default function StudioProjectPage() {
             </div>
           ) : (
             <>
-              <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto relative">
+              <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto relative scrollbar-subtle">
                 {removingBg && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-theme-bg/85 rounded-lg">
                     <div className="flex flex-col items-center gap-3 text-theme-fg">
@@ -689,13 +836,15 @@ export default function StudioProjectPage() {
                         const { versions } = await listProjectVersions(selectedItem.id);
                         setItemVersions(versions ?? []);
                         setEditorTool(null);
+                        setBrushEditForInpaint(false);
                       } catch (e) {
                         setError((e as Error)?.message ?? 'Apply failed');
                       } finally {
                         setPaintApplying(false);
                       }
                     }}
-                    onClose={() => setEditorTool(null)}
+                    onMaskOk={brushEditForInpaint ? handleMaskOk : undefined}
+                    onClose={() => { setEditorTool(null); setBrushEditForInpaint(false); }}
                     applying={paintApplying}
                     locale={locale}
                   />
@@ -882,8 +1031,18 @@ export default function StudioProjectPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setEditorTool(editorTool === 'highlight' ? null : 'highlight')}
-                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'highlight' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                onClick={() => {
+                  if (editMode === 'edit_brush' && referenceUrl) {
+                    handleOpenBrushForInpaint();
+                  } else {
+                    setEditorTool(editorTool === 'highlight' ? null : 'highlight');
+                  }
+                }}
+                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${
+                  editorTool === 'highlight' || (editMode === 'edit_brush' && referenceUrl)
+                    ? 'border-theme-accent bg-theme-accent/10 text-theme-accent'
+                    : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'
+                }`}
                 title={t(locale, 'studio.tool.highlight')}
               >
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>

@@ -33,6 +33,10 @@
   --theme-danger: #ef4444;
   --theme-danger-rgb: 239 68 68;
 
+  /* Scrollbar – gri închis ca fundalul */
+  --theme-scrollbar-thumb: #2a2a2a;
+  --theme-scrollbar-thumb-hover: #404040;
+
   /* Legătură cu body (pentru compatibility) */
   --bg: var(--theme-bg);
   --fg: #ffffff;
@@ -79,23 +83,29 @@ input:focus, textarea:focus {
   outline-offset: 2px;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar – gri închis, subțire, fără săgeți */
 .scrollbar-subtle {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: var(--theme-scrollbar-thumb) transparent;
 }
 .scrollbar-subtle::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-subtle::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 .scrollbar-subtle::-webkit-scrollbar-track {
   background: transparent;
 }
 .scrollbar-subtle::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
+  background: var(--theme-scrollbar-thumb);
+  border-radius: 2px;
 }
 .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--theme-scrollbar-thumb-hover);
 }
 
 /* Search cancel button – folosește tema */

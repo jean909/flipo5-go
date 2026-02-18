@@ -74,6 +74,7 @@ func (s *Server) Routes() http.Handler {
 		r.Patch("/me", s.patchMe)
 		r.Post("/chat", s.createChat)
 		r.Post("/image", s.createImage)
+		r.Post("/image-inpaint", s.createImageInpaint)
 		r.Post("/video", s.createVideo)
 		r.Post("/prompt-variants", s.generatePromptVariants)
 		r.Post("/upload", s.upload)
@@ -728,7 +729,15 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 		"sequential_image_generation": req.SequentialMode,
 	}
 	if len(req.ImageInput) > 0 {
-		input["image_input"] = req.ImageInput
+		resolved := make([]string, 0, len(req.ImageInput))
+		for _, u := range req.ImageInput {
+			if u != "" && strings.HasPrefix(u, "uploads/") && s.Store != nil {
+				resolved = append(resolved, s.Store.URL(u))
+			} else {
+				resolved = append(resolved, u)
+			}
+		}
+		input["image_input"] = resolved
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "image", input, threadID)
 	if err != nil {
@@ -749,6 +758,71 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) createImageInpaint(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt   string  `json:"prompt"`
+		ImageURL string  `json:"image_url"`
+		MaskURL  string  `json:"mask_url"`
+		Steps    int     `json:"steps,omitempty"`
+		Guidance float64 `json:"guidance,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Prompt == "" || req.ImageURL == "" || req.MaskURL == "" {
+		http.Error(w, `{"error":"prompt, image_url and mask_url required"}`, http.StatusBadRequest)
+		return
+	}
+	// image_url and mask_url: must be https, or uploads/ key (backend resolves to public URL)
+	imageURL := req.ImageURL
+	if !strings.HasPrefix(imageURL, "https://") {
+		if strings.HasPrefix(imageURL, "uploads/") && s.Store != nil {
+			imageURL = s.Store.URL(imageURL)
+		} else {
+			http.Error(w, `{"error":"image_url must be https or uploads/ key"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	maskURL := req.MaskURL
+	if !strings.HasPrefix(maskURL, "https://") {
+		if strings.HasPrefix(maskURL, "uploads/") && s.Store != nil {
+			maskURL = s.Store.URL(maskURL)
+		} else {
+			http.Error(w, `{"error":"mask_url must be https or uploads/ key"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"prompt":   req.Prompt,
+		"image":    imageURL,
+		"mask":     maskURL,
+		"inpaint":  true,
+	}
+	if req.Steps >= 15 && req.Steps <= 50 {
+		input["steps"] = req.Steps
+	}
+	if req.Guidance >= 1.5 && req.Guidance <= 100 {
+		input["guidance"] = req.Guidance
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "image", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewImageTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
 }
 
 func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {

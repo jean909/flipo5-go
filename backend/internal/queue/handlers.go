@@ -469,6 +469,56 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		aspectRatio = "match_input_image"
 	}
 
+	// Edit using Brush: FLUX Fill Pro (image + mask + prompt)
+	if inpaint, _ := jobInput["inpaint"].(bool); inpaint {
+		imageURL, _ := jobInput["image"].(string)
+		maskURL, _ := jobInput["mask"].(string)
+		if imageURL != "" && maskURL != "" {
+			model := h.Cfg.ModelFluxFill
+			if model == "" {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_FLUX_FILL not set", 0, "")
+				return nil
+			}
+			steps := 50
+			if v, ok := jobInput["steps"].(float64); ok && v >= 15 && v <= 50 {
+				steps = int(v)
+			}
+			guidance := 3.0
+			if v, ok := jobInput["guidance"].(float64); ok && v >= 1.5 && v <= 100 {
+				guidance = v
+			}
+			input := repgo.PredictionInput{
+				"image":          imageURL,
+				"mask":           maskURL,
+				"prompt":         prompt,
+				"steps":          steps,
+				"guidance":       guidance,
+				"output_format":  "jpg",
+				"safety_tolerance": 2,
+				"prompt_upsampling": false,
+			}
+			out, err := h.Repl.Run(ctx, model, input)
+			if err != nil {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+				return err
+			}
+			outNormalized := normalizeNanoBananaOutput(out) // single URL
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
+			if h.Stream != nil {
+				_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+				if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+					userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+					_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"image"}`, p.JobID.String()))
+				}
+			}
+			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+				h.invalidateJobCaches(ctx, job)
+			}
+			go mirrorMediaToR2(h, p.JobID, outNormalized, "image")
+			return nil
+		}
+	}
+
 	if size == "HD" {
 		model := h.Cfg.ModelImageHD
 		if model == "" {

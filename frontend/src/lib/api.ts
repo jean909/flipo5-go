@@ -335,6 +335,36 @@ export async function createImage(params: CreateImageParams | string, threadId?:
   return res.json();
 }
 
+export interface CreateImageInpaintParams {
+  prompt: string;
+  imageUrl: string;
+  maskUrl: string;
+  steps?: number;
+  guidance?: number;
+}
+
+export async function createImageInpaint(params: CreateImageInpaintParams): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/image-inpaint`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      prompt: params.prompt,
+      image_url: params.imageUrl,
+      mask_url: params.maskUrl,
+      steps: params.steps,
+      guidance: params.guidance,
+    }),
+  });
+  if (!res.ok) {
+    if (res.status === 429) throw new Error('rate');
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed');
+  }
+  return res.json();
+}
+
 export interface CreateVideoParams {
   prompt: string;
   threadId?: string;
@@ -716,6 +746,19 @@ export async function uploadProjectItem(projectId: string, file: File): Promise<
   if (!res.ok) throw new Error(body?.error || 'Upload failed');
   if (!body.item) throw new Error('Upload failed');
   return { id: body.id!, item: body.item };
+}
+
+/** Add a new version by URL (e.g. after AI edit job completes). URL must be https. */
+export async function addProjectVersionByUrl(itemId: string, url: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/projects/items/${itemId}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ url }),
+  });
+  if (res.status === 401) throw new Error('session_expired');
+  if (!res.ok) throw new Error('Failed to add version');
 }
 
 /** Upload file as new version of project item. One request: upload + add version. */

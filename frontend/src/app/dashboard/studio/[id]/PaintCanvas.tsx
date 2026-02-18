@@ -15,6 +15,10 @@ interface PaintCanvasProps {
   highlightColor: string;
   highlightOpacity: number;
   onApply: (canvas: HTMLCanvasElement) => void;
+  /** When set and tool is highlight, Apply exports mask (white = drawn) and calls this instead of onApply */
+  onExportMask?: (maskBlob: Blob) => void;
+  /** When set and tool is highlight: show floating OK at bottom; on OK click export mask and call this (parent closes canvas) */
+  onMaskOk?: (maskBlob: Blob) => void;
   onClose: () => void;
   applying: boolean;
   locale: Locale;
@@ -28,6 +32,8 @@ export function PaintCanvas({
   highlightColor,
   highlightOpacity,
   onApply,
+  onExportMask,
+  onMaskOk,
   onClose,
   applying,
   locale,
@@ -50,15 +56,32 @@ export function PaintCanvas({
     setLoading(true);
     setError(null);
     const setBlob = (blob: Blob) => {
+      if (!blob.type.startsWith('image/')) {
+        setError('Invalid image');
+        setLoading(false);
+        return;
+      }
       url = URL.createObjectURL(blob);
       setBlobUrl(url);
     };
-    fetch(imageUrl, { credentials: 'include' })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
-      .then(setBlob)
-      .catch(() =>
-        downloadMediaUrl(imageUrl).then(setBlob).catch(() => setError('Could not load image'))
-      );
+    const fail = () => {
+      setError('Could not load image');
+      setLoading(false);
+    };
+    // Prefer API proxy for external URLs to avoid CORS and ensure valid image blob
+    const isExternal = imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
+    const load = isExternal
+      ? downloadMediaUrl(imageUrl).then(setBlob).catch(() =>
+          fetch(imageUrl, { credentials: 'include' })
+            .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
+            .then(setBlob)
+            .catch(fail)
+        )
+      : fetch(imageUrl, { credentials: 'include' })
+          .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
+          .then(setBlob)
+          .catch(() => downloadMediaUrl(imageUrl).then(setBlob).catch(fail));
+    load.catch(fail);
     return () => {
       if (url) URL.revokeObjectURL(url);
     };
@@ -89,6 +112,11 @@ export function PaintCanvas({
     setLoading(false);
     initCanvases();
   }, [initCanvases]);
+
+  const onImageError = useCallback(() => {
+    setLoading(false);
+    setError('Image failed to load');
+  }, []);
 
   const toCanvasCoords = useCallback((e: React.MouseEvent) => {
     const rect = overlayRef.current?.getBoundingClientRect();
@@ -195,10 +223,44 @@ export function PaintCanvas({
     strokeStart.current = null;
   }, []);
 
+  const exportMaskBlob = useCallback((): Promise<Blob | null> => {
+    const overlay = overlayRef.current;
+    if (!overlay) return Promise.resolve(null);
+    const w = overlay.width;
+    const h = overlay.height;
+    const mask = document.createElement('canvas');
+    mask.width = w;
+    mask.height = h;
+    const mCtx = mask.getContext('2d');
+    if (!mCtx) return Promise.resolve(null);
+    mCtx.fillStyle = '#000000';
+    mCtx.fillRect(0, 0, w, h);
+    const src = mCtx.getImageData(0, 0, w, h);
+    const overlayCtx = overlay.getContext('2d');
+    if (!overlayCtx) return Promise.resolve(null);
+    const ov = overlayCtx.getImageData(0, 0, w, h);
+    for (let i = 0; i < ov.data.length; i += 4) {
+      if (ov.data[i + 3] > 10) {
+        src.data[i] = 255;
+        src.data[i + 1] = 255;
+        src.data[i + 2] = 255;
+        src.data[i + 3] = 255;
+      }
+    }
+    mCtx.putImageData(src, 0, 0);
+    return new Promise((resolve) => {
+      mask.toBlob((b) => resolve(b), 'image/png');
+    });
+  }, []);
+
   const handleApply = useCallback(() => {
     const base = baseRef.current;
     const overlay = overlayRef.current;
     if (!base || !overlay) return;
+    if (tool === 'highlight' && onExportMask) {
+      exportMaskBlob().then((blob) => { if (blob) onExportMask(blob); });
+      return;
+    }
     const w = base.width;
     const h = base.height;
     const out = document.createElement('canvas');
@@ -209,7 +271,12 @@ export function PaintCanvas({
     ctx.drawImage(base, 0, 0);
     ctx.drawImage(overlay, 0, 0);
     onApply(out);
-  }, [onApply]);
+  }, [tool, onApply, onExportMask, exportMaskBlob]);
+
+  const handleFloatingOk = useCallback(() => {
+    if (tool !== 'highlight' || !onMaskOk) return;
+    exportMaskBlob().then((blob) => { if (blob) onMaskOk(blob); });
+  }, [tool, onMaskOk, exportMaskBlob]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -252,6 +319,7 @@ export function PaintCanvas({
         alt=""
         className="hidden"
         onLoad={onImageLoad}
+        onError={onImageError}
       />
       <canvas
         ref={baseRef}
@@ -274,10 +342,24 @@ export function PaintCanvas({
         <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover text-sm">
           {t(locale, 'dialog.cancel')}
         </button>
-        <button type="button" onClick={handleApply} disabled={applying} className="px-3 py-1.5 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium">
-          {applying ? '...' : t(locale, 'studio.apply')}
-        </button>
+        {!(tool === 'highlight' && onMaskOk) && (
+          <button type="button" onClick={handleApply} disabled={applying} className="px-3 py-1.5 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium">
+            {applying ? '...' : (tool === 'highlight' && onExportMask ? 'Edit with AI' : t(locale, 'studio.apply'))}
+          </button>
+        )}
       </div>
+      {tool === 'highlight' && onMaskOk && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">
+          <button
+            type="button"
+            onClick={handleFloatingOk}
+            disabled={applying}
+            className="px-6 py-2.5 rounded-xl bg-theme-accent text-theme-fg-inverse font-medium shadow-lg hover:opacity-90 disabled:opacity-50 text-sm"
+          >
+            OK
+          </button>
+        </div>
+      )}
     </div>
   );
 }
