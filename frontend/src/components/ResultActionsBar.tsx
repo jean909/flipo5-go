@@ -16,14 +16,15 @@ export interface ResultActionsBarProps {
   initialRating?: 'like' | 'dislike' | null;
   /** Plain text for copy (and regenerate when chat) */
   text?: string;
-  /** Media URLs for download and "start thread with this" */
+  /** Media URLs for download */
   mediaUrls?: string[];
   threadId?: string | null;
   /** Show regenerate only for chat with text, and only once */
   showRegenerate?: boolean;
   regenerateUsed?: boolean;
   onRegenerate?: () => void;
-  onStartThread?: (mediaUrls: string[]) => void;
+  /** Start new subject from this (chat) message text – only for chat, not for image/video */
+  onStartThreadFromText?: (text: string) => void;
   locale: Locale;
 }
 
@@ -37,7 +38,7 @@ export function ResultActionsBar({
   showRegenerate = false,
   regenerateUsed = false,
   onRegenerate,
-  onStartThread,
+  onStartThreadFromText,
   locale,
 }: ResultActionsBarProps) {
   const [rating, setRating] = useState<'like' | 'dislike' | null>(initialRating ?? null);
@@ -92,13 +93,14 @@ export function ResultActionsBar({
       setDownloading(false);
     }
   };
-  const handleThread = () => {
-    if (mediaUrls.length > 0 && onStartThread) onStartThread(mediaUrls);
-    else if (onStartThread) onStartThread([]);
+  const handleStartSubject = () => {
+    if (onStartThreadFromText) onStartThreadFromText(text);
   };
 
   const hasMedia = mediaUrls.length > 0;
   const canRegenerate = showRegenerate && !regenerateUsed && text.length > 0 && onRegenerate;
+  /** Start subject only for chat when there is message text; not for image/video */
+  const showStartSubject = jobType === 'chat' && onStartThreadFromText && text.trim().length > 0;
 
   return (
     <div className="flex items-center gap-1 mt-2 text-theme-fg-muted" role="toolbar" aria-label={t(locale, 'feedback.actions')}>
@@ -112,9 +114,11 @@ export function ResultActionsBar({
           <DownloadIcon className={iconCls} />
         </button>
       )}
-      <button type="button" onClick={handleThread} className={btnCls} title={t(locale, 'feedback.thread')} aria-label={t(locale, 'feedback.thread')}>
-        <ThreadIcon className={iconCls} />
-      </button>
+      {showStartSubject && (
+        <button type="button" onClick={handleStartSubject} className={btnCls} title={t(locale, 'feedback.startSubject')} aria-label={t(locale, 'feedback.startSubject')}>
+          <ThreadIcon className={iconCls} />
+        </button>
+      )}
       <button
         type="button"
         onClick={handleCopy}

@@ -41,7 +41,7 @@ export function VideoSettingsRow({ locale, settings, onChange, hasImage, hasVide
               key={m}
               type="button"
               onClick={() => onVideoModelChange(m)}
-              className={videoModel === m ? 'px-3 py-1.5 rounded-lg border bg-theme-bg-hover-strong border-theme-border-hover text-theme-fg font-medium' : 'px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover'}
+              className={`px-3 py-1.5 rounded-lg border transition-colors duration-150 ${videoModel === m ? 'bg-theme-bg-hover-strong border-theme-border-hover text-theme-fg font-medium' : 'border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover'}`}
             >
               {t(locale, m === '1' ? 'video.model1' : 'video.model2')}
             </button>

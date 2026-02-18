@@ -137,3 +137,20 @@ input[type="search"]::-ms-clear {
 .animate-feedback-used {
   animation: feedbackUsed 0.35s ease-out;
 }
+
+/* Subtle entrance – folosit pentru liste și carduri */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.22s ease-out;
+}
+
+/* Tranziții rapide – feeling de viteză */
+.transition-fast {
+  transition-duration: 150ms;
+}
+.transition-faster {
+  transition-duration: 120ms;
+}

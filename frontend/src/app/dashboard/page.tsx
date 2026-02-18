@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
@@ -289,7 +289,18 @@ export default function DashboardPage() {
     }).catch(() => { if (effectiveThreadIdRef.current === id) setThreadJobs([]); });
   }, []);
 
-  // Start new chat with given media as reference (from ResultActionsBar "Thread")
+  // Start new subject from a chat message (text): prefill prompt and open new thread
+  const handleStartThreadFromText = useCallback((text: string) => {
+    setPrompt(text);
+    setThreadId(null);
+    setThreadData(null);
+    setThreadJobs([]);
+    setReplaceMap({});
+    setHasStarted(true);
+    if (!incognito) router.replace('/dashboard', { scroll: false });
+  }, [incognito, router]);
+
+  // Start new chat with given media as reference (e.g. from sessionStorage when coming from another page)
   const handleStartThreadWithRef = useCallback((mediaUrls: string[]) => {
     setReferenceImageUrls(mediaUrls);
     setThreadId(null);
@@ -336,10 +347,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (jobId && threadJobs.some((j) => j.id === jobId)) {
       setLastSentPrompt('');
+      if (pendingJobType === 'video' && typeof window !== 'undefined') sessionStorage.removeItem('flipo5_video_pending');
       setJobId(null);
       setPendingJobThreadId(null);
     }
-  }, [jobId, threadJobs]);
+  }, [jobId, threadJobs, pendingJobType]);
 
   // Scroll chat to bottom when new messages/jobs appear or when switching sessions
   const chatContentRef = useRef<HTMLDivElement>(null);
@@ -406,6 +418,18 @@ export default function DashboardPage() {
     if (submittedRequests.has(requestKey)) {
       console.warn('[Submit] Duplicate request prevented:', mode, trimmed.slice(0, 50));
       return;
+    }
+
+    // Prevent same video request re-submit after hard refresh (only block identical request, not any video)
+    if (mode === 'video' && typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('flipo5_video_pending');
+        if (raw) {
+          const { key: pendingKey, t } = JSON.parse(raw) as { key?: string; t?: number };
+          if (pendingKey === requestKey && typeof t === 'number' && Date.now() - t < 90_000) return;
+          sessionStorage.removeItem('flipo5_video_pending');
+        }
+      } catch { sessionStorage.removeItem('flipo5_video_pending'); }
     }
     
     setSubmittedRequests(prev => new Set(prev).add(requestKey));
@@ -521,6 +545,7 @@ export default function DashboardPage() {
             ? { startImage: startImageUrl, endImage: endImageUrl }
             : { image: imageUrl, video: videoUrl }),
         });
+        if (typeof window !== 'undefined') sessionStorage.setItem('flipo5_video_pending', JSON.stringify({ key: requestKey, t: Date.now() }));
         addOptimisticJob({ id: res.job_id, type: 'video', thread_id: res.thread_id ?? tid ?? null });
         setJobId(res.job_id);
         setPendingJobThreadId(res.thread_id ?? tid ?? null);
@@ -627,106 +652,87 @@ export default function DashboardPage() {
           e.target.value = '';
         }}
       />
-      <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all flex items-center flex-wrap gap-1.5 px-2 py-1.5">
+      <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all duration-200 flex items-center flex-wrap gap-1.5 px-2 py-1.5">
         {showPaperclip && (mode !== 'video' || videoModel === '1') && (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+            className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || attachments.length > 0) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`}
             aria-label="Attach image"
           >
-            <PaperclipIcon className="w-5 h-5" />
+            {(referenceImageUrls.length > 0 || attachments.length > 0) ? (
+              <img src={referenceImageUrls[0] ?? attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+            ) : (
+              <PaperclipIcon className="w-5 h-5" />
+            )}
           </button>
         )}
         {mode === 'video' && videoModel === '2' && (
           <>
             <button
               type="button"
-              onClick={() => startImageInputRef.current?.click()}
-              className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+              onClick={() => startImageFile ? removeStartImageFile() : startImageInputRef.current?.click()}
+              className={startImageFile && startImagePreviewUrl ? 'shrink-0 p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10 flex items-center justify-center relative group' : 'shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors'}
               title={t(locale, 'video.startImage')}
               aria-label={t(locale, 'video.startImage')}
             >
-              <ImageIcon className="w-5 h-5" />
-              <span className="sr-only">{t(locale, 'video.startImage')}</span>
+              {startImageFile && startImagePreviewUrl ? (
+                <>
+                  <img src={startImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                  <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">Start</span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStartImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                </>
+              ) : (
+                <ImageIcon className="w-5 h-5" />
+              )}
             </button>
             <button
               type="button"
-              onClick={() => endImageInputRef.current?.click()}
-              className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+              onClick={() => endImageFile ? removeEndImageFile() : endImageInputRef.current?.click()}
+              className={endImageFile && endImagePreviewUrl ? 'shrink-0 p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10 flex items-center justify-center relative group' : 'shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors'}
               title={t(locale, 'video.endImage')}
               aria-label={t(locale, 'video.endImage')}
             >
-              <ImageIcon className="w-5 h-5" />
-              <span className="sr-only">{t(locale, 'video.endImage')}</span>
+              {endImageFile && endImagePreviewUrl ? (
+                <>
+                  <img src={endImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                  <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">End</span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeEndImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                </>
+              ) : (
+                <ImageIcon className="w-5 h-5" />
+              )}
             </button>
           </>
         )}
         {mode === 'video' && videoModel === '1' && (
           <button
             type="button"
-            onClick={() => setShowVideoInputDialog(true)}
-            className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+            onClick={() => videoFile ? removeVideoFile() : setShowVideoInputDialog(true)}
+            className={videoFile && videoPreviewUrl ? 'shrink-0 p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10 flex items-center justify-center' : 'shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors'}
             aria-label={t(locale, 'video.videoInput')}
           >
-            <VideoClipIcon className="w-5 h-5" />
+            {videoFile && videoPreviewUrl ? (
+              <video src={videoPreviewUrl} className="w-full h-full object-cover" muted />
+            ) : (
+              <VideoClipIcon className="w-5 h-5" />
+            )}
           </button>
         )}
         {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile || (videoModel === '2' && (startImageFile || endImageFile)))) ? (
           <>
-            {mode === 'video' && videoModel === '2' && startImageFile && startImagePreviewUrl && (
-              <div className="relative shrink-0 flex items-center gap-0.5">
-                <img src={startImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
-                <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">Start</span>
-                <button type="button" onClick={removeStartImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
-                  <XIcon className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            )}
-            {mode === 'video' && videoModel === '2' && endImageFile && endImagePreviewUrl && (
-              <div className="relative shrink-0 flex items-center gap-0.5">
-                <img src={endImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
-                <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">End</span>
-                <button type="button" onClick={removeEndImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
-                  <XIcon className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            )}
-            {mode === 'video' && videoModel === '1' && videoFile && videoPreviewUrl && (
-              <div className="relative shrink-0">
-                <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
-                <button
-                  type="button"
-                  onClick={removeVideoFile}
-                  className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90"
-                  aria-label="Remove"
-                >
-                  <XIcon className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            )}
-            {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && referenceImageUrls.map((url) => (
-              <div key={url} className="relative shrink-0">
+            {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
+              <div key={url} className="relative shrink-0 group">
                 <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
-                <button
-                  type="button"
-                  onClick={() => removeReferenceImage(url)}
-                  className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90"
-                  aria-label="Remove"
-                >
+                <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove">
                   <XIcon className="w-2.5 h-2.5" />
                 </button>
               </div>
             ))}
-            {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && attachments.map((a) => (
-              <div key={a.id} className="relative shrink-0">
+            {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? attachments : attachments.slice(1)).map((a) => (
+              <div key={a.id} className="relative shrink-0 group">
                 <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(a.id)}
-                  className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90"
-                  aria-label="Remove"
-                >
+                <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove">
                   <XIcon className="w-2.5 h-2.5" />
                 </button>
               </div>
@@ -791,10 +797,11 @@ export default function DashboardPage() {
               type="button"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
+              transition={{ duration: 0.15 }}
               onClick={() => setMode(m)}
               className={mode === m
-                ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg text-sm font-medium transition-all'
-                : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover text-sm font-medium transition-all'
+                ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg text-sm font-medium transition-all duration-150'
+                : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover text-sm font-medium transition-all duration-150'
               }
             >
               {m === 'video' && <VideoIcon />}
@@ -934,59 +941,59 @@ export default function DashboardPage() {
               />
               <input ref={startImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) addStartImageFile(f); e.target.value = ''; }} />
               <input ref={endImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) addEndImageFile(f); e.target.value = ''; }} />
-              <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all flex items-center flex-wrap gap-1.5 px-2 py-1.5">
+              <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all duration-200 flex items-center flex-wrap gap-1.5 px-2 py-1.5">
                 {(mode === 'image' || (mode === 'video' && videoModel === '1')) && (
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" aria-label="Attach image">
-                    <PaperclipIcon className="w-5 h-5" />
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || attachments.length > 0) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`} aria-label="Attach image">
+                    {(referenceImageUrls.length > 0 || attachments.length > 0) ? (
+                      <img src={referenceImageUrls[0] ?? attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                    ) : (
+                      <PaperclipIcon className="w-5 h-5" />
+                    )}
                   </button>
                 )}
                 {mode === 'video' && videoModel === '2' && (
                   <>
-                    <button type="button" onClick={() => startImageInputRef.current?.click()} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" title={t(locale, 'video.startImage')} aria-label={t(locale, 'video.startImage')}>
-                      <ImageIcon className="w-5 h-5" />
+                    <button type="button" onClick={() => startImageFile ? removeStartImageFile() : startImageInputRef.current?.click()} className={startImageFile && startImagePreviewUrl ? 'shrink-0 p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10 flex items-center justify-center relative group' : 'shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors'} title={t(locale, 'video.startImage')} aria-label={t(locale, 'video.startImage')}>
+                      {startImageFile && startImagePreviewUrl ? (
+                        <>
+                          <img src={startImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                          <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">Start</span>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); removeStartImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                        </>
+                      ) : (
+                        <ImageIcon className="w-5 h-5" />
+                      )}
                     </button>
-                    <button type="button" onClick={() => endImageInputRef.current?.click()} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" title={t(locale, 'video.endImage')} aria-label={t(locale, 'video.endImage')}>
-                      <ImageIcon className="w-5 h-5" />
+                    <button type="button" onClick={() => endImageFile ? removeEndImageFile() : endImageInputRef.current?.click()} className={endImageFile && endImagePreviewUrl ? 'shrink-0 p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10 flex items-center justify-center relative group' : 'shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors'} title={t(locale, 'video.endImage')} aria-label={t(locale, 'video.endImage')}>
+                      {endImageFile && endImagePreviewUrl ? (
+                        <>
+                          <img src={endImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                          <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">End</span>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); removeEndImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                        </>
+                      ) : (
+                        <ImageIcon className="w-5 h-5" />
+                      )}
                     </button>
                   </>
                 )}
                 {mode === 'video' && videoModel === '1' && (
-                  <button type="button" onClick={() => setShowVideoInputDialog(true)} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" aria-label={t(locale, 'video.videoInput')}>
-                    <VideoClipIcon className="w-5 h-5" />
+                  <button type="button" onClick={() => videoFile ? removeVideoFile() : setShowVideoInputDialog(true)} className={videoFile && videoPreviewUrl ? 'shrink-0 p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10 flex items-center justify-center' : 'shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors'} aria-label={t(locale, 'video.videoInput')}>
+                    {videoFile && videoPreviewUrl ? <video src={videoPreviewUrl} className="w-full h-full object-cover" muted /> : <VideoClipIcon className="w-5 h-5" />}
                   </button>
                 )}
-                {((mode === 'image' || (mode === 'video' && videoModel === '1')) && (attachments.length > 0 || referenceImageUrls.length > 0)) || (mode === 'video' && videoModel === '1' && videoFile) || (mode === 'video' && videoModel === '2' && (startImageFile || endImageFile)) ? (
+                {((mode === 'image' || (mode === 'video' && videoModel === '1')) && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && videoModel === '1' && videoFile) || (mode === 'video' && videoModel === '2' && (startImageFile || endImageFile)) ? (
                   <>
-                    {mode === 'video' && videoModel === '2' && startImageFile && startImagePreviewUrl && (
-                      <div className="relative shrink-0 flex items-center gap-0.5">
-                        <img src={startImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
-                        <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">Start</span>
-                        <button type="button" onClick={removeStartImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
-                      </div>
-                    )}
-                    {mode === 'video' && videoModel === '2' && endImageFile && endImagePreviewUrl && (
-                      <div className="relative shrink-0 flex items-center gap-0.5">
-                        <img src={endImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
-                        <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">End</span>
-                        <button type="button" onClick={removeEndImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
-                      </div>
-                    )}
-                    {mode === 'video' && videoModel === '1' && videoFile && videoPreviewUrl && (
-                      <div className="relative shrink-0">
-                        <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
-                        <button type="button" onClick={removeVideoFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
-                      </div>
-                    )}
-                    {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && referenceImageUrls.map((url) => (
-                      <div key={url} className="relative shrink-0">
+                    {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
+                      <div key={url} className="relative shrink-0 group">
                         <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
-                        <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                        <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
-                    {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && attachments.map((a) => (
-                      <div key={a.id} className="relative shrink-0">
+                    {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? attachments : attachments.slice(1)).map((a) => (
+                      <div key={a.id} className="relative shrink-0 group">
                         <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
-                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
                   </>
@@ -1025,10 +1032,11 @@ export default function DashboardPage() {
                   type="button"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
+                  transition={{ duration: 0.15 }}
                   onClick={() => setMode(m)}
                   className={mode === m
-                    ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg text-sm font-medium transition-all'
-                    : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover text-sm font-medium transition-all'
+                    ? 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg text-sm font-medium transition-all duration-150'
+                    : 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover text-sm font-medium transition-all duration-150'
                   }
                 >
                   {m === 'video' && <VideoIcon />}
@@ -1110,6 +1118,7 @@ export default function DashboardPage() {
             {threadLoading && (
               <p className="text-theme-fg-subtle text-sm py-4">{t(locale, 'common.loading')}</p>
             )}
+            <AnimatePresence initial={false}>
             {[
               ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
                 ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
@@ -1124,7 +1133,13 @@ export default function DashboardPage() {
               const promptForRegenerate = (job.input as { prompt?: string })?.prompt;
               const isRegeneratedSlot = job.id !== '_pending' && Object.values(replaceMap).includes(job.id);
               return (
-              <div key={job.id} className="flex flex-col gap-2">
+              <motion.div
+                key={job.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="flex flex-col gap-2"
+              >
                 {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
                   <div className="flex justify-end">
                     <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
@@ -1138,17 +1153,18 @@ export default function DashboardPage() {
                   locale={locale}
                   dark
                   variant="chat"
-                  onNotFound={job.id === jobId ? () => { setJobId(null); setPendingJobThreadId(null); } : undefined}
+                  onNotFound={job.id === jobId ? () => { if (pendingJobType === 'video' && typeof window !== 'undefined') sessionStorage.removeItem('flipo5_video_pending'); setJobId(null); setPendingJobThreadId(null); } : undefined}
                   onUseAsReference={addReferenceImage}
                   regenerateUsed={isRegeneratedSlot}
                   onRegenerate={job.type === 'chat' && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
                     ? () => handleRegenerate(job.id, promptForRegenerate)
                     : undefined}
-                  onStartThread={handleStartThreadWithRef}
+                  onStartThreadFromText={handleStartThreadFromText}
                 />
                 )}
-              </div>
+              </motion.div>
             ); })}
+            </AnimatePresence>
             </div>
           </div>
           {!isArchived && bottomBar}

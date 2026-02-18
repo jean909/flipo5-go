@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
-import { downloadMediaUrl } from '@/lib/api';
+import { downloadMediaUrl, createProject, addProjectItem } from '@/lib/api';
 import { VideoPlayer } from './VideoPlayer';
 
 function isVideoUrl(u: string) {
@@ -18,6 +19,7 @@ interface ImageViewModalProps {
 }
 
 export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewModalProps) {
+  const router = useRouter();
   const list = urls && urls.length > 1 ? urls : [url];
   const [idx, setIdx] = useState(() => Math.max(0, list.indexOf(url)));
   const safeIdx = Math.max(0, Math.min(idx, list.length - 1));
@@ -25,6 +27,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
   const isVideo = isVideoUrl(currentUrl);
   const hasPrev = safeIdx > 0;
   const hasNext = safeIdx < list.length - 1;
+  const [editLoading, setEditLoading] = useState(false);
 
   useEffect(() => {
     if (urls?.length) setIdx(urls.indexOf(url));
@@ -97,6 +100,19 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
     } catch (_) {}
   }, [currentUrl]);
 
+  const handleEditInStudio = useCallback(async () => {
+    if (editLoading) return;
+    setEditLoading(true);
+    try {
+      const { id } = await createProject(t(locale, 'studio.untitled'));
+      await addProjectItem(id, isVideo ? 'video' : 'image', currentUrl);
+      onClose();
+      router.push(`/dashboard/studio/${id}`);
+    } catch (_) {
+      setEditLoading(false);
+    }
+  }, [currentUrl, isVideo, locale, onClose, router, editLoading]);
+
   return (
     <div
       role="dialog"
@@ -121,6 +137,15 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
             <XIcon className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleEditInStudio}
+              disabled={editLoading}
+              className="px-4 py-2 rounded-lg bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-60"
+            >
+              <EditIcon className="w-4 h-4" />
+              {editLoading ? '...' : t(locale, 'image.editInStudio')}
+            </button>
             <button
               type="button"
               onClick={handleSave}
@@ -205,6 +230,13 @@ function ShareIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+    </svg>
+  );
+}
+function EditIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
     </svg>
   );
 }

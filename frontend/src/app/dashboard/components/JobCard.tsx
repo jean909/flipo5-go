@@ -60,7 +60,7 @@ export function JobCard({
   onNotFound,
   onUseAsReference,
   onRegenerate,
-  onStartThread,
+  onStartThreadFromText,
   regenerateUsed = false,
   variant = 'card',
 }: {
@@ -70,7 +70,8 @@ export function JobCard({
   onNotFound?: () => void;
   onUseAsReference?: (url: string) => void;
   onRegenerate?: () => void;
-  onStartThread?: (mediaUrls: string[]) => void;
+  /** Start new subject from this message (chat only); not used for image/video */
+  onStartThreadFromText?: (text: string) => void;
   regenerateUsed?: boolean;
   variant?: 'card' | 'chat';
 }) {
@@ -366,7 +367,6 @@ export function JobCard({
             mediaUrls={urls}
             threadId={job.thread_id ?? null}
             locale={locale}
-            onStartThread={onStartThread}
           />
         </div>
       );
@@ -446,7 +446,6 @@ export function JobCard({
               mediaUrls={[videoUrl]}
               threadId={job.thread_id ?? null}
               locale={locale}
-              onStartThread={onStartThread}
             />
           </div>
           {viewingVideoUrl && (
@@ -497,7 +496,7 @@ export function JobCard({
             mediaUrls={validAttachments}
             threadId={job.thread_id ?? null}
             locale={locale}
-            onStartThread={onStartThread}
+            onStartThreadFromText={onStartThreadFromText}
           />
         </div>
       );
@@ -534,7 +533,7 @@ export function JobCard({
           showRegenerate={outputStr.length > 0}
           regenerateUsed={regenerateUsed}
           onRegenerate={onRegenerate}
-          onStartThread={onStartThread}
+          onStartThreadFromText={onStartThreadFromText}
           locale={locale}
         />
       </div>
@@ -580,7 +579,7 @@ export function JobCard({
             showRegenerate={job.type === 'chat' && outputStr.length > 0}
             regenerateUsed={regenerateUsed}
             onRegenerate={onRegenerate}
-            onStartThread={onStartThread}
+            onStartThreadFromText={job.type === 'chat' ? onStartThreadFromText : undefined}
             locale={locale}
           />
         </>
