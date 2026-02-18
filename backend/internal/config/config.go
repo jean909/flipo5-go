@@ -35,6 +35,7 @@ type Config struct {
 	ModelImage     string
 	ModelImageHD   string // google/nano-banana for HD
 	ModelVideo     string
+	ModelVideo2    string // kwaivgi/kling-v2.5-turbo-pro (start_image, end_image)
 	ModelRemoveBg  string // bria/remove-background for studio remove background
 
 	// CORS: comma-separated origins, e.g. "http://localhost:3000,https://app.example.com". Empty = allow "*"
@@ -64,6 +65,7 @@ func Load() *Config {
 		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),
 		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
+		ModelVideo2:    getEnv("REPLICATE_MODEL_VIDEO_2", "kwaivgi/kling-v2.5-turbo-pro"),
 		ModelRemoveBg:  getEnv("REPLICATE_MODEL_REMOVE_BG", "bria/remove-background"),
 		CORSOrigins:    strings.TrimSpace(getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 	}

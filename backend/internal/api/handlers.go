@@ -753,14 +753,17 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt      string   `json:"prompt"`
-		ThreadID    string   `json:"thread_id,omitempty"`
-		Incognito   bool     `json:"incognito,omitempty"`
-		Image       string   `json:"image,omitempty"`
-		Video       string   `json:"video,omitempty"`
-		Duration    int      `json:"duration,omitempty"`
-		AspectRatio string   `json:"aspect_ratio,omitempty"`
-		Resolution  string   `json:"resolution,omitempty"`
+		Prompt      string `json:"prompt"`
+		ThreadID    string `json:"thread_id,omitempty"`
+		Incognito   bool   `json:"incognito,omitempty"`
+		Image       string `json:"image,omitempty"`
+		Video       string `json:"video,omitempty"`
+		Duration    int    `json:"duration,omitempty"`
+		AspectRatio string `json:"aspect_ratio,omitempty"`
+		Resolution  string `json:"resolution,omitempty"`
+		VideoModel  string `json:"video_model,omitempty"` // "1" = default, "2" = Kling
+		StartImage  string `json:"start_image,omitempty"`
+		EndImage    string `json:"end_image,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -775,6 +778,9 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	if req.AspectRatio == "" {
 		req.AspectRatio = "16:9"
 	}
+	if req.VideoModel != "2" {
+		req.VideoModel = "1"
+	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
 	threadID := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
@@ -786,12 +792,22 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		"duration":     req.Duration,
 		"aspect_ratio": req.AspectRatio,
 		"resolution":   req.Resolution,
+		"video_model":  req.VideoModel,
 	}
-	if req.Image != "" {
-		input["image"] = req.Image
-	}
-	if req.Video != "" {
-		input["video"] = req.Video
+	if req.VideoModel == "2" {
+		if req.StartImage != "" {
+			input["start_image"] = req.StartImage
+		}
+		if req.EndImage != "" {
+			input["end_image"] = req.EndImage
+		}
+	} else {
+		if req.Image != "" {
+			input["image"] = req.Image
+		}
+		if req.Video != "" {
+			input["video"] = req.Video
+		}
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {

@@ -600,11 +600,6 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 		}
 		return nil
 	}
-	model := h.Cfg.ModelVideo
-	if model == "" {
-		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO not set", 0, "")
-		return nil
-	}
 	job, err := h.DB.GetJob(ctx, p.JobID)
 	if err != nil || job == nil {
 		return nil
@@ -613,18 +608,56 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	if len(job.Input) > 0 {
 		_ = json.Unmarshal(job.Input, &jobInput)
 	}
-	input := make(repgo.PredictionInput)
-	for k, v := range jobInput {
-		input[k] = v
+	videoModel, _ := jobInput["video_model"].(string)
+	if videoModel != "2" {
+		videoModel = "1"
 	}
-	if input["duration"] == nil {
-		input["duration"] = 5
-	}
-	if input["aspect_ratio"] == nil || input["aspect_ratio"] == "" {
-		input["aspect_ratio"] = "16:9"
-	}
-	if input["resolution"] == nil || input["resolution"] == "" {
-		input["resolution"] = "720p"
+	var model string
+	var input repgo.PredictionInput
+	if videoModel == "2" {
+		model = h.Cfg.ModelVideo2
+		if model == "" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO_2 not set", 0, "")
+			return nil
+		}
+		dur := 5 // Kling only supports 5 or 10 seconds
+		if v, ok := jobInput["duration"].(float64); ok && (v == 5 || v == 10) {
+			dur = int(v)
+		}
+		ar := "16:9"
+		if v, _ := jobInput["aspect_ratio"].(string); v != "" {
+			ar = v
+		}
+		input = repgo.PredictionInput{
+			"prompt":       jobInput["prompt"],
+			"duration":     dur,
+			"aspect_ratio": ar,
+		}
+		if s, _ := jobInput["start_image"].(string); s != "" {
+			input["start_image"] = s
+		}
+		if s, _ := jobInput["end_image"].(string); s != "" {
+			input["end_image"] = s
+		}
+	} else {
+		model = h.Cfg.ModelVideo
+		if model == "" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO not set", 0, "")
+			return nil
+		}
+		input = make(repgo.PredictionInput)
+		for k, v := range jobInput {
+			input[k] = v
+		}
+		if input["duration"] == nil {
+			input["duration"] = 5
+		}
+		if input["aspect_ratio"] == nil || input["aspect_ratio"] == "" {
+			input["aspect_ratio"] = "16:9"
+		}
+		if input["resolution"] == nil || input["resolution"] == "" {
+			input["resolution"] = "720p"
+		}
 	}
 	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {

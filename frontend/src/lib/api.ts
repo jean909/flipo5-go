@@ -344,6 +344,10 @@ export interface CreateVideoParams {
   duration?: number;
   aspectRatio?: string;
   resolution?: '720p' | '480p';
+  /** "1" = default (grok), "2" = Kling (start_image, end_image) */
+  videoModel?: '1' | '2';
+  startImage?: string;
+  endImage?: string;
 }
 
 export async function createVideo(params: CreateVideoParams): Promise<{ job_id: string; thread_id?: string }> {
@@ -356,9 +360,15 @@ export async function createVideo(params: CreateVideoParams): Promise<{ job_id: 
     duration: params.duration ?? 5,
     aspect_ratio: params.aspectRatio ?? '16:9',
     resolution: params.resolution ?? '720p',
+    video_model: params.videoModel ?? '1',
   };
-  if (params.image) body.image = params.image;
-  if (params.video) body.video = params.video;
+  if (params.videoModel === '2') {
+    if (params.startImage) body.start_image = params.startImage;
+    if (params.endImage) body.end_image = params.endImage;
+  } else {
+    if (params.image) body.image = params.image;
+    if (params.video) body.video = params.video;
+  }
   const res = await fetch(`${API_URL}/api/video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

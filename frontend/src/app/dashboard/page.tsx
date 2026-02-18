@@ -107,11 +107,18 @@ export default function DashboardPage() {
     aspectRatio: '16:9',
     resolution: '720p',
   });
+  const [videoModel, setVideoModel] = useState<'1' | '2'>('1');
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [startImageFile, setStartImageFile] = useState<File | null>(null);
+  const [startImagePreviewUrl, setStartImagePreviewUrl] = useState<string | null>(null);
+  const [endImageFile, setEndImageFile] = useState<File | null>(null);
+  const [endImagePreviewUrl, setEndImagePreviewUrl] = useState<string | null>(null);
   const [showVideoInputDialog, setShowVideoInputDialog] = useState(false);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const startImageInputRef = useRef<HTMLInputElement>(null);
+  const endImageInputRef = useRef<HTMLInputElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [showIncognitoMediaDialog, setShowIncognitoMediaDialog] = useState(false);
@@ -156,6 +163,25 @@ export default function DashboardPage() {
   const removeVideoFile = useCallback(() => {
     setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setVideoFile(null);
+  }, []);
+
+  const addStartImageFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setStartImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+    setStartImageFile(file);
+  }, []);
+  const removeStartImageFile = useCallback(() => {
+    setStartImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setStartImageFile(null);
+  }, []);
+  const addEndImageFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+    setEndImageFile(file);
+  }, []);
+  const removeEndImageFile = useCallback(() => {
+    setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setEndImageFile(null);
   }, []);
 
   useEffect(() => {
@@ -371,7 +397,10 @@ export default function DashboardPage() {
       imageSettings: mode === 'image' ? imageSettings : undefined,
       videoSettings: mode === 'video' ? videoSettings : undefined,
       referenceImageUrls,
-      videoFile: videoFile?.name
+      videoFile: videoFile?.name,
+      videoModel: mode === 'video' ? videoModel : undefined,
+      startImageFile: startImageFile?.name,
+      endImageFile: endImageFile?.name,
     })}`;
     
     if (submittedRequests.has(requestKey)) {
@@ -455,26 +484,42 @@ export default function DashboardPage() {
       } else {
         let imageUrl: string | undefined;
         let videoUrl: string | undefined;
-        const refUrls = referenceImageUrls.length > 0 ? referenceImageUrls : undefined;
-        if (attachments.length > 0) {
-          const uploaded = await uploadAttachments(attachments.map((a) => a.file));
-          imageUrl = (refUrls ? [...refUrls, ...uploaded] : uploaded)[0];
-        } else if (refUrls?.[0]) {
-          imageUrl = refUrls[0];
-        }
-        if (videoFile) {
-          const urls = await uploadAttachments([videoFile]);
-          videoUrl = urls[0];
+        let startImageUrl: string | undefined;
+        let endImageUrl: string | undefined;
+        if (videoModel === '2') {
+          const toUpload: File[] = [];
+          if (startImageFile) toUpload.push(startImageFile);
+          if (endImageFile) toUpload.push(endImageFile);
+          if (toUpload.length > 0) {
+            const urls = await uploadAttachments(toUpload);
+            let i = 0;
+            if (startImageFile) startImageUrl = urls[i++];
+            if (endImageFile) endImageUrl = urls[i];
+          }
+        } else {
+          const refUrls = referenceImageUrls.length > 0 ? referenceImageUrls : undefined;
+          if (attachments.length > 0) {
+            const uploaded = await uploadAttachments(attachments.map((a) => a.file));
+            imageUrl = (refUrls ? [...refUrls, ...uploaded] : uploaded)[0];
+          } else if (refUrls?.[0]) {
+            imageUrl = refUrls[0];
+          }
+          if (videoFile) {
+            const urls = await uploadAttachments([videoFile]);
+            videoUrl = urls[0];
+          }
         }
         const res = await createVideo({
           prompt: trimmed || ' ',
           threadId: useNormalSession ? undefined : tid ?? undefined,
           incognito: effectiveIncognito,
-          image: imageUrl,
-          video: videoUrl,
+          videoModel,
           duration: videoSettings.duration,
           aspectRatio: videoSettings.aspectRatio,
           resolution: videoSettings.resolution,
+          ...(videoModel === '2'
+            ? { startImage: startImageUrl, endImage: endImageUrl }
+            : { image: imageUrl, video: videoUrl }),
         });
         addOptimisticJob({ id: res.job_id, type: 'video', thread_id: res.thread_id ?? tid ?? null });
         setJobId(res.job_id);
@@ -492,6 +537,10 @@ export default function DashboardPage() {
       clearAttachments();
       setReferenceImageUrls([]);
       setVideoFile(null);
+      setStartImageFile(null);
+      setStartImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setEndImageFile(null);
+      setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       if (tid) setTimeout(refreshThread, 2000);
       // Clear request key after successful submission
       setTimeout(() => {
@@ -556,8 +605,30 @@ export default function DashboardPage() {
           e.target.value = '';
         }}
       />
+      <input
+        ref={startImageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) addStartImageFile(f);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={endImageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) addEndImageFile(f);
+          e.target.value = '';
+        }}
+      />
       <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all flex items-center flex-wrap gap-1.5 px-2 py-1.5">
-        {showPaperclip && (
+        {showPaperclip && (mode !== 'video' || videoModel === '1') && (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -567,7 +638,31 @@ export default function DashboardPage() {
             <PaperclipIcon className="w-5 h-5" />
           </button>
         )}
-        {mode === 'video' && (
+        {mode === 'video' && videoModel === '2' && (
+          <>
+            <button
+              type="button"
+              onClick={() => startImageInputRef.current?.click()}
+              className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+              title={t(locale, 'video.startImage')}
+              aria-label={t(locale, 'video.startImage')}
+            >
+              <ImageIcon className="w-5 h-5" />
+              <span className="sr-only">{t(locale, 'video.startImage')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => endImageInputRef.current?.click()}
+              className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
+              title={t(locale, 'video.endImage')}
+              aria-label={t(locale, 'video.endImage')}
+            >
+              <ImageIcon className="w-5 h-5" />
+              <span className="sr-only">{t(locale, 'video.endImage')}</span>
+            </button>
+          </>
+        )}
+        {mode === 'video' && videoModel === '1' && (
           <button
             type="button"
             onClick={() => setShowVideoInputDialog(true)}
@@ -577,9 +672,27 @@ export default function DashboardPage() {
             <VideoClipIcon className="w-5 h-5" />
           </button>
         )}
-        {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile)) ? (
+        {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile || (videoModel === '2' && (startImageFile || endImageFile)))) ? (
           <>
-            {mode === 'video' && videoFile && videoPreviewUrl && (
+            {mode === 'video' && videoModel === '2' && startImageFile && startImagePreviewUrl && (
+              <div className="relative shrink-0 flex items-center gap-0.5">
+                <img src={startImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
+                <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">Start</span>
+                <button type="button" onClick={removeStartImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
+                  <XIcon className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
+            {mode === 'video' && videoModel === '2' && endImageFile && endImagePreviewUrl && (
+              <div className="relative shrink-0 flex items-center gap-0.5">
+                <img src={endImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
+                <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">End</span>
+                <button type="button" onClick={removeEndImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
+                  <XIcon className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
+            {mode === 'video' && videoModel === '1' && videoFile && videoPreviewUrl && (
               <div className="relative shrink-0">
                 <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
                 <button
@@ -592,7 +705,7 @@ export default function DashboardPage() {
                 </button>
               </div>
             )}
-            {!videoFile && referenceImageUrls.map((url) => (
+            {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && referenceImageUrls.map((url) => (
               <div key={url} className="relative shrink-0">
                 <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
                 <button
@@ -605,7 +718,7 @@ export default function DashboardPage() {
                 </button>
               </div>
             ))}
-            {!videoFile && attachments.map((a) => (
+            {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && attachments.map((a) => (
               <div key={a.id} className="relative shrink-0">
                 <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
                 <button
@@ -660,8 +773,14 @@ export default function DashboardPage() {
             locale={locale}
             settings={videoSettings}
             onChange={setVideoSettings}
-            hasImage={attachments.length > 0 || referenceImageUrls.length > 0}
+            hasImage={videoModel === '1' && (attachments.length > 0 || referenceImageUrls.length > 0)}
             hasVideo={!!videoFile}
+            videoModel={videoModel}
+            onVideoModelChange={(m) => {
+              setVideoModel(m);
+              if (m === '1') { removeStartImageFile(); removeEndImageFile(); }
+              else { removeVideoFile(); setVideoSettings((s) => ({ ...s, duration: s.duration === 5 || s.duration === 10 ? s.duration : 5 })); }
+            }}
           />
         )}
         {inputWithAttach}
@@ -777,8 +896,14 @@ export default function DashboardPage() {
                 locale={locale}
                 settings={videoSettings}
                 onChange={setVideoSettings}
-                hasImage={attachments.length > 0 || referenceImageUrls.length > 0}
+                hasImage={videoModel === '1' && (attachments.length > 0 || referenceImageUrls.length > 0)}
                 hasVideo={!!videoFile}
+                videoModel={videoModel}
+                onVideoModelChange={(m) => {
+                  setVideoModel(m);
+                  if (m === '1') { removeStartImageFile(); removeEndImageFile(); }
+                  else { removeVideoFile(); setVideoSettings((s) => ({ ...s, duration: s.duration === 5 || s.duration === 10 ? s.duration : 5 })); }
+                }}
               />
             )}
             <div className="w-full flex flex-col gap-2">
@@ -807,56 +932,61 @@ export default function DashboardPage() {
                   e.target.value = '';
                 }}
               />
+              <input ref={startImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) addStartImageFile(f); e.target.value = ''; }} />
+              <input ref={endImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) addEndImageFile(f); e.target.value = ''; }} />
               <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all flex items-center flex-wrap gap-1.5 px-2 py-1.5">
-                {(mode === 'image' || mode === 'video') && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
-                    aria-label="Attach image"
-                  >
+                {(mode === 'image' || (mode === 'video' && videoModel === '1')) && (
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" aria-label="Attach image">
                     <PaperclipIcon className="w-5 h-5" />
                   </button>
                 )}
-                {mode === 'video' && (
-                  <button
-                    type="button"
-                    onClick={() => setShowVideoInputDialog(true)}
-                    className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors"
-                    aria-label={t(locale, 'video.videoInput')}
-                  >
+                {mode === 'video' && videoModel === '2' && (
+                  <>
+                    <button type="button" onClick={() => startImageInputRef.current?.click()} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" title={t(locale, 'video.startImage')} aria-label={t(locale, 'video.startImage')}>
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+                    <button type="button" onClick={() => endImageInputRef.current?.click()} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" title={t(locale, 'video.endImage')} aria-label={t(locale, 'video.endImage')}>
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+                {mode === 'video' && videoModel === '1' && (
+                  <button type="button" onClick={() => setShowVideoInputDialog(true)} className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors" aria-label={t(locale, 'video.videoInput')}>
                     <VideoClipIcon className="w-5 h-5" />
                   </button>
                 )}
-                {((mode === 'image' || mode === 'video') && (attachments.length > 0 || referenceImageUrls.length > 0)) || (mode === 'video' && videoFile) ? (
+                {((mode === 'image' || (mode === 'video' && videoModel === '1')) && (attachments.length > 0 || referenceImageUrls.length > 0)) || (mode === 'video' && videoModel === '1' && videoFile) || (mode === 'video' && videoModel === '2' && (startImageFile || endImageFile)) ? (
                   <>
-                    {mode === 'video' && videoFile && videoPreviewUrl && (
-                      <div className="relative shrink-0">
-                        <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
-                        <button type="button" onClick={removeVideoFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
-                          <XIcon className="w-2.5 h-2.5" />
-                        </button>
+                    {mode === 'video' && videoModel === '2' && startImageFile && startImagePreviewUrl && (
+                      <div className="relative shrink-0 flex items-center gap-0.5">
+                        <img src={startImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
+                        <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">Start</span>
+                        <button type="button" onClick={removeStartImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     )}
-                    {!videoFile && referenceImageUrls.map((url) => (
+                    {mode === 'video' && videoModel === '2' && endImageFile && endImagePreviewUrl && (
+                      <div className="relative shrink-0 flex items-center gap-0.5">
+                        <img src={endImagePreviewUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-theme-border" decoding="async" />
+                        <span className="text-[10px] text-theme-fg-muted uppercase hidden sm:inline">End</span>
+                        <button type="button" onClick={removeEndImageFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                      </div>
+                    )}
+                    {mode === 'video' && videoModel === '1' && videoFile && videoPreviewUrl && (
+                      <div className="relative shrink-0">
+                        <video src={videoPreviewUrl} className="w-12 h-12 rounded-lg object-cover border border-theme-border" muted />
+                        <button type="button" onClick={removeVideoFile} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                      </div>
+                    )}
+                    {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && referenceImageUrls.map((url) => (
                       <div key={url} className="relative shrink-0">
                         <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
-                        <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove">
-                          <XIcon className="w-2.5 h-2.5" />
-                        </button>
+                        <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
-                    {!videoFile && attachments.map((a) => (
+                    {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && attachments.map((a) => (
                       <div key={a.id} className="relative shrink-0">
                         <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(a.id)}
-                          className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90"
-                          aria-label="Remove"
-                        >
-                          <XIcon className="w-2.5 h-2.5" />
-                        </button>
+                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-danger/90" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
                   </>
