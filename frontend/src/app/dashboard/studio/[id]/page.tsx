@@ -548,6 +548,8 @@ export default function StudioProjectPage() {
     setEditorTool('highlight');
   }
 
+  const handleEditWithBrush = handleOpenBrushForInpaint;
+
   function handleMaskOk(maskBlob: Blob) {
     setMaskBlobForInpaint(maskBlob);
     setEditorTool(null);
