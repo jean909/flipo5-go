@@ -461,13 +461,7 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error(), "prompts": []string{}})
 		return
 	}
-	var raw map[string]interface{}
-	if m, ok := out.(map[string]interface{}); ok {
-		raw = m
-	} else {
-		raw = map[string]interface{}{}
-	}
-	text, _ := raw["output"].(string)
+	text := extractOutputText(out)
 	text = strings.TrimSpace(text)
 	// Strip markdown code block if present
 	if strings.HasPrefix(text, "```") {
@@ -477,17 +471,104 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 		text = strings.TrimSpace(text)
 	}
 	var prompts []string
-	if err := json.Unmarshal([]byte(text), &prompts); err != nil {
-		log.Printf("prompt-variants parse: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"error": "invalid response", "prompts": []string{}})
-		return
+	if text != "" {
+		// Try to find JSON array in response (model might wrap in explanation)
+		jsonStr := text
+		if start := strings.Index(text, "["); start >= 0 {
+			if end := strings.LastIndex(text, "]"); end > start {
+				jsonStr = text[start : end+1]
+			}
+		}
+		if err := json.Unmarshal([]byte(jsonStr), &prompts); err == nil && len(prompts) > 0 {
+			if len(prompts) > 5 {
+				prompts = prompts[:5]
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
+			return
+		}
+		log.Printf("prompt-variants parse failed (text len=%d, first 200: %q)", len(text), truncate(text, 200))
 	}
-	if len(prompts) > 5 {
-		prompts = prompts[:5]
-	}
+	// Fallback: build 5 variants from description + angle + movement
+	prompts = buildFallbackPrompts(desc, angle, movement, mediaType)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+func extractOutputText(out interface{}) string {
+	if out == nil {
+		return ""
+	}
+	if arr, ok := out.([]interface{}); ok {
+		var parts []string
+		for _, v := range arr {
+			if s, ok := v.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, "")
+	}
+	if s, ok := out.(string); ok {
+		return s
+	}
+	if m, ok := out.(map[string]interface{}); ok {
+		if v := m["output"]; v != nil {
+			if s, ok := v.(string); ok {
+				return s
+			}
+			if arr, ok := v.([]interface{}); ok {
+				var parts []string
+				for _, v := range arr {
+					if s, ok := v.(string); ok {
+						parts = append(parts, s)
+					}
+				}
+				return strings.Join(parts, "")
+			}
+		}
+	}
+	return ""
+}
+
+func buildFallbackPrompts(desc, angle, movement, mediaType string) []string {
+	var list []string
+	list = append(list, desc)
+	if angle != "" {
+		list = append(list, angle+" shot of "+desc)
+		list = append(list, desc+", "+angle+" framing")
+	}
+	if movement != "" {
+		list = append(list, desc+". "+movement+".")
+		list = append(list, movement+". "+desc)
+	}
+	list = append(list, desc+". High quality "+mediaType+".")
+	// Dedupe and cap at 5
+	seen := make(map[string]bool)
+	var out []string
+	for _, s := range list {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+			if len(out) >= 5 {
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		out = []string{desc}
+	}
+	for len(out) < 5 {
+		out = append(out, desc)
+	}
+	return out[:5]
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
