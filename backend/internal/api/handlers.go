@@ -453,7 +453,7 @@ func (s *Server) generatePromptVariants(w http.ResponseWriter, r *http.Request) 
 %s
 Generate exactly 5 different, creative prompt variants that could be used as the generation prompt for this %s. Each variant should be one or two sentences, in English, descriptive and ready to use. Make them distinct (different wording, emphasis, or detail). Return ONLY a JSON array of exactly 5 strings, no other text, no markdown, no code block. Example: ["First prompt here.", "Second prompt here.", ...]`,
 		mediaType, userPart, mediaType)
-	input := repgo.PredictionInput{"prompt": prompt, "max_output_tokens": 1024}
+	input := repgo.PredictionInput{"prompt": prompt, "max_output_tokens": 16384}
 	out, err := s.Repl.Run(ctx, s.ModelText, input)
 	if err != nil {
 		log.Printf("prompt-variants run: %v", err)
@@ -487,6 +487,18 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 			json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
 			return
 		}
+		// Truncated or malformed JSON: try to extract complete quoted strings
+		if extracted := extractQuotedStrings(text); len(extracted) > 0 {
+			for len(extracted) < 5 {
+				extracted = append(extracted, desc)
+			}
+			if len(extracted) > 5 {
+				extracted = extracted[:5]
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"prompts": extracted})
+			return
+		}
 		log.Printf("prompt-variants parse failed (text len=%d, first 200: %q)", len(text), truncate(text, 200))
 	}
 	// Fallback: build 5 variants from description + angle + movement
@@ -500,6 +512,35 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// extractQuotedStrings pulls out complete "..." strings from partial JSON (e.g. truncated array).
+func extractQuotedStrings(s string) []string {
+	var out []string
+	for i := 0; i < len(s); i++ {
+		if s[i] != '"' {
+			continue
+		}
+		j := i + 1
+		for j < len(s) {
+			if s[j] == '\\' && j+1 < len(s) {
+				j += 2
+				continue
+			}
+			if s[j] == '"' {
+				seg := s[i+1 : j]
+				seg = strings.ReplaceAll(seg, `\"`, `"`)
+				seg = strings.ReplaceAll(seg, `\n`, "\n")
+				if len(seg) > 0 {
+					out = append(out, seg)
+				}
+				i = j
+				break
+			}
+			j++
+		}
+	}
+	return out
 }
 
 func extractOutputText(out interface{}) string {
