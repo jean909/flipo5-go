@@ -133,7 +133,7 @@ func main() {
 			jwks = nil
 		}
 	}
-	srv := api.NewServer(db, asynqClient, s3Store, streamSub, apiCache, repl, cfg.ModelRemoveBg, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
+	srv := api.NewServer(db, asynqClient, s3Store, streamSub, apiCache, repl, cfg.ModelRemoveBg, cfg.ModelText, cfg.Redis, cfg.SupabaseJWTSecret, jwks, cfg.SupabaseURL, cfg.SupabaseServiceRole)
 	origins := buildCORSOrigins(cfg.CORSOrigins)
 	handler := cors.New(cors.Options{
 		AllowedOrigins:   origins,

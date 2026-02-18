@@ -726,7 +726,7 @@ export default function DashboardPage() {
           setShowPromptBuilder(false);
         }}
         locale={locale}
-        isVideo={mode === 'video'}
+        mode={mode === 'video' ? 'video' : 'image'}
       />
       {showCompleteProfile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-theme-bg-overlay">

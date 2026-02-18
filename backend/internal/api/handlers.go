@@ -38,6 +38,7 @@ type Server struct {
 	Cache                *cache.Redis
 	Repl                 *replicate.Client
 	ModelRemoveBg        string
+	ModelText            string
 	redisURL             string
 	supabaseJWTSecret    string
 	jwks                 *keyfunc.JWKS
@@ -46,10 +47,10 @@ type Server struct {
 }
 
 // NewServer builds the API server.
-func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
+func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg, modelText string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
 	return &Server{
 		DB: db, Asynq: asynq, Store: store, Stream: streamSub, Cache: cache,
-		Repl: repl, ModelRemoveBg: modelRemoveBg,
+		Repl: repl, ModelRemoveBg: modelRemoveBg, ModelText: modelText,
 		redisURL: redisURL, supabaseJWTSecret: supabaseJWTSecret, jwks: jwks,
 		supabaseURL: supabaseURL, supabaseServiceRole: supabaseServiceRole,
 	}
@@ -74,6 +75,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/chat", s.createChat)
 		r.Post("/image", s.createImage)
 		r.Post("/video", s.createVideo)
+		r.Post("/prompt-variants", s.generatePromptVariants)
 		r.Post("/upload", s.upload)
 		r.Get("/threads", s.listThreads)
 		r.Get("/threads/{id}", s.getThread)
@@ -406,6 +408,86 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		out["thread_id"] = threadID.String()
 	}
 	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) generatePromptVariants(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Type        string `json:"type"`         // "image" or "video"
+		Description string `json:"description"`
+		Angle       string `json:"angle,omitempty"`
+		Movement    string `json:"movement,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Description == "" {
+		http.Error(w, `{"error":"description required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Type != "image" && req.Type != "video" {
+		req.Type = "image"
+	}
+	if s.Repl == nil || s.ModelText == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "prompt generation not configured", "prompts": []string{}})
+		return
+	}
+	ctx := r.Context()
+	mediaType := "image"
+	if req.Type == "video" {
+		mediaType = "video"
+	}
+	desc := strings.TrimSpace(req.Description)
+	angle := strings.TrimSpace(req.Angle)
+	movement := strings.TrimSpace(req.Movement)
+	var userPart string
+	userPart = "- Main idea / description: " + desc + "\n"
+	if angle != "" {
+		userPart += "- Camera angle or framing: " + angle + "\n"
+	}
+	if movement != "" {
+		userPart += "- Camera movement: " + movement + "\n"
+	}
+	prompt := fmt.Sprintf(`You are a professional prompt engineer. The user wants to create a %s. They provided:
+%s
+Generate exactly 5 different, creative prompt variants that could be used as the generation prompt for this %s. Each variant should be one or two sentences, in English, descriptive and ready to use. Make them distinct (different wording, emphasis, or detail). Return ONLY a JSON array of exactly 5 strings, no other text, no markdown, no code block. Example: ["First prompt here.", "Second prompt here.", ...]`,
+		mediaType, userPart, mediaType)
+	input := repgo.PredictionInput{"prompt": prompt, "max_output_tokens": 1024}
+	out, err := s.Repl.Run(ctx, s.ModelText, input)
+	if err != nil {
+		log.Printf("prompt-variants run: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error(), "prompts": []string{}})
+		return
+	}
+	var raw map[string]interface{}
+	if m, ok := out.(map[string]interface{}); ok {
+		raw = m
+	} else {
+		raw = map[string]interface{}{}
+	}
+	text, _ := raw["output"].(string)
+	text = strings.TrimSpace(text)
+	// Strip markdown code block if present
+	if strings.HasPrefix(text, "```") {
+		text = strings.TrimPrefix(text, "```json")
+		text = strings.TrimPrefix(text, "```")
+		text = strings.TrimSuffix(text, "```")
+		text = strings.TrimSpace(text)
+	}
+	var prompts []string
+	if err := json.Unmarshal([]byte(text), &prompts); err != nil {
+		log.Printf("prompt-variants parse: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "invalid response", "prompts": []string{}})
+		return
+	}
+	if len(prompts) > 5 {
+		prompts = prompts[:5]
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {

@@ -271,6 +271,31 @@ export async function createChat(
   return res.json();
 }
 
+export interface PromptVariantsParams {
+  type: 'image' | 'video';
+  description: string;
+  angle?: string;
+  movement?: string;
+}
+
+export async function generatePromptVariants(params: PromptVariantsParams): Promise<{ prompts: string[]; error?: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/prompt-variants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      type: params.type,
+      description: params.description,
+      angle: params.angle || '',
+      movement: params.movement || '',
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { prompts?: string[]; error?: string };
+  if (!res.ok) throw new Error(data.error || 'Failed');
+  return { prompts: data.prompts ?? [], error: data.error };
+}
+
 export interface CreateImageParams {
   prompt: string;
   threadId?: string;
