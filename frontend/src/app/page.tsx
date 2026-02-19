@@ -90,32 +90,33 @@ export default function Home() {
         </section>
 
         {/* —— About —— */}
-        <section className="px-4 sm:px-6 lg:px-10 py-10 max-w-6xl mx-auto">
+        <motion.section
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-60px' }}
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}
+          className="px-4 sm:px-6 lg:px-10 py-10 max-w-6xl mx-auto"
+        >
           <motion.p
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true, margin: '-40px' }}
+            variants={{ hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0 } }}
+            transition={{ duration: 0.4 }}
             className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 mb-4"
           >
             {t(locale, 'home.about.title')}
           </motion.p>
-          <motion.div
-            className="flex flex-wrap gap-2"
-            initial={{ opacity: 0, y: 8 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-40px' }}
-            transition={{ delay: 0.05 }}
-          >
-            {aboutPoints.map((key) => (
-              <span
+          <div className="flex flex-wrap gap-2">
+            {aboutPoints.map((key, i) => (
+              <motion.span
                 key={key}
+                variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+                transition={{ duration: 0.35 }}
                 className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-neutral-400 hover:border-white/20 hover:text-neutral-300 transition-colors"
               >
                 {t(locale, key)}
-              </span>
+              </motion.span>
             ))}
-          </motion.div>
-        </section>
+          </div>
+        </motion.section>
 
         {/* —— Scroll sections: alternating text / visual —— */}
         {[
@@ -124,33 +125,36 @@ export default function Home() {
           { key: 'video' as const, icon: VideoIcon, gradient: 'from-cyan-500/20 to-blue-500/10' },
         ].map(({ key, icon: Icon, gradient }, i) => {
           const textFirst = i % 2 === 0;
+          const textFrom = textFirst ? -32 : 32;
+          const visualFrom = textFirst ? 32 : -32;
           return (
             <motion.section
               key={key}
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-80px' }}
-              transition={{ duration: 0.5 }}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: '-100px', amount: 0.2 }}
+              variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.14, delayChildren: 0.1 } } }}
               className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center px-4 sm:px-6 lg:px-10 py-16 lg:py-24 max-w-6xl mx-auto"
             >
-              <div className={textFirst ? 'order-2 lg:order-1' : 'order-2 lg:order-2'}>
+              <motion.div
+                variants={{ hidden: { opacity: 0, x: textFrom }, visible: { opacity: 1, x: 0 } }}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                className={textFirst ? 'order-2 lg:order-1' : 'order-2 lg:order-2'}
+              >
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white mb-4">
                   {t(locale, `home.section.${key}.title`)}
                 </h2>
-                <p className="text-neutral-400 text-base sm:text-lg max-w-lg mb-6 leading-relaxed">
+                <p className="text-neutral-400 text-base sm:text-lg max-w-lg leading-relaxed">
                   {t(locale, `home.section.${key}.desc`)}
                 </p>
-                <Link
-                  href="/start"
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[0.1] hover:border-white/30 transition-colors"
-                >
-                  {t(locale, `home.section.${key}.cta`)}
-                  <ArrowIcon />
-                </Link>
-              </div>
-              <div className={`rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} aspect-[4/3] flex items-center justify-center ${textFirst ? 'order-1 lg:order-2' : 'order-1 lg:order-1'}`}>
+              </motion.div>
+              <motion.div
+                variants={{ hidden: { opacity: 0, x: visualFrom }, visible: { opacity: 1, x: 0 } }}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                className={`rounded-2xl border border-white/10 bg-gradient-to-br ${gradient} aspect-[4/3] flex items-center justify-center ${textFirst ? 'order-1 lg:order-2' : 'order-1 lg:order-1'}`}
+              >
                 <Icon className="w-20 h-20 sm:w-24 sm:h-24 text-white/30" />
-              </div>
+              </motion.div>
             </motion.section>
           );
         })}
