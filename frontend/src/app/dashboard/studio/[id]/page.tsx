@@ -14,7 +14,6 @@ import { AdjustmentsModal } from './AdjustmentsModal';
 import { PaintCanvas, type PaintTool } from './PaintCanvas';
 import { ThemeColorPicker } from './ThemeColorPicker';
 
-// Reference for Nano Banana: always selectedItem.latest_url (latest version)
 function getReferenceUrl(item: ProjectItem | null): string | null {
   if (!item) return null;
   return item.latest_url || item.source_url || null;
@@ -74,7 +73,10 @@ export default function StudioProjectPage() {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
-  const [canvasScale, setCanvasScale] = useState(1);
+  const [canvasScale, setCanvasScale] = useState(0.75);
+  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
+  const [canvasDragging, setCanvasDragging] = useState(false);
+  const canvasDragRef = useRef({ startX: 0, startY: 0, startPan: { x: 0, y: 0 } });
   const [editorTool, setEditorTool] = useState<PaintTool | null>(null);
   const [brushSize, setBrushSize] = useState(24);
   const [colorizeColor, setColorizeColor] = useState('#f96');
@@ -88,6 +90,8 @@ export default function StudioProjectPage() {
   const [maskBlobForInpaint, setMaskBlobForInpaint] = useState<Blob | null>(null);
   const [editMode, setEditMode] = useState<'edit' | 'edit_brush'>('edit');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageWrapRef = useRef<HTMLDivElement>(null);
+  const [imageBoxSize, setImageBoxSize] = useState<{ w: number; h: number } | null>(null);
 
   // History: Original (source) + v1, v2, … for selected item
   const versionHistory = (() => {
@@ -200,12 +204,35 @@ export default function StudioProjectPage() {
     });
   }, [items]);
 
-  // Reset scale, version view and paint tool when selecting a different item
+  // Reset scale, pan, version view and paint tool when selecting a different item (exit brush)
   useEffect(() => {
-    setCanvasScale(1);
+    setCanvasScale(0.75);
+    setCanvasPan({ x: 0, y: 0 });
     setViewingVersionNum(null);
     setEditorTool(null);
+    setBrushEditForInpaint(false);
+    setMaskBlobForInpaint(null);
+    setImageBoxSize(null);
   }, [selectedItem?.id]);
+
+  // Reset pan when switching version (same item, different image)
+  useEffect(() => {
+    setCanvasPan({ x: 0, y: 0 });
+    setImageBoxSize(null);
+  }, [referenceUrl]);
+
+  // Measure image wrapper so Brush/PaintCanvas can use same size (no resize jump)
+  useEffect(() => {
+    const el = imageWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (w > 0 && h > 0) setImageBoxSize({ w, h });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selectedItem?.id, referenceUrl]);
 
   // Fetch version history for selected item
   useEffect(() => {
@@ -470,7 +497,7 @@ export default function StudioProjectPage() {
       const job = await getJob(jobId);
       if (!job) return { outputUrl: null, failed: true };
       if (job.status === 'completed') {
-        const urls = getOutputUrls(job);
+        const urls = getOutputUrls(job.output ?? {});
         return { outputUrl: urls[0] ?? null, failed: false };
       }
       if (job.status === 'failed') return { outputUrl: null, failed: true };
@@ -497,7 +524,13 @@ export default function StudioProjectPage() {
       await addProjectVersionByUrl(selectedItem.id, outputUrl);
       await fetchProject();
       const { versions } = await listProjectVersions(selectedItem.id);
-      setItemVersions(versions ?? []);
+      const versionsList = versions ?? [];
+      setItemVersions(versionsList);
+      if (versionsList.length > 0) {
+        const newVer = versionsList.find((v) => v.url === outputUrl) ?? versionsList.reduce((a, b) => (a.version_num >= b.version_num ? a : b), versionsList[0]);
+        setViewingVersionNum(newVer.version_num);
+      }
+      setAiPrompt('');
     } catch (e: unknown) {
       if ((e as Error)?.message === 'session_expired') {
         window.location.href = '/start';
@@ -536,7 +569,13 @@ export default function StudioProjectPage() {
       await addProjectVersionByUrl(selectedItem.id, outputUrl);
       await fetchProject();
       const { versions } = await listProjectVersions(selectedItem.id);
-      setItemVersions(versions ?? []);
+      const versionsList = versions ?? [];
+      setItemVersions(versionsList);
+      if (versionsList.length > 0) {
+        const newVer = versionsList.find((v) => v.url === outputUrl) ?? versionsList.reduce((a, b) => (a.version_num >= b.version_num ? a : b), versionsList[0]);
+        setViewingVersionNum(newVer.version_num);
+      }
+      setAiPrompt('');
     } catch (e: unknown) {
       if ((e as Error)?.message === 'session_expired') {
         window.location.href = '/start';
@@ -726,13 +765,19 @@ export default function StudioProjectPage() {
                 type="button"
                 onClick={() => { setEditMode('edit'); setMaskBlobForInpaint(null); }}
                 className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 ${editMode === 'edit' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
-                title="Edit (Nano Banana)"
               >
                 Edit
               </button>
               <button
                 type="button"
-                onClick={() => { setEditMode('edit_brush'); setMaskBlobForInpaint(null); }}
+                onClick={() => {
+                  setEditMode('edit_brush');
+                  setMaskBlobForInpaint(null);
+                  if (selectedItem?.type === 'image' && referenceUrl) {
+                    setBrushEditForInpaint(true);
+                    setEditorTool('highlight');
+                  }
+                }}
                 className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 ${editMode === 'edit_brush' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
                 title="Edit using Brush"
               >
@@ -748,6 +793,12 @@ export default function StudioProjectPage() {
               <textarea
                 value={aiPrompt}
                 onChange={(e) => setAiPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey) return;
+                  e.preventDefault();
+                  if (editMode === 'edit' && referenceUrl && aiPrompt.trim() && !aiEditJobId) handleEdit();
+                  else if (editMode === 'edit_brush' && maskBlobForInpaint && aiPrompt.trim() && !aiEditJobId && !paintApplying) handleSubmitBrushEdit();
+                }}
                 placeholder={editMode === 'edit_brush' && !maskBlobForInpaint ? 'Paint zone, press OK, then describe the edit...' : 'Describe how I should edit the image...'}
                 rows={3}
                 className="w-full px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg placeholder:text-theme-fg-subtle text-sm focus:outline-none focus:ring-1 focus:ring-theme-border-strong focus:border-transparent resize-none mb-2"
@@ -758,7 +809,6 @@ export default function StudioProjectPage() {
                   onClick={handleEdit}
                   disabled={!referenceUrl || !aiPrompt.trim() || !!aiEditJobId}
                   className="w-full px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium"
-                  title="Edit (Nano Banana)"
                 >
                   {aiEditJobId ? '...' : 'Edit'}
                 </button>
@@ -813,30 +863,60 @@ export default function StudioProjectPage() {
               </div>
             </div>
           ) : (
-            <>
+            <div className="flex flex-col flex-1 min-h-0">
               <div className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto relative scrollbar-subtle">
-                {removingBg && (
+                {(removingBg || aiEditJobId) && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center bg-theme-bg/85 rounded-lg">
                     <div className="flex flex-col items-center gap-3 text-theme-fg">
                       <div className="w-10 h-10 border-2 border-theme-accent border-t-transparent rounded-full animate-spin" />
-                      <p className="text-sm font-medium">{t(locale, 'studio.removingBackground')}</p>
+                      <p className="text-sm font-medium">
+                        {removingBg ? t(locale, 'studio.removingBackground') : t(locale, 'studio.editingWithAi')}
+                      </p>
                     </div>
                   </div>
                 )}
-                {editorTool && selectedItem?.type === 'image' && referenceUrl && !(displayUrl || referenceUrl.startsWith('http')) ? (
+                {editorTool && selectedItem?.type === 'image' && referenceUrl && !((displayUrl && displayUrl.startsWith('http')) || referenceUrl.startsWith('http')) ? (
                   <div className="flex flex-col items-center justify-center gap-2 text-theme-fg-subtle py-12">
                     <div className="w-8 h-8 border-2 border-theme-accent border-t-transparent rounded-full animate-spin" />
                     <p className="text-sm">Loading image…</p>
                   </div>
-                ) : editorTool && selectedItem?.type === 'image' && referenceUrl ? (
-                  <PaintCanvas
-                    imageUrl={displayUrl || referenceUrl}
-                    tool={editorTool}
-                    brushSize={brushSize}
-                    colorizeColor={colorizeColor}
-                    highlightColor={highlightColor}
-                    highlightOpacity={highlightOpacity}
-                    onApply={async (canvas) => {
+                ) : selectedItem && displayUrl ? (
+                  <div
+                    className={`relative group flex items-center justify-center transition-[filter] duration-200 overflow-hidden ${removingBg || aiEditJobId ? 'blur-sm' : ''} ${!editorTool ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    onMouseDown={(e) => {
+                      if (editorTool || selectedItem?.type !== 'image') return;
+                      if ((e.target as HTMLElement).closest('button')) return;
+                      setCanvasDragging(true);
+                      canvasDragRef.current = { startX: e.clientX, startY: e.clientY, startPan: { ...canvasPan } };
+                    }}
+                    onMouseMove={(e) => {
+                      if (!canvasDragging) return;
+                      setCanvasPan({
+                        x: canvasDragRef.current.startPan.x + (e.clientX - canvasDragRef.current.startX),
+                        y: canvasDragRef.current.startPan.y + (e.clientY - canvasDragRef.current.startY),
+                      });
+                    }}
+                    onMouseUp={() => setCanvasDragging(false)}
+                    onMouseLeave={() => setCanvasDragging(false)}
+                  >
+                    <div
+                      ref={imageWrapRef}
+                      className="relative origin-center"
+                      style={{
+                        transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasScale})`,
+                        ...(imageBoxSize ? { width: imageBoxSize.w, height: imageBoxSize.h } : {}),
+                      }}
+                    >
+                      {editorTool && selectedItem?.type === 'image' && referenceUrl && ((displayUrl && displayUrl.startsWith('http')) || referenceUrl.startsWith('http')) ? (
+                        <PaintCanvas
+                          imageUrl={(displayUrl && displayUrl.startsWith('http') ? displayUrl : referenceUrl) as string}
+                          tool={editorTool}
+                          brushSize={brushSize}
+                          colorizeColor={colorizeColor}
+                          highlightColor={highlightColor}
+                          highlightOpacity={highlightOpacity}
+                          contentSize={imageBoxSize ?? undefined}
+                          onApply={async (canvas) => {
                       setPaintApplying(true);
                       setError(null);
                       try {
@@ -857,34 +937,32 @@ export default function StudioProjectPage() {
                       }
                     }}
                     onMaskOk={brushEditForInpaint ? handleMaskOk : undefined}
-                    onClose={() => { setEditorTool(null); setBrushEditForInpaint(false); }}
-                    applying={paintApplying}
-                    locale={locale}
-                  />
-                ) : selectedItem && displayUrl ? (
-                  <div className={`relative group flex items-center justify-center transition-[filter] duration-200 ${removingBg ? 'blur-sm' : ''}`}>
-                    <div
-                      className="relative origin-center"
-                      style={{ transform: `scale(${canvasScale})` }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setViewingMedia({ urls: [displayUrl] })}
-                        className="block"
-                      >
-                        {selectedItem.type === 'video' ? (
-                          <video src={displayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
-                        ) : (
-                          <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} />
-                        )}
-                      </button>
-                      <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button type="button" onClick={() => setPendingDeleteItem(selectedItem)} className="p-2 rounded-lg bg-theme-bg-overlay hover:bg-theme-danger text-theme-fg">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                      </div>
-                      {(selectedItem.version_num ?? 0) > 0 && (
-                        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-theme-bg-overlay text-xs text-theme-fg">v{(selectedItem.version_num ?? 0) + 1}</span>
+                          onClose={() => { setEditorTool(null); setBrushEditForInpaint(false); }}
+                          applying={paintApplying}
+                          locale={locale}
+                        />
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => !canvasDragging && setViewingMedia({ urls: [displayUrl] })}
+                            className="block w-full h-full min-w-0 min-h-0"
+                          >
+                            {selectedItem.type === 'video' ? (
+                              <video src={displayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
+                            ) : (
+                              <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} />
+                            )}
+                          </button>
+                          <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button type="button" onClick={() => setPendingDeleteItem(selectedItem)} className="p-2 rounded-lg bg-theme-bg-overlay hover:bg-theme-danger text-theme-fg">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
+                          {(selectedItem.version_num ?? 0) > 0 && (
+                            <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-theme-bg-overlay text-xs text-theme-fg">v{(selectedItem.version_num ?? 0) + 1}</span>
+                          )}
+                        </>
                       )}
                     </div>
                     <div className="absolute bottom-2 right-2 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1011,7 +1089,7 @@ export default function StudioProjectPage() {
                   );})}
                 </div>
               </div>
-            </>
+            </div>
           )}
         </main>
 

@@ -61,6 +61,33 @@ body {
   background-size: 80px 80px;
 }
 
+/* Homepage hero gradient text */
+.text-gradient-hero {
+  background: linear-gradient(135deg, #fff 0%, #a3a3a3 50%, #fff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+@keyframes gradient-shift {
+  to { background-position: 200% center; }
+}
+.animate-gradient {
+  animation: gradient-shift 8s ease-in-out infinite;
+}
+
+/* Hero central – placeholder gradient (înlocuiește cu imagine în page) */
+.hero-visual-gradient {
+  background: linear-gradient(145deg, #1a1a1a 0%, #0d0d0d 40%, #141414 100%);
+}
+.hero-visual-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 50% at 50% 30%, rgba(255,255,255,0.06) 0%, transparent 55%);
+  pointer-events: none;
+}
+
 input, textarea, button, select {
   border-color: var(--border);
 }
@@ -106,6 +133,14 @@ input:focus, textarea:focus {
 }
 .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
   background: var(--theme-scrollbar-thumb-hover);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* Search cancel button – folosește tema */

@@ -104,14 +104,15 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
     if (editLoading) return;
     setEditLoading(true);
     try {
-      const { id } = await createProject(t(locale, 'studio.untitled'));
+      const uniqueName = `Edit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const { id } = await createProject(uniqueName);
       await addProjectItem(id, isVideo ? 'video' : 'image', currentUrl);
       onClose();
       router.push(`/dashboard/studio/${id}`);
     } catch (_) {
       setEditLoading(false);
     }
-  }, [currentUrl, isVideo, locale, onClose, router, editLoading]);
+  }, [currentUrl, isVideo, onClose, router, editLoading]);
 
   return (
     <div

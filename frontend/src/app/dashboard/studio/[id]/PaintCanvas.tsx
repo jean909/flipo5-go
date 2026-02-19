@@ -22,6 +22,11 @@ interface PaintCanvasProps {
   onClose: () => void;
   applying: boolean;
   locale: Locale;
+  /** Match zoom/pan from main view so image doesn't jump when entering brush */
+  initialScale?: number;
+  initialPan?: { x: number; y: number };
+  /** When set, use this exact size (parent already applied scale/pan) so view doesn't resize */
+  contentSize?: { w: number; h: number };
 }
 
 export function PaintCanvas({
@@ -37,6 +42,9 @@ export function PaintCanvas({
   onClose,
   applying,
   locale,
+  initialScale = 1,
+  initialPan = { x: 0, y: 0 },
+  contentSize,
 }: PaintCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
@@ -73,7 +81,8 @@ export function PaintCanvas({
     const isExternal = imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
     let load: Promise<void>;
     if (isOurMediaProxy) {
-      load = fetch(imageUrl, { credentials: 'include' })
+      // No credentials: token is in URL; credentials + CORS * would be rejected by browser
+      load = fetch(imageUrl)
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
         .then(setBlob)
         .catch(fail);
@@ -88,8 +97,11 @@ export function PaintCanvas({
         .then(setBlob)
         .catch(() => downloadMediaUrl(imageUrl).then(setBlob).catch(fail));
     }
-    load.catch(fail);
+    const timeoutMs = 15000;
+    const timeoutId = setTimeout(fail, timeoutMs);
+    load.finally(() => clearTimeout(timeoutId)).catch(() => {});
     return () => {
+      clearTimeout(timeoutId);
       if (url) URL.revokeObjectURL(url);
     };
   }, [imageUrl]);
@@ -101,9 +113,6 @@ export function PaintCanvas({
     if (!img?.complete || !img.naturalWidth || !base || !overlay) return;
     const w = img.naturalWidth;
     const h = img.naturalHeight;
-    const maxW = 900;
-    const maxH = 600;
-    const scale = Math.min(1, maxW / w, maxH / h);
     base.width = w;
     base.height = h;
     overlay.width = w;
@@ -112,7 +121,7 @@ export function PaintCanvas({
     if (ctx) ctx.drawImage(img, 0, 0);
     const overlayCtx = overlay.getContext('2d', { willReadFrequently: false });
     if (overlayCtx) overlayCtx.clearRect(0, 0, w, h);
-    dims.current = { w, h, scale };
+    dims.current = { w, h, scale: 1 };
   }, []);
 
   const onImageLoad = useCallback(() => {
@@ -304,7 +313,7 @@ export function PaintCanvas({
     );
   }
 
-  if (loading || !blobUrl) {
+  if (!blobUrl) {
     return (
       <div className="flex items-center justify-center p-12 text-theme-fg-subtle">
         {t(locale, 'common.loading')}
@@ -312,14 +321,21 @@ export function PaintCanvas({
     );
   }
 
-  const { scale } = dims.current;
   const baseW = baseRef.current?.width ?? 0;
   const baseH = baseRef.current?.height ?? 0;
-  const displayW = Math.round(baseW * scale);
-  const displayH = Math.round(baseH * scale);
+  const aspectRatio = baseW && baseH ? baseW / baseH : 1;
 
+  const useParentSize = !!contentSize;
   return (
-    <div ref={containerRef} className="relative inline-block max-w-full" style={{ width: displayW, height: displayH }}>
+    <div className="w-full h-full flex items-center justify-center min-h-0">
+      <div
+        ref={containerRef}
+        className="relative origin-center w-full max-w-full max-h-[calc(100vh-14rem)]"
+        style={{
+          ...(contentSize ? { width: contentSize.w, height: contentSize.h } : { aspectRatio: loading ? undefined : aspectRatio }),
+          ...(!useParentSize ? { transform: `translate(${initialPan.x}px, ${initialPan.y}px) scale(${initialScale})` } : {}),
+        }}
+      >
       <img
         ref={(el) => { imgRef.current = el; }}
         src={blobUrl}
@@ -328,45 +344,54 @@ export function PaintCanvas({
         onLoad={onImageLoad}
         onError={onImageError}
       />
-      <canvas
-        ref={baseRef}
-        className="absolute left-0 top-0 max-w-full max-h-full"
-        style={{ width: displayW, height: displayH, pointerEvents: 'none' }}
-      />
-      <canvas
-        ref={overlayRef}
-        className="absolute left-0 top-0 cursor-crosshair max-w-full max-h-full"
-        style={{ width: displayW, height: displayH }}
-        onMouseDown={handlePointerDown}
-        onMouseMove={handlePointerMove}
-        onMouseUp={handlePointerUp}
-        onMouseLeave={handlePointerUp}
-      />
-      <div className="absolute bottom-2 left-2 text-xs text-theme-fg-subtle bg-theme-bg-overlay/80 px-2 py-1 rounded">
-        {tool === 'clone' && (cloneSource.current ? 'Clone: drag to paint. Alt+click to set new source.' : 'Alt+click to set source, then drag to clone.')}
-      </div>
-      <div className="absolute top-2 right-2 flex gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover text-sm">
-          {t(locale, 'dialog.cancel')}
-        </button>
-        {!(tool === 'highlight' && onMaskOk) && (
-          <button type="button" onClick={handleApply} disabled={applying} className="px-3 py-1.5 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium">
-            {applying ? '...' : (tool === 'highlight' && onExportMask ? 'Edit with AI' : t(locale, 'studio.apply'))}
-          </button>
-        )}
-      </div>
-      {tool === 'highlight' && onMaskOk && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">
-          <button
-            type="button"
-            onClick={handleFloatingOk}
-            disabled={applying}
-            className="px-6 py-2.5 rounded-xl bg-theme-accent text-theme-fg-inverse font-medium shadow-lg hover:opacity-90 disabled:opacity-50 text-sm"
-          >
-            OK
-          </button>
+      {loading && (
+        <div className="flex items-center justify-center p-12 text-theme-fg-subtle">
+          {t(locale, 'common.loading')}
         </div>
       )}
+      {!loading && (
+        <>
+          <canvas
+            ref={baseRef}
+            className="absolute left-0 top-0 w-full h-full block"
+            style={{ pointerEvents: 'none' }}
+          />
+          <canvas
+            ref={overlayRef}
+            className="absolute left-0 top-0 w-full h-full block cursor-crosshair"
+            onMouseDown={handlePointerDown}
+            onMouseMove={handlePointerMove}
+            onMouseUp={handlePointerUp}
+            onMouseLeave={handlePointerUp}
+          />
+          <div className="absolute bottom-2 left-2 text-xs text-theme-fg-subtle bg-theme-bg-overlay/80 px-2 py-1 rounded">
+            {tool === 'clone' && (cloneSource.current ? 'Clone: drag to paint. Alt+click to set new source.' : 'Alt+click to set source, then drag to clone.')}
+          </div>
+          <div className="absolute top-2 right-2 flex gap-2">
+            <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover text-sm">
+              {t(locale, 'dialog.cancel')}
+            </button>
+            {!(tool === 'highlight' && onMaskOk) && (
+              <button type="button" onClick={handleApply} disabled={applying} className="px-3 py-1.5 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium">
+                {applying ? '...' : (tool === 'highlight' && onExportMask ? 'Edit with AI' : t(locale, 'studio.apply'))}
+              </button>
+            )}
+          </div>
+          {tool === 'highlight' && onMaskOk && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">
+              <button
+                type="button"
+                onClick={handleFloatingOk}
+                disabled={applying}
+                className="px-6 py-2.5 rounded-xl bg-theme-accent text-theme-fg-inverse font-medium shadow-lg hover:opacity-90 disabled:opacity-50 text-sm"
+              >
+                OK
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      </div>
     </div>
   );
 }
