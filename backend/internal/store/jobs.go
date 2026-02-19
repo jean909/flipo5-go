@@ -69,6 +69,27 @@ func (db *DB) CreateJob(ctx context.Context, userID uuid.UUID, jobType string, i
 	return id, nil
 }
 
+// CreateCompletedJobFromURL inserts a job with status=completed and output={ "output": url }
+// so it appears in ListContentJobs (my collection). jobType must be "image" or "video".
+func (db *DB) CreateCompletedJobFromURL(ctx context.Context, userID uuid.UUID, url string, jobType string) (uuid.UUID, error) {
+	if jobType != "image" && jobType != "video" {
+		return uuid.Nil, fmt.Errorf("invalid job type %q", jobType)
+	}
+	id := uuid.New()
+	input := map[string]string{"source": "export", "url": url}
+	inBytes, _ := json.Marshal(input)
+	output := map[string]string{"output": url}
+	outBytes, _ := json.Marshal(output)
+	n := "Exported"
+	_, err := db.Pool.Exec(ctx,
+		`INSERT INTO jobs (id, user_id, type, status, name, input, output) VALUES ($1,$2,$3,'completed',$4,$5,$6)`,
+		id, userID, jobType, &n, inBytes, outBytes)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
 func (db *DB) GetJob(ctx context.Context, id uuid.UUID) (*Job, error) {
 	var j Job
 	err := db.Pool.QueryRow(ctx,

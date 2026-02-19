@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, addProjectVersionByUrl, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, createImage, createImageInpaint, uploadAttachments, getJob, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, addProjectVersionByUrl, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, createImage, createImageInpaint, uploadAttachments, getJob, exportToCollection, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../../components/ImageViewModal';
@@ -12,7 +12,31 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CropRotateModal } from './CropRotateModal';
 import { AdjustmentsModal } from './AdjustmentsModal';
 import { PaintCanvas, type PaintTool } from './PaintCanvas';
+import { MultiLogoPlacer, type LogoOverlayItem } from './MultiLogoPlacer';
+import { LogoDialog, type SavedLogo } from './LogoDialog';
+import { TextFloatingBar } from './TextFloatingBar';
 import { ThemeColorPicker } from './ThemeColorPicker';
+
+const LOGO_LIBRARY_KEY = 'flipo5_user_logos';
+const MAX_SAVED_LOGOS = 30;
+export type EditorTool = PaintTool | 'logo';
+
+function loadSavedLogos(): SavedLogo[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOGO_LIBRARY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as SavedLogo[];
+    return Array.isArray(arr) ? arr.slice(0, MAX_SAVED_LOGOS) : [];
+  } catch {
+    return [];
+  }
+}
+function saveLogosToStorage(logos: SavedLogo[]) {
+  try {
+    localStorage.setItem(LOGO_LIBRARY_KEY, JSON.stringify(logos.slice(0, MAX_SAVED_LOGOS)));
+  } catch {}
+}
 
 function getReferenceUrl(item: ProjectItem | null): string | null {
   if (!item) return null;
@@ -67,6 +91,7 @@ export default function StudioProjectPage() {
   const [uploading, setUploading] = useState(false);
   const [removingBg, setRemovingBg] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [exportingToCollection, setExportingToCollection] = useState(false);
   const [itemVersions, setItemVersions] = useState<ProjectVersion[] | null>(null);
   const [viewingVersionNum, setViewingVersionNum] = useState<number | null>(null);
   const [dragOverCount, setDragOverCount] = useState(0);
@@ -77,7 +102,12 @@ export default function StudioProjectPage() {
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
   const [canvasDragging, setCanvasDragging] = useState(false);
   const canvasDragRef = useRef({ startX: 0, startY: 0, startPan: { x: 0, y: 0 } });
-  const [editorTool, setEditorTool] = useState<PaintTool | null>(null);
+  const [editorTool, setEditorTool] = useState<EditorTool | null>(null);
+  const [savedLogos, setSavedLogos] = useState<SavedLogo[]>([]);
+  const [logoOverlays, setLogoOverlays] = useState<LogoOverlayItem[]>([]);
+  const [logoApplying, setLogoApplying] = useState(false);
+  const [showLogoDialog, setShowLogoDialog] = useState(false);
+  const [textBarTargetId, setTextBarTargetId] = useState<string | null>(null);
   const [brushSize, setBrushSize] = useState(24);
   const [colorizeColor, setColorizeColor] = useState('#f96');
   const [highlightColor, setHighlightColor] = useState('#ffeb3b');
@@ -118,6 +148,9 @@ export default function StudioProjectPage() {
 
   useEffect(() => {
     getToken().then(setMediaToken);
+  }, []);
+  useEffect(() => {
+    setSavedLogos(loadSavedLogos());
   }, []);
 
   function fetchProject() {
@@ -322,19 +355,43 @@ export default function StudioProjectPage() {
   }
 
   async function handleRemoveVersion() {
-    if (!selectedItem || pendingDeleteVersionNum === null) return;
+    if (!selectedItem || pendingDeleteVersionNum === null || !id) return;
     const v = pendingDeleteVersionNum;
+    const itemId = selectedItem.id;
     setPendingDeleteVersionNum(null);
     try {
-      await removeProjectVersion(selectedItem.id, v);
+      await removeProjectVersion(itemId, v);
       setViewingVersionNum(null);
-      await fetchProject();
+      const { versions: versionsList } = await listProjectVersions(itemId);
+      setItemVersions(versionsList ?? []);
+      getProject(id)
+        .then((r) => {
+          const itemList = r.items ?? [];
+          const proj = r.project ?? null;
+          setProject(proj);
+          setItems(itemList);
+          setProjectName(proj?.name ?? '');
+          setSelectedItem((prev) => {
+            const next = itemList.find((i) => i.id === prev?.id);
+            if (next) return next;
+            return itemList.find((i) => i.type === 'image') ?? itemList[0] ?? null;
+          });
+        })
+        .catch((e: unknown) => {
+          setError((e as Error)?.message ?? 'Could not refresh project');
+        });
     } catch (e: unknown) {
       if ((e as Error)?.message === 'session_expired') {
         window.location.href = '/start';
         return;
       }
       setError((e as Error)?.message ?? 'Failed to remove version');
+      try {
+        const r = await listProjectVersions(itemId);
+        setItemVersions(r.versions ?? []);
+      } catch {
+        setItemVersions([]);
+      }
     }
   }
 
@@ -388,6 +445,23 @@ export default function StudioProjectPage() {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleExportToCollection() {
+    if (!selectedItem || !referenceUrl) return;
+    setExportingToCollection(true);
+    setError(null);
+    try {
+      await exportToCollection(referenceUrl, selectedItem.type);
+    } catch (e: unknown) {
+      if ((e as Error)?.message === 'session_expired') {
+        window.location.href = '/start';
+        return;
+      }
+      setError((e as Error)?.message ?? 'Export failed');
+    } finally {
+      setExportingToCollection(false);
     }
   }
 
@@ -746,8 +820,12 @@ export default function StudioProjectPage() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               )}
             </button>
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50" title="Upload">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+            <button type="button" onClick={handleExportToCollection} disabled={!selectedItem || !referenceUrl || exportingToCollection} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50" title={t(locale, 'studio.exportToCollection')}>
+              {exportingToCollection ? (
+                <span className="w-5 h-5 block border-2 border-theme-fg-subtle border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+              )}
             </button>
           </div>
         </div>
@@ -907,7 +985,63 @@ export default function StudioProjectPage() {
                         ...(imageBoxSize ? { width: imageBoxSize.w, height: imageBoxSize.h } : {}),
                       }}
                     >
-                      {editorTool && selectedItem?.type === 'image' && referenceUrl && ((displayUrl && displayUrl.startsWith('http')) || referenceUrl.startsWith('http')) ? (
+                      {editorTool === 'logo' && logoOverlays.length > 0 && selectedItem?.type === 'image' && displayUrl ? (
+                        <MultiLogoPlacer
+                          baseImageUrl={displayUrl}
+                          overlays={logoOverlays}
+                          getLogoDisplayUrl={(url) => getMediaDisplayUrl(url, mediaToken) ?? url}
+                          onUpdate={(id, patch) => {
+                            setLogoOverlays((prev) => prev.map((o) => o.id === id ? { ...o, ...patch } : o));
+                          }}
+                          onRemove={(id) => setLogoOverlays((prev) => prev.filter((o) => o.id !== id))}
+                          onApplyElement={async (canvas, id) => {
+                            if (!selectedItem) return;
+                            setLogoApplying(true);
+                            setError(null);
+                            try {
+                              const blob = await new Promise<Blob>((res, rej) => {
+                                canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png');
+                              });
+                              const file = new File([blob], 'with-element.png', { type: 'image/png' });
+                              await uploadProjectVersion(selectedItem.id, file);
+                              await fetchProject();
+                              const { versions } = await listProjectVersions(selectedItem.id);
+                              setItemVersions(versions ?? []);
+                              const maxVer = versions?.length ? Math.max(...versions.map((v) => v.version_num)) : 0;
+                              setViewingVersionNum(maxVer);
+                              setLogoOverlays((prev) => prev.filter((o) => o.id !== id));
+                            } catch (e) {
+                              setError((e as Error)?.message ?? 'Apply failed');
+                            } finally {
+                              setLogoApplying(false);
+                            }
+                          }}
+                          onApply={async (canvas) => {
+                            if (!selectedItem) return;
+                            setLogoApplying(true);
+                            setError(null);
+                            try {
+                              const blob = await new Promise<Blob>((res, rej) => {
+                                canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png');
+                              });
+                              const file = new File([blob], 'with-logo.png', { type: 'image/png' });
+                              await uploadProjectVersion(selectedItem.id, file);
+                              await fetchProject();
+                              const { versions } = await listProjectVersions(selectedItem.id);
+                              setItemVersions(versions ?? []);
+                              setEditorTool(null);
+                              setLogoOverlays([]);
+                            } catch (e) {
+                              setError((e as Error)?.message ?? 'Apply failed');
+                            } finally {
+                              setLogoApplying(false);
+                            }
+                          }}
+                          onClose={() => { setEditorTool(null); setLogoOverlays([]); setTextBarTargetId(null); }}
+                          applying={logoApplying}
+                          contentSize={imageBoxSize ?? { w: 400, h: 400 }}
+                        />
+                      ) : editorTool && editorTool !== 'logo' && selectedItem?.type === 'image' && referenceUrl && ((displayUrl && displayUrl.startsWith('http')) || referenceUrl.startsWith('http')) ? (
                         <PaintCanvas
                           imageUrl={(displayUrl && displayUrl.startsWith('http') ? displayUrl : referenceUrl) as string}
                           tool={editorTool}
@@ -965,6 +1099,18 @@ export default function StudioProjectPage() {
                         </>
                       )}
                     </div>
+                    {editorTool === 'logo' && textBarTargetId && (() => {
+                      const o = logoOverlays.find((x) => x.id === textBarTargetId);
+                      if (!o || o.type !== 'text') return null;
+                      return (
+                        <TextFloatingBar
+                          overlay={o}
+                          onUpdate={(patch) => setLogoOverlays((prev) => prev.map((x) => (x.id === textBarTargetId ? { ...x, ...patch } : x)))}
+                          onApply={() => setTextBarTargetId(null)}
+                          locale={locale}
+                        />
+                      );
+                    })()}
                     <div className="absolute bottom-2 right-2 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity">
                       <button type="button" onClick={() => setCanvasScale((s) => Math.max(0.25, s - 0.25))} className="p-1 rounded text-theme-fg hover:bg-theme-bg-hover" title="Smaller">−</button>
                       <span className="text-xs text-theme-fg min-w-[3rem] text-center">{Math.round(canvasScale * 100)}%</span>
@@ -1145,8 +1291,86 @@ export default function StudioProjectPage() {
                 </svg>
                 <span className="text-xs font-medium truncate">{editMode === 'edit_brush' ? 'Brush' : t(locale, 'studio.tool.highlight')}</span>
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editorTool === 'logo') {
+                    setEditorTool(null);
+                    setLogoOverlays([]);
+                    setShowLogoDialog(false);
+                    setTextBarTargetId(null);
+                  } else {
+                    setEditorTool('logo');
+                  }
+                }}
+                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'logo' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                title={t(locale, 'studio.tool.logo')}
+              >
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="text-xs font-medium truncate">{t(locale, 'studio.tool.logo')}</span>
+              </button>
             </div>
-            {editorTool && (
+            {editorTool === 'logo' && (
+              <div className="mb-3 pt-2 border-t border-theme-border">
+                <p className="text-xs font-medium text-theme-fg-muted mb-2">{t(locale, 'studio.elementsOnImage')}</p>
+                <div className="flex flex-col gap-1.5 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowLogoDialog(true)}
+                    className="w-full px-2.5 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium text-left"
+                  >
+                    + {t(locale, 'studio.element')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = crypto.randomUUID();
+                      const newOverlay: LogoOverlayItem = {
+                        id: newId,
+                        type: 'text',
+                        text: 'Text',
+                        fontSize: 16 / 400,
+                        fontFamily: 'Arial',
+                        color: '#ffffff',
+                        pos: { x: 0.5, y: 0.5 },
+                        size: { w: 0.4, h: 0.12 },
+                        rotation: 0,
+                      };
+                      setLogoOverlays((prev) => [...prev, newOverlay]);
+                      setTextBarTargetId(newId);
+                    }}
+                    className="w-full px-2.5 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium text-left"
+                  >
+                    + {t(locale, 'studio.text')}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1 max-h-40 overflow-y-auto scrollbar-subtle">
+                  {logoOverlays.map((o) => (
+                    <div key={o.id} className="flex items-center gap-2 rounded-lg border border-theme-border bg-theme-bg-hover p-1.5">
+                      <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-theme-bg-subtle flex items-center justify-center">
+                        {o.type === 'image' ? (
+                          <img src={getMediaDisplayUrl(o.url, mediaToken) ?? o.url} alt="" className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-[10px] text-theme-fg-muted font-bold">T</span>
+                        )}
+                      </div>
+                      <span className="flex-1 min-w-0 text-xs text-theme-fg truncate" title={o.type === 'image' ? o.name : o.text}>{o.type === 'image' ? o.name : o.text}</span>
+                      <button
+                        type="button"
+                        onClick={() => setLogoOverlays((prev) => prev.filter((e) => e.id !== o.id))}
+                        className="p-1 rounded text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-subtle"
+                        aria-label="Remove"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {editorTool && editorTool !== 'logo' && (
               <>
                 <label className="text-xs font-medium text-theme-fg-muted mb-1 block">{t(locale, 'studio.brushSize')}</label>
                 <input
@@ -1264,6 +1488,28 @@ export default function StudioProjectPage() {
       <ConfirmDialog open={!!pendingDeleteItem} title="Remove item" message="Remove this item from the project?" confirmLabel="Remove" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveItem} onCancel={() => setPendingDeleteItem(null)} />
       <ConfirmDialog open={pendingDeleteVersionNum !== null} title={t(locale, 'studio.deleteVersion')} message={t(locale, 'studio.deleteVersionConfirm')} confirmLabel={t(locale, 'studio.delete')} cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveVersion} onCancel={() => setPendingDeleteVersionNum(null)} />
       <ConfirmDialog open={pendingDeleteProject} title="Delete project" message="Delete this project and all its items? This cannot be undone." confirmLabel="Delete" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleDeleteProject} onCancel={() => setPendingDeleteProject(false)} />
+      {selectedItem?.type === 'image' && (
+        <LogoDialog
+          open={showLogoDialog}
+          onClose={() => setShowLogoDialog(false)}
+          onSelectLogo={(url, name) => {
+            setLogoOverlays((prev) => [
+              ...prev,
+              { id: crypto.randomUUID(), type: 'image', url, name, pos: { x: 0.5, y: 0.5 }, size: { w: 0.2, h: 0.2 }, rotation: 0 },
+            ]);
+          }}
+          mediaToken={mediaToken}
+          locale={locale}
+          savedLogos={savedLogos}
+          onSaveLogo={(logo) => {
+            setSavedLogos((prev) => {
+              const next = [logo, ...prev.filter((l) => l.url !== logo.url)];
+              saveLogosToStorage(next);
+              return next;
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

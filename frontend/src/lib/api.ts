@@ -2,9 +2,10 @@ import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
-/** Returns display URL for media. When url is relative (no http), uses /api/media proxy with token. */
+/** Returns display URL for media. When url is relative (no http), uses /api/media proxy with token. Data URLs are returned as-is. */
 export function getMediaDisplayUrl(url: string | null | undefined, token: string | null): string {
   if (!url) return '';
+  if (url.startsWith('data:')) return url;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
   if (!token) return url; // Will likely fail; caller should handle
   return `${API_URL}/api/media?key=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
@@ -538,6 +539,23 @@ export async function listContent(params: ListContentParams = {}): Promise<{
   return res.json();
 }
 
+/** Export a URL (e.g. current project image) to My Collection. Creates a completed job so it appears in content. */
+export async function exportToCollection(url: string, type: 'image' | 'video'): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/content/from-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ url, type }),
+  });
+  if (res.status === 401) throw new Error('session_expired');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body?.error ?? 'Failed to export to collection');
+  }
+  return res.json();
+}
+
 /** Returns job or null if not found / error. Never throws - caller can show "not found" + retry. */
 export async function getJob(id: string): Promise<Job | null> {
   try {
@@ -727,7 +745,10 @@ export async function removeProjectVersion(itemId: string, versionNum: number): 
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) throw new Error('session_expired');
-  if (!res.ok) throw new Error('Failed to remove version');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body?.error ?? 'Failed to remove version');
+  }
 }
 
 /** Upload file to project (image/video from device). Returns full item for optimistic UI. */

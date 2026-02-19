@@ -83,6 +83,7 @@ func (s *Server) Routes() http.Handler {
 		r.Patch("/threads/{id}", s.patchThread)
 		r.Get("/jobs", s.listJobs)
 		r.Get("/content", s.listContent)
+		r.Post("/content/from-url", s.addContentFromURL)
 		r.Get("/jobs/{id}", s.getJob)
 		r.Patch("/jobs/{id}/feedback", s.setJobFeedback)
 		r.Get("/jobs/stream", s.streamAllJobs)
@@ -1095,6 +1096,47 @@ func (s *Server) listContent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
+func (s *Server) addContentFromURL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	userID, ok := middleware.UserID(r.Context())
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+	var body struct {
+		URL  string `json:"url"`
+		Type string `json:"type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.URL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "url required"})
+		return
+	}
+	if body.Type != "image" && body.Type != "video" {
+		body.Type = "image"
+	}
+	jobID, err := s.DB.CreateCompletedJobFromURL(r.Context(), userID, body.URL, body.Type)
+	if err != nil {
+		log.Printf("addContentFromURL: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to add to collection"})
+		return
+	}
+	s.invalidateContentCache(r.Context(), userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -1807,26 +1849,37 @@ func (s *Server) removeProjectVersion(w http.ResponseWriter, r *http.Request) {
 	versionNumStr := chi.URLParam(r, "versionNum")
 	itemID, err := uuid.Parse(itemIDStr)
 	if err != nil {
-		http.Error(w, "invalid item id", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid item id"})
 		return
 	}
 	versionNum, err := strconv.Atoi(versionNumStr)
 	if err != nil || versionNum < 1 {
-		http.Error(w, "invalid version number", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid version number"})
 		return
 	}
 	userID, ok := middleware.UserID(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 		return
 	}
 	err = s.DB.RemoveProjectVersion(r.Context(), itemID, versionNum, userID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			http.Error(w, `{"error":"version not found"}`, http.StatusNotFound)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "version not found"})
 			return
 		}
-		http.Error(w, `{"error":"failed to remove version"}`, http.StatusInternalServerError)
+		log.Printf("removeProjectVersion item=%s version=%d: %v", itemID, versionNum, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to remove version"})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

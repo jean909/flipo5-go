@@ -122,6 +122,7 @@ export default function DashboardPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [showIncognitoMediaDialog, setShowIncognitoMediaDialog] = useState(false);
+  const [showDuplicateRequestDialog, setShowDuplicateRequestDialog] = useState(false);
   const [showPromptBuilder, setShowPromptBuilder] = useState(false);
   const pendingNormalSessionSubmit = useRef(false);
 
@@ -416,7 +417,7 @@ export default function DashboardPage() {
     })}`;
     
     if (submittedRequests.has(requestKey)) {
-      console.warn('[Submit] Duplicate request prevented:', mode, trimmed.slice(0, 50));
+      setShowDuplicateRequestDialog(true);
       return;
     }
 

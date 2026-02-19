@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface ThemeColorPickerProps {
   value: string;
@@ -50,7 +50,6 @@ function hsvToHex(h: number, s: number, v: number): string {
 export function ThemeColorPicker({ value, onChange, label }: ThemeColorPickerProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState(value);
-  const boxRef = useRef<HTMLDivElement>(null);
   const { h, s, v } = hexToHsv(value);
 
   useEffect(() => {
@@ -60,14 +59,6 @@ export function ThemeColorPicker({ value, onChange, label }: ThemeColorPickerPro
   const updateFromHsv = useCallback((hue: number, sat: number, val: number) => {
     onChange(hsvToHex(hue, sat, val));
   }, [onChange]);
-
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [open]);
 
   const onBoxClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -82,46 +73,64 @@ export function ThemeColorPicker({ value, onChange, label }: ThemeColorPickerPro
     updateFromHsv(Math.min(360, Math.max(0, x * 360)), s, v);
   };
 
+  const pickerContent = (
+    <div
+      className="p-4 rounded-xl border border-theme-border bg-theme-bg shadow-xl w-[240px]"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-3">
+        {label && <span className="text-sm font-medium text-theme-fg">{label}</span>}
+        <button type="button" onClick={() => setOpen(false)} className="text-theme-fg-subtle hover:text-theme-fg p-1" aria-label="Close">×</button>
+      </div>
+      <div
+        className="w-full aspect-square rounded-lg border border-theme-border cursor-crosshair mb-2 overflow-hidden"
+        style={{
+          background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${h}, 100%, 50%))`,
+        }}
+        onClick={onBoxClick}
+      />
+      <div
+        className="w-full h-3 rounded-full border border-theme-border cursor-pointer mb-2"
+        style={{
+          background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
+        }}
+        onClick={onHueClick}
+      />
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => {
+            const v = e.target.value;
+            setInput(v);
+            if (/^#[0-9A-Fa-f]{6}$/.test(v)) onChange(v);
+          }}
+          className="flex-1 px-2 py-1.5 rounded border border-theme-border bg-theme-bg text-theme-fg text-xs font-mono"
+        />
+      </div>
+    </div>
+  );
+
   return (
-    <div className="relative" ref={boxRef}>
+    <div className="relative">
       {label && <label className="block text-xs font-medium text-theme-fg-muted mb-1">{label}</label>}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(true)}
         className="w-full h-9 rounded-lg border border-theme-border bg-theme-bg-subtle hover:bg-theme-bg-hover flex items-center gap-2 px-2"
       >
         <span className="w-6 h-6 rounded border border-theme-border shrink-0" style={{ backgroundColor: value }} />
         <span className="text-xs text-theme-fg font-mono truncate">{value}</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 p-3 rounded-xl border border-theme-border bg-theme-bg shadow-xl min-w-[200px]">
-          <div
-            className="w-full aspect-square rounded-lg border border-theme-border cursor-crosshair mb-2 overflow-hidden"
-            style={{
-              background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${h}, 100%, 50%))`,
-            }}
-            onClick={onBoxClick}
-          />
-          <div
-            className="w-full h-3 rounded-full border border-theme-border cursor-pointer mb-2"
-            style={{
-              background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
-            }}
-            onClick={onHueClick}
-          />
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => {
-                const v = e.target.value;
-                setInput(v);
-                if (/^#[0-9A-Fa-f]{6}$/.test(v)) onChange(v);
-              }}
-              className="flex-1 px-2 py-1 rounded border border-theme-border bg-theme-bg text-theme-fg text-xs font-mono"
-            />
+        <>
+          <div className="fixed inset-0 z-[100] bg-black/50" aria-hidden onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto">
+              {pickerContent}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

@@ -58,6 +58,12 @@ export function PaintCanvas({
   const cloneSource = useRef<{ x: number; y: number } | null>(null);
   const strokeStart = useRef<{ x: number; y: number } | null>(null);
   const dims = useRef<{ w: number; h: number; scale: number }>({ w: 0, h: 0, scale: 1 });
+  const [hasCloneSource, setHasCloneSource] = useState(false);
+  const [cloneSourcePos, setCloneSourcePos] = useState<{ x: number; y: number } | null>(null);
+  const [mouseCanvasPos, setMouseCanvasPos] = useState<{ x: number; y: number } | null>(null);
+  const undoStackRef = useRef<ImageData[]>([]);
+  const [undoCount, setUndoCount] = useState(0);
+  const MAX_UNDO = 30;
 
   useEffect(() => {
     let url: string | null = null;
@@ -122,6 +128,8 @@ export function PaintCanvas({
     const overlayCtx = overlay.getContext('2d', { willReadFrequently: false });
     if (overlayCtx) overlayCtx.clearRect(0, 0, w, h);
     dims.current = { w, h, scale: 1 };
+    undoStackRef.current = [];
+    setUndoCount(0);
   }, []);
 
   const onImageLoad = useCallback(() => {
@@ -192,22 +200,50 @@ export function PaintCanvas({
     }
   }, [tool, brushSize, colorizeColor, highlightColor, highlightOpacity]);
 
+  const pushUndo = useCallback(() => {
+    const overlay = overlayRef.current;
+    if (!overlay?.width || !overlay?.height) return;
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
+    const id = ctx.getImageData(0, 0, overlay.width, overlay.height);
+    const copy = new ImageData(new Uint8ClampedArray(id.data), id.width, id.height);
+    const stack = undoStackRef.current;
+    if (stack.length >= MAX_UNDO) stack.shift();
+    stack.push(copy);
+    setUndoCount(stack.length);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const stack = undoStackRef.current;
+    const overlay = overlayRef.current;
+    if (stack.length === 0 || !overlay) return;
+    const prev = stack.pop();
+    setUndoCount(stack.length);
+    if (!prev) return;
+    const ctx = overlay.getContext('2d');
+    if (ctx) ctx.putImageData(prev, 0, 0);
+  }, []);
+
   const handlePointerDown = useCallback((e: React.MouseEvent) => {
     const pos = toCanvasCoords(e);
     if (!pos) return;
     if (e.altKey && tool === 'clone') {
       cloneSource.current = { x: pos.x, y: pos.y };
+      setCloneSourcePos(pos);
+      setHasCloneSource(true);
       return;
     }
+    pushUndo();
     isDrawing.current = true;
     lastPos.current = pos;
     strokeStart.current = { x: pos.x, y: pos.y };
     if (tool === 'clone') drawClone(pos.x, pos.y);
     else drawBrush(pos.x, pos.y);
-  }, [tool, toCanvasCoords, drawClone, drawBrush]);
+  }, [tool, toCanvasCoords, drawClone, drawBrush, pushUndo]);
 
   const handlePointerMove = useCallback((e: React.MouseEvent) => {
     const pos = toCanvasCoords(e);
+    if (tool === 'clone') setMouseCanvasPos(pos ?? null);
     if (!pos || !isDrawing.current) return;
     if (tool === 'clone') {
       const prev = lastPos.current;
@@ -238,6 +274,21 @@ export function PaintCanvas({
     lastPos.current = null;
     strokeStart.current = null;
   }, []);
+
+  const handlePointerLeave = useCallback(() => {
+    isDrawing.current = false;
+    lastPos.current = null;
+    strokeStart.current = null;
+    setMouseCanvasPos(null);
+  }, []);
+
+  useEffect(() => {
+    if (tool !== 'clone') {
+      setHasCloneSource(false);
+      setCloneSourcePos(null);
+      setMouseCanvasPos(null);
+    }
+  }, [tool]);
 
   const exportMaskBlob = useCallback((): Promise<Blob | null> => {
     const overlay = overlayRef.current;
@@ -297,10 +348,14 @@ export function PaintCanvas({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, handleUndo]);
 
   if (error) {
     return (
@@ -358,16 +413,52 @@ export function PaintCanvas({
           />
           <canvas
             ref={overlayRef}
-            className="absolute left-0 top-0 w-full h-full block cursor-crosshair"
+            className="absolute left-0 top-0 w-full h-full block"
+            style={{
+              cursor: tool === 'clone'
+                ? (hasCloneSource ? 'copy' : 'crosshair')
+                : 'crosshair',
+            }}
             onMouseDown={handlePointerDown}
             onMouseMove={handlePointerMove}
             onMouseUp={handlePointerUp}
-            onMouseLeave={handlePointerUp}
+            onMouseLeave={handlePointerLeave}
           />
+          {tool === 'clone' && (cloneSourcePos || mouseCanvasPos) && baseW > 0 && baseH > 0 && (
+            <div className="absolute left-0 top-0 w-full h-full pointer-events-none" aria-hidden>
+              {cloneSourcePos && (
+                <div
+                  className="absolute border-2 border-dashed border-white/80 rounded-full bg-white/10"
+                  style={{
+                    left: `${(cloneSourcePos.x / baseW) * 100}%`,
+                    top: `${(cloneSourcePos.y / baseH) * 100}%`,
+                    width: Math.max(16, brushSize * 2),
+                    height: Math.max(16, brushSize * 2),
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                />
+              )}
+              {mouseCanvasPos && (
+                <div
+                  className="absolute border-2 border-theme-accent rounded-full bg-transparent"
+                  style={{
+                    left: `${(mouseCanvasPos.x / baseW) * 100}%`,
+                    top: `${(mouseCanvasPos.y / baseH) * 100}%`,
+                    width: Math.max(16, brushSize * 2),
+                    height: Math.max(16, brushSize * 2),
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                />
+              )}
+            </div>
+          )}
           <div className="absolute bottom-2 left-2 text-xs text-theme-fg-subtle bg-theme-bg-overlay/80 px-2 py-1 rounded">
-            {tool === 'clone' && (cloneSource.current ? 'Clone: drag to paint. Alt+click to set new source.' : 'Alt+click to set source, then drag to clone.')}
+            {tool === 'clone' && (hasCloneSource ? 'Clone: drag to paint. Alt+click to set new source.' : 'Alt+click to set source, then drag to clone.')}
           </div>
           <div className="absolute top-2 right-2 flex gap-2">
+            <button type="button" onClick={handleUndo} disabled={undoCount === 0} className="px-3 py-1.5 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none text-sm" title={t(locale, 'studio.undo')}>
+              {t(locale, 'studio.undo')}
+            </button>
             <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover text-sm">
               {t(locale, 'dialog.cancel')}
             </button>
