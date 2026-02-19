@@ -845,6 +845,17 @@ export default function DashboardPage() {
         }}
         onCancel={() => setShowIncognitoMediaDialog(false)}
       />
+      <ConfirmDialog
+        open={showDuplicateRequestDialog}
+        title={t(locale, 'dashboard.duplicateRequest.title')}
+        message={t(locale, 'dashboard.duplicateRequest.message')}
+        confirmLabel={t(locale, 'dialog.ok')}
+        cancelLabel={t(locale, 'dialog.cancel')}
+        alert
+        confirmClass="bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong"
+        onConfirm={() => setShowDuplicateRequestDialog(false)}
+        onCancel={() => setShowDuplicateRequestDialog(false)}
+      />
       <PromptBuilderDialog
         open={showPromptBuilder}
         onClose={() => setShowPromptBuilder(false)}
