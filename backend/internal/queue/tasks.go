@@ -12,6 +12,7 @@ const (
 	TypeChat              = "chat"
 	TypeImage             = "image"
 	TypeVideo             = "video"
+	TypeUpscale           = "upscale"
 	TypeSummarizeThread   = "summarize_thread"
 	TypeCancelStaleJobs   = "cancel_stale_jobs"
 	JobTimeoutMinutes     = 5
@@ -30,6 +31,10 @@ type ImagePayload struct {
 }
 
 type VideoPayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+type UpscalePayload struct {
 	JobID uuid.UUID `json:"job_id"`
 }
 
@@ -55,6 +60,14 @@ func NewVideoTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeVideo, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
+}
+
+func NewUpscaleTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(UpscalePayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeUpscale, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
 }
 
 type SummarizeThreadPayload struct {

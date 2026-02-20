@@ -76,6 +76,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/image", s.createImage)
 		r.Post("/image-inpaint", s.createImageInpaint)
 		r.Post("/video", s.createVideo)
+		r.Post("/upscale", s.createUpscale)
 		r.Post("/prompt-variants", s.generatePromptVariants)
 		r.Post("/upload", s.upload)
 		r.Get("/threads", s.listThreads)
@@ -903,6 +904,53 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) createUpscale(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ImageURL string `json:"image_url"`
+		Scale    int    `json:"scale"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.ImageURL == "" {
+		http.Error(w, `{"error":"image_url required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Scale != 2 && req.Scale != 4 {
+		req.Scale = 2
+	}
+	imageURL := req.ImageURL
+	if !strings.HasPrefix(imageURL, "https://") {
+		if strings.HasPrefix(imageURL, "uploads/") && s.Store != nil {
+			imageURL = s.Store.URL(imageURL)
+		} else {
+			http.Error(w, `{"error":"image_url must be https or uploads/ key"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"image_url": imageURL,
+		"scale":     req.Scale,
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "upscale", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewUpscaleTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
 }
 
 func (s *Server) listThreads(w http.ResponseWriter, r *http.Request) {

@@ -38,6 +38,7 @@ type Config struct {
 	ModelVideo     string
 	ModelVideo2    string // kwaivgi/kling-v2.5-turbo-pro (start_image, end_image)
 	ModelRemoveBg  string // bria/remove-background for studio remove background
+	ModelUpscale   string // topazlabs/image-upscale for upscaling
 
 	// CORS: comma-separated origins, e.g. "http://localhost:3000,https://app.example.com". Empty = allow "*"
 	CORSOrigins string
@@ -69,6 +70,7 @@ func Load() *Config {
 		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
 		ModelVideo2:    getEnv("REPLICATE_MODEL_VIDEO_2", "kwaivgi/kling-v2.5-turbo-pro"),
 		ModelRemoveBg:  getEnv("REPLICATE_MODEL_REMOVE_BG", "bria/remove-background"),
+		ModelUpscale:   getEnv("REPLICATE_MODEL_UPSCALE", "topazlabs/image-upscale"),
 		CORSOrigins:    strings.TrimSpace(getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 	}
 }

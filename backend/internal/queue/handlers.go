@@ -48,7 +48,7 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 		_ = h.Cache.Delete(ctx, keys...)
 	}
 	// Invalidate content cache if job produces media content
-	if job.Type == "image" || job.Type == "video" {
+	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" {
 		_ = h.Cache.DeleteByPrefix(ctx, "content:"+job.UserID.String()+":")
 	}
 }
@@ -739,6 +739,81 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+func (h *Handlers) UpscaleHandler(ctx context.Context, t *asynq.Task) error {
+	var p UpscalePayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	if h.Stream != nil {
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"running","type":"upscale"}`, p.JobID.String()))
+		}
+	}
+	if h.Repl == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
+		return nil
+	}
+	model := h.Cfg.ModelUpscale
+	if model == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_UPSCALE not set", 0, "")
+		return nil
+	}
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	imageURL, _ := jobInput["image_url"].(string)
+	if imageURL == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "missing image_url", 0, "")
+		return nil
+	}
+	scale := 2
+	if v, ok := jobInput["scale"].(float64); ok && (v == 2 || v == 4) {
+		scale = int(v)
+	}
+	upscaleFactor := "2x"
+	if scale == 4 {
+		upscaleFactor = "4x"
+	}
+	input := repgo.PredictionInput{
+		"image":          imageURL,
+		"enhance_model":  "Standard V2",
+		"output_format":  "jpg",
+		"upscale_factor": upscaleFactor,
+		"face_enhancement": false,
+		"subject_detection": "None",
+	}
+	out, err := h.Repl.Run(ctx, model, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		if h.Stream != nil {
+			_ = h.Stream.Publish(ctx, p.JobID, fmt.Sprintf(`{"status":"failed","error":"%s"}`, jobErrorMsg(err)), true)
+		}
+		return err
+	}
+	outNormalized := normalizeNanoBananaOutput(out)
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
+	if h.Stream != nil {
+		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"upscale"}`, p.JobID.String()))
+		}
+	}
+	if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+		h.invalidateJobCaches(ctx, job)
+	}
+	go mirrorMediaToR2(h, p.JobID, outNormalized, "image")
+	return nil
+}
+
 func (h *Handlers) CancelStaleJobsHandler(ctx context.Context, t *asynq.Task) error {
 	jobs, err := h.DB.ListStalePendingJobs(ctx, JobTimeoutMinutes)
 	if err != nil || len(jobs) == 0 {
@@ -830,6 +905,7 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeChat, h.ChatHandler)
 	mux.HandleFunc(TypeImage, h.ImageHandler)
 	mux.HandleFunc(TypeVideo, h.VideoHandler)
+	mux.HandleFunc(TypeUpscale, h.UpscaleHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
 	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }
