@@ -413,6 +413,21 @@ export async function createVideo(params: CreateVideoParams): Promise<{ job_id: 
   return res.json();
 }
 
+export async function createUpscale(imageUrl: string, scale: 2 | 4): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/upscale`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ image_url: imageUrl, scale }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Upscale failed');
+  }
+  return res.json();
+}
+
 export interface Job {
   id: string;
   user_id: string;

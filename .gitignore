@@ -13,9 +13,12 @@ frontend/flipo5-api
 backend/flipo5-api
 backend/api.exe
 
-# Archives / large binaries
+# Archives / large binaries (evită commit la zip-uri mari)
 frontend.zip
 *.zip
+backend/*.zip
+backend/**/*.zip
+**/*.zip
 
 # OS
 .DS_Store

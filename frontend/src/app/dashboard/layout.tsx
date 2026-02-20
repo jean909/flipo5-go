@@ -35,8 +35,11 @@ export default function DashboardLayout({
 
   if (!ready) {
     return (
-      <div className="min-h-screen bg-theme-bg flex items-center justify-center">
-        <p className="text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
+      <div className="min-h-screen bg-theme-bg flex items-center justify-center" aria-busy="true" aria-label={t(locale, 'common.loading')}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-theme-border border-t-theme-fg-subtle animate-spin" />
+          <p className="text-theme-fg-subtle text-sm">{t(locale, 'common.loading')}</p>
+        </div>
       </div>
     );
   }

@@ -175,7 +175,7 @@ export default function Home() {
               key={key}
               initial="hidden"
               whileInView="visible"
-              viewport={{ once: true, margin: '-80px', amount: 0.15 }}
+              viewport={{ once: true, margin: '100px', amount: 0.2 }}
               variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.15, delayChildren: 0.1 } } }}
               className="relative py-16 sm:py-24 lg:py-32 px-4 sm:px-6 lg:px-12 max-w-7xl mx-auto"
             >

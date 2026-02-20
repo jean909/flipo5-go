@@ -83,29 +83,23 @@ function saveDismissedFailedIds(ids: Set<string>) {
 }
 
 // Clean up old dismissed IDs (older than 7 days) to prevent localStorage bloat
-function cleanupDismissedFailedIds() {
+function cleanupDismissedFailedIds(): Set<string> {
   if (typeof window === 'undefined') return new Set<string>();
   try {
     const stored = localStorage.getItem(DISMISSED_FAILED_KEY);
-    if (!stored) return new Set();
-    
+    if (!stored) return new Set<string>();
+
     const ids = JSON.parse(stored) as string[];
-    const now = Date.now();
-    const weekAgo = now - 7 * 24 * 60 * 60 * 1000; // 7 days
-    
-    // Keep only recent dismissed IDs (can't check job date without API call, so keep all for now)
-    // In future could add timestamp to dismissed entries
-    const cleaned = new Set(ids);
+    const cleaned = new Set<string>(ids);
     if (cleaned.size > 100) {
-      // If too many, keep only last 50 entries
       const recent = [...cleaned].slice(-50);
-      const cleanedSet = new Set(recent);
+      const cleanedSet = new Set<string>(recent);
       saveDismissedFailedIds(cleanedSet);
       return cleanedSet;
     }
     return cleaned;
   } catch {
-    return new Set();
+    return new Set<string>();
   }
 }
 

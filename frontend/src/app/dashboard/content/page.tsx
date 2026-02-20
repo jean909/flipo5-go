@@ -20,6 +20,7 @@ function extractOutputUrls(job: Job): string[] {
 
 function getJobDisplayName(job: ContentJob): string {
   if (job.name?.trim()) return job.name;
+  if (job.type === 'upscale') return '';
   const prompt = (job.input as { prompt?: string })?.prompt;
   if (typeof prompt === 'string' && prompt.trim()) {
     return prompt.trim().split(/\s+/).slice(0, 4).join(' ') || '';
@@ -129,7 +130,7 @@ export default function ContentPage() {
           <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {items.map((job) => (
               <li key={job.id} className="flex flex-col gap-1.5">
-                {(job.type === 'image' || job.type === 'video') ? (
+                {(job.type === 'image' || job.type === 'video' || job.type === 'upscale') ? (
                   <button
                     type="button"
                     onClick={() => setViewingMedia({ urls: job.outputUrls })}
@@ -152,6 +153,11 @@ export default function ContentPage() {
                         <div className="w-full h-full flex items-center justify-center text-theme-fg-subtle">
                           {job.type === 'video' ? <VideoIcon className="w-12 h-12" /> : <ImageIcon className="w-12 h-12" />}
                         </div>
+                      )}
+                      {job.type === 'upscale' && (
+                        <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-theme-bg-elevated/95 text-theme-fg border border-theme-border shadow-sm">
+                          {t(locale, 'content.upscaled')}
+                        </span>
                       )}
                       <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <span className="text-sm font-medium text-theme-fg px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong">

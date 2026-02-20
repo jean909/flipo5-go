@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react';
 import type { Locale } from '@/lib/i18n';
 
 const LocaleContext = createContext<{
@@ -26,8 +26,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     setLocaleState(l);
     if (typeof window !== 'undefined') localStorage.setItem('locale', l);
   }, []);
+  const value = useMemo(() => ({ locale, setLocale }), [locale, setLocale]);
   return (
-    <LocaleContext.Provider value={{ locale, setLocale }}>
+    <LocaleContext.Provider value={value}>
       {children}
     </LocaleContext.Provider>
   );

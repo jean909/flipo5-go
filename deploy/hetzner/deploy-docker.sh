@@ -24,8 +24,13 @@ if [ -z "$SERVER" ]; then
   exit 1
 fi
 
-echo "=== Git add & commit ==="
-git add -A
+echo "=== Git add & commit (backend + deploy, fără zip/archives) ==="
+git reset HEAD -- '*.zip' 2>/dev/null || true
+git add backend/
+git add deploy/
+git add .gitignore
+# optional: include frontend
+git add frontend/
 if git diff --staged --quiet; then
   echo "Nothing to commit."
 else

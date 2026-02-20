@@ -16,8 +16,12 @@ if (-not $Server) {
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repoRoot
 
-Write-Host "=== Git add & commit ==="
-git add -A
+Write-Host "=== Git add & commit (backend + deploy, fără zip/archives) ==="
+git reset HEAD -- "*.zip" 2>$null; $null
+git add backend/
+git add deploy/
+git add .gitignore
+git add frontend/
 $staged = git diff --staged --name-only
 if ($staged) {
     git commit -m $Message

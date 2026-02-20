@@ -7,10 +7,10 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, addProjectVersionByUrl, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, createImage, createImageInpaint, uploadAttachments, getJob, exportToCollection, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
-import { ImageViewModal } from '../../components/ImageViewModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CropRotateModal } from './CropRotateModal';
 import { AdjustmentsModal } from './AdjustmentsModal';
+import { FiltersModal } from './FiltersModal';
 import { PaintCanvas, type PaintTool } from './PaintCanvas';
 import { MultiLogoPlacer, type LogoOverlayItem } from './MultiLogoPlacer';
 import { LogoDialog, type SavedLogo } from './LogoDialog';
@@ -82,9 +82,10 @@ export default function StudioProjectPage() {
   const [showAddFromContent, setShowAddFromContent] = useState(false);
   const [contentJobs, setContentJobs] = useState<Array<Job & { outputUrls: string[] }>>([]);
   const [contentLoading, setContentLoading] = useState(false);
-  const [viewingMedia, setViewingMedia] = useState<{ urls: string[] } | null>(null);
+  const [previewZoomOpen, setPreviewZoomOpen] = useState(false);
   const [cropRotateOpen, setCropRotateOpen] = useState(false);
   const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<ProjectItem | null>(null);
   const [pendingDeleteVersionNum, setPendingDeleteVersionNum] = useState<number | null>(null);
   const [pendingDeleteProject, setPendingDeleteProject] = useState(false);
@@ -677,6 +678,15 @@ export default function StudioProjectPage() {
 
   const handleEditWithBrush = handleOpenBrushForInpaint;
 
+  useEffect(() => {
+    if (!previewZoomOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewZoomOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewZoomOpen]);
+
   function handleMaskOk(maskBlob: Blob) {
     setMaskBlobForInpaint(maskBlob);
     setEditorTool(null);
@@ -790,7 +800,15 @@ export default function StudioProjectPage() {
             >
               {removingBg ? '...' : 'Remove BG'}
             </button>
-            <ToolBtn label="Filters" />
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              disabled={!selectedItem || selectedItem.type !== 'image' || !referenceUrl}
+              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              title={t(locale, 'studio.filters')}
+            >
+              {t(locale, 'studio.filters')}
+            </button>
             <button
               type="button"
               onClick={() => setCropRotateOpen(true)}
@@ -809,21 +827,6 @@ export default function StudioProjectPage() {
             >
               {t(locale, 'studio.adjustments')}
             </button>
-            <button
-              type="button"
-              onClick={handleOpenBrushForInpaint}
-              disabled={editMode !== 'edit_brush' || !selectedItem || selectedItem.type !== 'image' || !referenceUrl}
-              className={`px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none ${
-                editMode === 'edit_brush' && selectedItem?.type === 'image' && referenceUrl
-                  ? 'bg-theme-accent/15 text-theme-accent border border-theme-accent/50'
-                  : 'text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover'
-              }`}
-              title="Paint zone to edit (Edit using Brush)"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-              Brush
-            </button>
-            <ToolBtn label="AI Edit" />
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
@@ -929,7 +932,7 @@ export default function StudioProjectPage() {
                       {paintApplying || aiEditJobId ? '...' : 'Edit with AI'}
                     </button>
                   ) : (
-                    <p className="text-xs text-theme-fg-subtle">Click Brush in the bar above, paint the zone, then OK.</p>
+                    <p className="text-xs text-theme-fg-subtle">Use Brush in the tools panel (right), paint the zone, then OK.</p>
                   )}
                 </>
               )}
@@ -1105,13 +1108,19 @@ export default function StudioProjectPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => !canvasDragging && setViewingMedia({ urls: [displayUrl] })}
-                            className="block w-full h-full min-w-0 min-h-0"
+                            onClick={() => !canvasDragging && selectedItem.type === 'image' && setPreviewZoomOpen(true)}
+                            className="block w-full h-full min-w-0 min-h-0 relative group/img"
                           >
                             {selectedItem.type === 'video' ? (
                               <video src={displayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
                             ) : (
-                              <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} decoding="async" />
+                              <>
+                                <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} decoding="async" />
+                                <span className="absolute bottom-2 right-2 px-2 py-1 rounded-lg bg-theme-bg-overlay text-theme-fg-subtle opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center gap-1.5 text-xs" title={t(locale, 'studio.previewZoom')}>
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+                                  {t(locale, 'studio.previewZoom')}
+                                </span>
+                              </>
                             )}
                           </button>
                           <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1511,8 +1520,53 @@ export default function StudioProjectPage() {
           locale={locale}
         />
       )}
-      {viewingMedia && viewingMedia.urls[0] && (
-        <ImageViewModal url={viewingMedia.urls[0]} urls={viewingMedia.urls.length > 1 ? viewingMedia.urls : undefined} onClose={() => setViewingMedia(null)} locale={locale} />
+      {filtersOpen && selectedItem && referenceUrl && (
+        <FiltersModal
+          imageUrl={referenceUrl}
+          itemId={selectedItem.id}
+          onClose={() => setFiltersOpen(false)}
+          onSuccess={async () => {
+            await fetchProject();
+            const { versions } = await listProjectVersions(selectedItem.id);
+            setItemVersions(versions ?? []);
+          }}
+          onUpload={async (itemId, file) => {
+            await uploadProjectVersion(itemId, file);
+          }}
+          locale={locale}
+        />
+      )}
+      {previewZoomOpen && selectedItem?.type === 'image' && displayUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-theme-bg-overlay-strong p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t(locale, 'studio.previewZoom')}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewZoomOpen(false)}
+            className="absolute inset-0"
+            aria-hidden
+          />
+          <div className="relative z-10 max-w-[95vw] max-h-[95vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={displayUrl}
+              alt=""
+              className="max-w-full max-h-[95vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+              style={{ maxWidth: 'min(95vw, 100%)', maxHeight: '95vh' }}
+              draggable={false}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setPreviewZoomOpen(false)}
+            className="absolute top-4 right-4 z-20 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-theme-bg-overlay-strong border border-theme-border text-theme-fg hover:bg-theme-bg-hover"
+            aria-label={t(locale, 'dialog.cancel')}
+          >
+            ×
+          </button>
+        </div>
       )}
 
       <ConfirmDialog open={!!pendingDeleteItem} title="Remove item" message="Remove this item from the project?" confirmLabel="Remove" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveItem} onCancel={() => setPendingDeleteItem(null)} />
@@ -1541,16 +1595,5 @@ export default function StudioProjectPage() {
         />
       )}
     </div>
-  );
-}
-
-function ToolBtn({ label }: { label: string }) {
-  return (
-    <button
-      type="button"
-      className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover"
-    >
-      {label}
-    </button>
   );
 }

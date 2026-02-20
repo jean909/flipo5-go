@@ -72,6 +72,7 @@ export function Sidebar() {
     { href: '/dashboard/jobs', labelKey: 'nav.jobs', icon: JobsIcon },
     { href: '/dashboard/content', labelKey: 'nav.content', icon: ContentIcon },
     { href: '/dashboard/studio', labelKey: 'nav.studio', icon: StudioIcon },
+    { href: '/dashboard/upscaling', labelKey: 'nav.upscaling', icon: UpscaleIcon },
   ];
 
   const displayName = user?.full_name?.trim() || user?.email || '';
@@ -120,7 +121,7 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 p-3 flex flex-col gap-0.5 min-h-0 overflow-hidden">
         {nav.map(({ href, labelKey, icon: Icon }) => {
-          const isActive = href === '/dashboard/studio' ? pathname.startsWith('/dashboard/studio') : pathname === href;
+          const isActive = href === '/dashboard/studio' ? pathname.startsWith('/dashboard/studio') : href === '/dashboard/upscaling' ? pathname.startsWith('/dashboard/upscaling') : pathname === href;
           return (
           <Link
             key={href}
@@ -391,6 +392,14 @@ function StudioIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.38 3.395a15.995 15.995 0 004.769-2.95m0 0a3 3 0 10-4.243-4.243m4.242 4.242a9 9 0 01-1.414-2.165m-1.414 1.414a9 9 0 01-2.167-1.415m1.414 1.414L11 3.828a9 9 0 0110.172 10.172z" />
+    </svg>
+  );
+}
+
+function UpscaleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 6v-4.5m0 4.5h-4.5m4.5 0L15 15" />
     </svg>
   );
 }

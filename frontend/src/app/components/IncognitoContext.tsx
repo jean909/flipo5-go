@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react';
 import { patchThread } from '@/lib/api';
 
 const INCOGNITO_THREAD_KEY = 'flipo5_incognito_thread';
@@ -32,7 +32,6 @@ export function IncognitoProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // On load: delete ephemeral thread from previous incognito session
   useEffect(() => {
     const stored = typeof window !== 'undefined' ? window.sessionStorage.getItem(INCOGNITO_THREAD_KEY) : null;
     if (stored) {
@@ -42,8 +41,12 @@ export function IncognitoProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const value = useMemo(
+    () => ({ incognito, setIncognito, incognitoThreadId, setIncognitoThreadId }),
+    [incognito, setIncognito, incognitoThreadId, setIncognitoThreadId]
+  );
   return (
-    <IncognitoContext.Provider value={{ incognito, setIncognito, incognitoThreadId, setIncognitoThreadId }}>
+    <IncognitoContext.Provider value={value}>
       {children}
     </IncognitoContext.Provider>
   );
