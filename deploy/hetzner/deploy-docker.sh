@@ -25,7 +25,10 @@ if [ -z "$SERVER" ]; then
 fi
 
 echo "=== Git add & commit (backend + deploy, fără zip/archives) ==="
+# Scoate din staging orice zip
 git reset HEAD -- '*.zip' 2>/dev/null || true
+# Elimină din tracking orice .zip încă în repo (ex: a fost comis în trecut, apoi șters de pe disc)
+for f in $(git ls-files '*.zip' 2>/dev/null); do git rm --cached "$f" 2>/dev/null || true; done
 git add backend/
 git add deploy/
 git add .gitignore

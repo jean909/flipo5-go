@@ -17,7 +17,10 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repoRoot
 
 Write-Host "=== Git add & commit (backend + deploy, fără zip/archives) ==="
+# Scoate din staging orice zip
 git reset HEAD -- "*.zip" 2>$null; $null
+# Elimină din tracking orice .zip încă în repo (ex: a fost comis în trecut, apoi șters de pe disc)
+git ls-files "*.zip" | ForEach-Object { git rm --cached $_ 2>$null }
 git add backend/
 git add deploy/
 git add .gitignore
