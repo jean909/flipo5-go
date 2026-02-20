@@ -126,18 +126,18 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
         onClick={onClose}
         aria-hidden
       />
-      <div className="relative z-10 flex flex-col w-full max-w-4xl max-h-[90vh]">
-        <div className="flex items-center justify-between mb-3">
+      <div className="relative z-10 flex flex-col w-full max-w-4xl max-h-[90vh] min-h-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 shrink-0">
           <button
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="w-10 h-10 rounded-full bg-theme-bg-hover hover:bg-theme-bg-hover-strong flex items-center justify-center text-theme-fg transition-colors"
+            className="min-h-[44px] min-w-[44px] rounded-full bg-theme-bg-hover hover:bg-theme-bg-hover-strong flex items-center justify-center text-theme-fg transition-colors"
             aria-label="Close"
           >
             <XIcon className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleEditInStudio}
@@ -170,7 +170,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
             <button
               type="button"
               onClick={() => setIdx((i) => i - 1)}
-              className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger flex items-center justify-center text-theme-fg z-10"
+              className="absolute left-2 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] rounded-full bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger flex items-center justify-center text-theme-fg z-10"
               aria-label="Previous"
             >
               <ChevronLeftIcon className="w-5 h-5" />
@@ -185,7 +185,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
             <button
               type="button"
               onClick={() => setIdx((i) => i + 1)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger flex items-center justify-center text-theme-fg z-10"
+              className="absolute right-2 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] rounded-full bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger flex items-center justify-center text-theme-fg z-10"
               aria-label="Next"
             >
               <ChevronRightIcon className="w-5 h-5" />

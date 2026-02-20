@@ -65,7 +65,7 @@ export default function JobDetailPage() {
       <div className="border border-theme-border rounded-lg p-6 bg-theme-bg-subtle">
         <p className="text-sm text-theme-fg-muted">{job.type} · {statusLabel}</p>
         {job.input && (
-          <pre className="mt-2 text-sm text-theme-fg whitespace-pre-wrap bg-theme-bg-overlay p-3 rounded border border-theme-border">
+          <pre className="mt-2 text-sm text-theme-fg whitespace-pre-wrap break-words overflow-x-auto bg-theme-bg-overlay p-3 rounded border border-theme-border">
             {JSON.stringify(job.input, null, 2)}
           </pre>
         )}
@@ -87,7 +87,7 @@ export default function JobDetailPage() {
                   !url ? null : /\.(mp4|webm|mov)$/i.test(url) ? (
                     <VideoPlayer key={url} src={url} className="max-w-2xl" />
                   ) : (
-                    <img key={url} src={url} alt="" className="max-w-full h-auto rounded border border-theme-border" />
+                    <img key={url} src={url} alt="" className="max-w-full h-auto rounded border border-theme-border" loading="lazy" decoding="async" />
                   )
                 )}
               </div>

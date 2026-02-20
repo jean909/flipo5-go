@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { uploadAttachments } from '@/lib/api';
 import { getMediaDisplayUrl } from '@/lib/api';
 import { t } from '@/lib/i18n';
@@ -31,6 +31,12 @@ export function LogoDialog({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
 
   if (!open) return null;
 
@@ -72,7 +78,7 @@ export function LogoDialog({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-theme-bg-hover text-theme-fg"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-theme-bg-hover text-theme-fg"
             aria-label="Close"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -96,7 +102,7 @@ export function LogoDialog({
                   className="w-14 h-14 rounded-lg border border-theme-border overflow-hidden bg-theme-bg-subtle hover:border-theme-accent flex-shrink-0 p-2"
                   title={el.name}
                 >
-                  <img src={el.url} alt={el.name} className="w-full h-full object-contain" />
+                  <img src={el.url} alt={el.name} className="w-full h-full object-contain" loading="lazy" decoding="async" />
                 </button>
               ))}
             </div>
@@ -127,7 +133,7 @@ export function LogoDialog({
                   onClick={() => handlePick(logo.url, logo.name)}
                   className="w-14 h-14 rounded-lg border border-theme-border overflow-hidden bg-theme-bg-hover hover:border-theme-accent flex-shrink-0"
                 >
-                  <img src={getMediaDisplayUrl(logo.url, mediaToken) || logo.url} alt={logo.name} className="w-full h-full object-contain" />
+                  <img src={getMediaDisplayUrl(logo.url, mediaToken) || logo.url} alt={logo.name} className="w-full h-full object-contain" loading="lazy" decoding="async" />
                 </button>
               ))}
               {savedLogos.length === 0 && (

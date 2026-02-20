@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
@@ -12,6 +13,12 @@ type Props = {
 };
 
 export function ArchivedDialog({ open, title, message, profileLabel, onClose }: Props) {
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+
   if (!open) return null;
 
   return (
@@ -28,7 +35,7 @@ export function ArchivedDialog({ open, title, message, profileLabel, onClose }: 
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-3 right-3 p-1.5 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+          className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
           aria-label="Close"
         >
           <XIcon className="w-5 h-5" />
@@ -38,7 +45,7 @@ export function ArchivedDialog({ open, title, message, profileLabel, onClose }: 
         <Link
           href="/dashboard/profile?fromArchive=1"
           onClick={onClose}
-          className="block w-full text-center py-3 rounded-xl text-sm font-medium bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong transition-colors"
+          className="block w-full text-center min-h-[44px] flex items-center justify-center py-3 rounded-xl text-sm font-medium bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong transition-colors"
         >
           {profileLabel}
         </Link>

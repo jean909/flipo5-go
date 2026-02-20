@@ -152,6 +152,10 @@ function applyVibrance(ctx: CanvasRenderingContext2D, w: number, h: number, amou
 }
 
 export function AdjustmentsModal({ imageUrl, itemId, onClose, onSuccess, onUpload, locale }: AdjustmentsModalProps) {
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -315,7 +319,7 @@ export function AdjustmentsModal({ imageUrl, itemId, onClose, onSuccess, onUploa
       <div className="relative z-10 bg-theme-bg rounded-xl border border-theme-border shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-theme-border">
           <h3 className="font-semibold text-theme-fg">{t(locale, 'studio.adjustments')}</h3>
-          <button type="button" onClick={onClose} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Close">
+          <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Close">
             ×
           </button>
         </div>

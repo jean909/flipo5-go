@@ -454,7 +454,7 @@ export function JobsInProgressButton() {
           setOpen((o) => !o);
           if (!open) fetchJobs();
         }}
-        className={`relative flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-sm border transition-all group ${
+        className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full backdrop-blur-sm border transition-all group ${
           pendingJobs.length > 0
             ? 'bg-theme-accent-muted text-theme-accent border-theme-accent-border hover:bg-theme-accent-hover'
             : completedToasts.length > 0 || failedToasts.length > 0

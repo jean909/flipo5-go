@@ -35,12 +35,16 @@ export function ConfirmDialog({
 
   useEffect(() => {
     if (!open) return;
+    document.body.style.overflow = 'hidden';
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Enter') onConfirm();
     };
     window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', h);
+    };
   }, [open, onConfirm, onCancel]);
 
   useEffect(() => {
@@ -69,12 +73,12 @@ export function ConfirmDialog({
         <h3 id={DIALOG_TITLE_ID} className="font-display text-lg font-bold text-theme-fg mb-2">{title}</h3>
         {message && <p className="text-sm text-theme-fg-muted mb-6">{message}</p>}
         {customContent}
-        <div className="flex gap-3 justify-end">
+        <div className="flex flex-wrap gap-3 justify-end">
           {!alert && (
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+              className="min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
             >
               {cancelLabel}
             </button>
@@ -83,7 +87,7 @@ export function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${confirmClass}`}
+            className={`min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${confirmClass}`}
           >
             {confirmLabel}
           </button>

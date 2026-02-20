@@ -25,8 +25,16 @@ export function Header({ dark }: { dark?: boolean }) {
   const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setIsScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', onScroll);
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        setIsScrolled(window.scrollY > 50);
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
@@ -51,11 +59,11 @@ export function Header({ dark }: { dark?: boolean }) {
 
   return (
     <header
-      className={`sticky top-0 left-0 right-0 z-50 transition-all duration-300 ${isDark ? 'bg-black' : 'bg-white'} ${isScrolled ? `border-b ${borderCls}` : ''}`}
+      className={`sticky top-0 left-0 right-0 z-50 transition-all duration-300 pt-[env(safe-area-inset-top)] ${isDark ? 'bg-black' : 'bg-white'} ${isScrolled ? `border-b ${borderCls}` : ''}`}
       onMouseLeave={() => setActiveDropdown(null)}
     >
       <nav className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
+        <div className="flex min-h-16 h-16 items-center justify-between">
           <Link
             href="/"
             className="group flex items-baseline gap-0.5 tracking-tight"
@@ -105,7 +113,8 @@ export function Header({ dark }: { dark?: boolean }) {
             <motion.button
               whileTap={{ scale: 0.92 }}
               onClick={() => { setIsMenuOpen(!isMenuOpen); setActiveDropdown(null); }}
-              className={`p-2 rounded-md ${isDark ? 'text-white hover:bg-neutral-800' : 'text-black hover:bg-neutral-100'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md ${isDark ? 'text-white hover:bg-neutral-800' : 'text-black hover:bg-neutral-100'}`}
+              aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
             >
               {isMenuOpen ? <XIcon className="w-5 h-5" /> : <MenuIcon className="w-5 h-5" />}
             </motion.button>

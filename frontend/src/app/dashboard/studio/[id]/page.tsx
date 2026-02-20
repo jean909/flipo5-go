@@ -119,6 +119,14 @@ export default function StudioProjectPage() {
   const [brushEditForInpaint, setBrushEditForInpaint] = useState(false);
   const [maskBlobForInpaint, setMaskBlobForInpaint] = useState<Blob | null>(null);
   const [editMode, setEditMode] = useState<'edit' | 'edit_brush'>('edit');
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  useEffect(() => {
+    if (leftPanelOpen || rightPanelOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+  }, [leftPanelOpen, rightPanelOpen]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageWrapRef = useRef<HTMLDivElement>(null);
   const [imageBoxSize, setImageBoxSize] = useState<{ w: number; h: number } | null>(null);
@@ -714,9 +722,9 @@ export default function StudioProjectPage() {
       )}
       {/* Top bar: project + undo/redo + versions + New + tools + view + download/upload */}
       <header className="shrink-0 border-b border-theme-border bg-theme-bg">
-        <div className="h-11 px-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 min-w-0 shrink-0">
-            <Link href="/dashboard/studio" className="text-theme-fg-subtle hover:text-theme-fg p-1" aria-label="Back">
+        <div className="min-h-[48px] h-11 px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink-0">
+            <Link href="/dashboard/studio" className="text-theme-fg-subtle hover:text-theme-fg min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md -ml-1 sm:ml-0" aria-label="Back">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
@@ -765,8 +773,14 @@ export default function StudioProjectPage() {
             </Link>
           </div>
 
-          {/* Tools bar - center */}
+          {/* Tools bar - center (on mobile: Edit/Tools open drawers first) */}
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-subtle flex-1 min-w-0 justify-center">
+            <div className="lg:hidden flex items-center gap-1 shrink-0 mr-1">
+              <button type="button" onClick={() => { setLeftPanelOpen(true); setRightPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium" aria-label="Edit panel">Edit</button>
+              {items.some((i) => i.type === 'image') && (
+                <button type="button" onClick={() => { setRightPanelOpen(true); setLeftPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium" aria-label="Tools panel">{t(locale, 'studio.tools')}</button>
+              )}
+            </div>
             <button
               type="button"
               onClick={handleRemoveBg}
@@ -832,10 +846,22 @@ export default function StudioProjectPage() {
         <input ref={fileInputRef} type="file" accept="image/*,video/mp4,video/webm,video/quicktime" className="hidden" onChange={handleUpload} disabled={uploading} />
       </header>
 
-      {/* Main: sidebar + canvas */}
-      <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Left sidebar: Edit | Edit using Brush (top), AI prompt (bottom) */}
-        <aside className="w-52 shrink-0 flex flex-col border-r border-theme-border bg-theme-bg p-4">
+      {/* Main: sidebar + canvas — on lg sidebars inline; on mobile drawers */}
+      <div className="flex-1 min-h-0 flex overflow-hidden relative">
+        {/* Backdrop when a panel is open on mobile */}
+        {(leftPanelOpen || rightPanelOpen) && (
+          <div
+            className="lg:hidden fixed inset-0 z-30 bg-theme-bg-overlay"
+            onClick={() => { setLeftPanelOpen(false); setRightPanelOpen(false); }}
+            aria-hidden
+          />
+        )}
+        {/* Left sidebar: Edit | Edit using Brush (top), AI prompt (bottom) — drawer on mobile */}
+        <aside className={`fixed lg:relative inset-y-0 left-0 z-40 w-72 lg:w-52 shrink-0 flex flex-col border-r border-theme-border bg-theme-bg p-4 transition-transform duration-200 lg:translate-x-0 ${leftPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="flex items-center justify-between mb-3 lg:hidden">
+            <span className="text-sm font-medium text-theme-fg">Edit</span>
+            <button type="button" onClick={() => setLeftPanelOpen(false)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg" aria-label="Close">×</button>
+          </div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">Edit</label>
             <div className="flex gap-1.5">
@@ -1085,7 +1111,7 @@ export default function StudioProjectPage() {
                             {selectedItem.type === 'video' ? (
                               <video src={displayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
                             ) : (
-                              <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} />
+                              <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} decoding="async" />
                             )}
                           </button>
                           <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1239,10 +1265,14 @@ export default function StudioProjectPage() {
           )}
         </main>
 
-        {/* Right toolbar: tools (clone, colorize, highlight/brush) - show when project has at least one image */}
+        {/* Right toolbar: tools (clone, colorize, highlight/brush) — drawer on mobile */}
         {items.some((i) => i.type === 'image') && (
-          <aside className="w-40 shrink-0 flex flex-col border-l border-theme-border bg-theme-bg p-3 min-w-0">
-            <p className="text-xs font-medium text-theme-fg-muted mb-2">{t(locale, 'studio.tools')}</p>
+          <aside className={`fixed lg:relative inset-y-0 right-0 z-40 w-72 lg:w-40 shrink-0 flex flex-col border-l border-theme-border bg-theme-bg p-3 min-w-0 transition-transform duration-200 lg:translate-x-0 ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className="flex items-center justify-between mb-2 lg:hidden">
+              <p className="text-sm font-medium text-theme-fg">{t(locale, 'studio.tools')}</p>
+              <button type="button" onClick={() => setRightPanelOpen(false)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg" aria-label="Close">×</button>
+            </div>
+            <p className="text-xs font-medium text-theme-fg-muted mb-2 hidden lg:block">{t(locale, 'studio.tools')}</p>
             {selectedItem?.type !== 'image' ? (
               <p className="text-xs text-theme-fg-subtle">Select an image below to use tools.</p>
             ) : (
@@ -1351,7 +1381,7 @@ export default function StudioProjectPage() {
                     <div key={o.id} className="flex items-center gap-2 rounded-lg border border-theme-border bg-theme-bg-hover p-1.5">
                       <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-theme-bg-subtle flex items-center justify-center">
                         {o.type === 'image' ? (
-                          <img src={getMediaDisplayUrl(o.url, mediaToken) ?? o.url} alt="" className="w-full h-full object-contain" />
+                          <img src={getMediaDisplayUrl(o.url, mediaToken) ?? o.url} alt="" className="w-full h-full object-contain" loading="lazy" decoding="async" />
                         ) : (
                           <span className="text-[10px] text-theme-fg-muted font-bold">T</span>
                         )}

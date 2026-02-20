@@ -133,16 +133,16 @@ export default function StartPage() {
     }
   }
 
-  const cardCls = 'relative z-10 w-full max-w-md rounded-2xl border border-theme-border-subtle bg-theme-bg-subtle p-8 shadow-2xl backdrop-blur-md';
-  const inputCls = 'w-full px-4 py-3 rounded-xl bg-theme-bg-elevated border border-theme-border-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-border focus:border-theme-border transition-all';
+  const cardCls = 'relative z-10 w-full max-w-md rounded-2xl border border-theme-border-subtle bg-theme-bg-subtle p-6 sm:p-8 shadow-2xl backdrop-blur-md';
+  const inputCls = 'w-full px-4 py-3 min-h-[48px] rounded-xl bg-theme-bg-elevated border border-theme-border-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-border focus:border-theme-border transition-all';
   const labelCls = 'block text-xs font-medium text-theme-fg-subtle uppercase tracking-wider mb-2';
-  const btnPrimary = 'w-full py-3.5 px-4 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 disabled:opacity-50 transition-colors';
-  const btnSecondary = 'w-full py-2.5 px-4 rounded-xl border border-theme-border text-theme-fg font-medium hover:bg-theme-bg-hover transition-colors';
+  const btnPrimary = 'w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 disabled:opacity-50 transition-colors';
+  const btnSecondary = 'w-full min-h-[48px] py-2.5 px-4 rounded-xl border border-theme-border text-theme-fg font-medium hover:bg-theme-bg-hover transition-colors';
 
   return (
     <div className="min-h-screen bg-theme-bg text-theme-fg flex flex-col">
       <Header dark />
-      <main className="flex-1 relative flex flex-col items-center justify-center px-4 overflow-hidden min-h-[calc(100vh-4rem)] py-8">
+      <main className="flex-1 relative flex flex-col items-center justify-center px-4 overflow-y-auto min-h-[calc(100vh-4rem)] py-6 sm:py-8">
         <SpaceBackground />
 
         <AnimatePresence mode="wait">

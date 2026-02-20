@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import type { LogoOverlayItem } from './MultiLogoPlacer';
@@ -34,7 +34,16 @@ interface TextDialogProps {
   locale: Locale;
 }
 
+function useBodyScrollLock(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+}
+
 export function TextDialog({ open, onClose, onAdd, locale }: TextDialogProps) {
+  useBodyScrollLock(open);
   const [text, setText] = useState('');
   const [fontSizePt, setFontSizePt] = useState(16);
   const [fontFamily, setFontFamily] = useState('Arial');
@@ -67,7 +76,7 @@ export function TextDialog({ open, onClose, onAdd, locale }: TextDialogProps) {
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-theme-border">
           <h2 className="text-lg font-semibold text-theme-fg">{t(locale, 'studio.textDialogTitle')}</h2>
-          <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-theme-bg-hover text-theme-fg" aria-label="Close">
+          <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-theme-bg-hover text-theme-fg" aria-label="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>

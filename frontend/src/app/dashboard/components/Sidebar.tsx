@@ -41,6 +41,14 @@ export function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
+    const m = window.matchMedia('(max-width: 639px)');
+    const onMatch = () => setCollapsed((c) => (m.matches ? true : c));
+    onMatch();
+    m.addEventListener('change', onMatch);
+    return () => m.removeEventListener('change', onMatch);
+  }, []);
+
+  useEffect(() => {
     if (!sessionsExpanded || collapsed) return;
     let cancelled = false;
     setThreadsLoading(true);
@@ -117,7 +125,7 @@ export function Sidebar() {
           <Link
             key={href}
             href={href === '/dashboard' && pathname === '/dashboard' ? '/dashboard?new=1' : href}
-            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
+            className={`flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
               isActive ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
             }`}
             title={collapsed ? t(locale, labelKey) : undefined}
@@ -144,7 +152,7 @@ export function Sidebar() {
             <button
               type="button"
               onClick={() => setSessionsExpanded((e) => !e)}
-              className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 w-full ${
+              className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 w-full ${
                 pathname === '/dashboard/sessions' || sessionsExpanded
                   ? 'bg-theme-bg-hover text-theme-fg'
                   : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
@@ -221,7 +229,7 @@ export function Sidebar() {
         {collapsed && (
           <Link
             href="/dashboard/sessions"
-            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors"
+            className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors"
             title={t(locale, 'nav.sessions')}
           >
             <SessionsIcon className="w-5 h-5 shrink-0" />
@@ -231,7 +239,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-theme-border flex flex-col gap-1">
         <Link
           href="/dashboard/profile"
-          className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
+          className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
             pathname === '/dashboard/profile' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
           }`}
           title={collapsed ? displayName || t(locale, 'nav.profile') : undefined}
@@ -253,7 +261,7 @@ export function Sidebar() {
         </Link>
         <Link
           href="/dashboard/settings"
-          className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors min-w-0 ${
+          className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
             pathname === '/dashboard/settings' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
           }`}
           title={collapsed ? t(locale, 'nav.settings') : undefined}
@@ -276,7 +284,7 @@ export function Sidebar() {
         {isAdminUser(user) && (
           <Link
             href="/admin"
-            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-theme-accent hover:bg-theme-bg-hover transition-colors min-w-0"
+            className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-accent hover:bg-theme-bg-hover transition-colors min-w-0"
             title="Admin"
           >
             <AdminIcon className="w-5 h-5 shrink-0" />
@@ -298,7 +306,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-left transition-colors w-full"
+          className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-left transition-colors w-full"
           title={t(locale, 'nav.logout')}
         >
           <DoorIcon className="w-5 h-5 shrink-0" />

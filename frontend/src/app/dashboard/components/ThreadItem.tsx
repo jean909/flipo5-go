@@ -97,7 +97,7 @@ export function ThreadItem({
   );
 
   const linkCls = card
-    ? 'block rounded-xl border border-theme-border bg-theme-bg-subtle p-4 hover:bg-theme-bg-hover hover:border-theme-border-hover transition-all'
+    ? 'block min-h-[44px] rounded-xl border border-theme-border bg-theme-bg-subtle p-4 hover:bg-theme-bg-hover hover:border-theme-border-hover transition-all'
     : isActive
       ? 'block px-2 py-2 rounded transition-colors bg-theme-bg-elevated text-theme-fg'
       : compact

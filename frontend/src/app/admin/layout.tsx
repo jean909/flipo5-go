@@ -16,6 +16,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,18 +55,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
+
   return (
     <div className="min-h-screen bg-theme-bg text-theme-fg flex">
-      <aside className="w-56 shrink-0 border-r border-theme-border bg-theme-bg-elevated flex flex-col">
-        <div className="p-4 border-b border-theme-border">
-          <Link href="/admin" className="font-semibold text-theme-fg">Admin</Link>
+      {/* Mobile menu button */}
+      <button
+        type="button"
+        onClick={() => setSidebarOpen(true)}
+        className="md:hidden fixed top-4 left-4 z-30 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border border-theme-border bg-theme-bg-elevated text-theme-fg hover:bg-theme-bg-hover"
+        aria-label="Open menu"
+      >
+        <MenuIcon className="w-5 h-5" />
+      </button>
+      {/* Backdrop when sidebar open on mobile */}
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-theme-bg-overlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+      <aside className={`w-56 shrink-0 border-r border-theme-border bg-theme-bg-elevated flex flex-col z-50 transition-transform md:relative fixed inset-y-0 left-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-4 border-b border-theme-border flex items-center justify-between">
+          <Link href="/admin" className="font-semibold text-theme-fg" onClick={() => setSidebarOpen(false)}>Admin</Link>
+          <button type="button" onClick={() => setSidebarOpen(false)} className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg" aria-label="Close menu">
+            <XIcon className="w-5 h-5" />
+          </button>
         </div>
         <nav className="p-2 flex flex-col gap-0.5">
           {nav.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
-              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+              onClick={() => setSidebarOpen(false)}
+              className={`min-h-[44px] flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${
                 pathname === href ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
               }`}
             >
@@ -74,14 +102,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ))}
         </nav>
         <div className="mt-auto p-2 border-t border-theme-border">
-          <Link href="/dashboard" className="block px-3 py-2 rounded-lg text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg">
+          <Link href="/dashboard" onClick={() => setSidebarOpen(false)} className="flex items-center min-h-[44px] px-3 py-2 rounded-lg text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg">
             Back to App
           </Link>
         </div>
       </aside>
-      <main className="flex-1 min-w-0 overflow-auto p-6 scrollbar-subtle">
+      <main className="flex-1 min-w-0 overflow-auto p-6 pt-16 md:pt-6 scrollbar-subtle">
         {children}
       </main>
     </div>
+  );
+}
+
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
   );
 }

@@ -100,7 +100,7 @@ export default function ContentPage() {
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:border-theme-border-strong focus:outline-none focus:ring-1 focus:ring-theme-border-hover"
           />
         </form>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['', 'image', 'video'] as const).map((typeVal) => (
             <a
               key={typeVal || 'all'}

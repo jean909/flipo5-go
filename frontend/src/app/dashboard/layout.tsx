@@ -47,14 +47,14 @@ export default function DashboardLayout({
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 min-h-0 relative">
         {!pathname.startsWith('/dashboard/studio') && (
-        <div className="fixed top-4 right-4 z-10 flex items-center gap-2">
+        <div className="fixed z-10 flex items-center gap-2 right-4 top-4 [top:max(1rem,env(safe-area-inset-top))] [right:max(1rem,env(safe-area-inset-right))]">
           <button
             type="button"
             onClick={() => {
               setIncognito(!incognito);
               if (pathname === '/dashboard') router.replace('/dashboard?new=1');
             }}
-            className={`relative flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-sm border transition-all group ${
+            className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full backdrop-blur-sm border transition-all group ${
               incognito
                 ? 'bg-theme-accent-muted text-theme-accent border-theme-accent-border hover:bg-theme-accent-hover'
                 : 'bg-theme-bg-hover text-theme-fg/80 border-theme-border hover:bg-theme-bg-hover-strong hover:text-theme-fg hover:border-theme-border-hover'
@@ -69,7 +69,7 @@ export default function DashboardLayout({
           </button>
           <Link
             href={pathname === '/dashboard' ? '/dashboard?new=1' : '/dashboard'}
-            className="relative flex h-10 w-10 items-center justify-center rounded-full bg-theme-bg-hover text-theme-fg/80 backdrop-blur-sm border border-theme-border hover:bg-theme-bg-hover-strong hover:text-theme-fg hover:border-theme-border-hover transition-all group"
+            className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-theme-bg-hover text-theme-fg/80 backdrop-blur-sm border border-theme-border hover:bg-theme-bg-hover-strong hover:text-theme-fg hover:border-theme-border-hover transition-all group"
             title={t(locale, 'nav.new')}
             aria-label={t(locale, 'nav.new')}
           >
@@ -81,7 +81,9 @@ export default function DashboardLayout({
           <JobsInProgressButton />
         </div>
         )}
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <div className={!pathname.startsWith('/dashboard/studio') ? 'pt-[max(3.5rem,calc(2rem+env(safe-area-inset-top)))] pr-[max(5rem,calc(4rem+env(safe-area-inset-right)))] sm:pr-24 flex-1 flex flex-col min-h-0 min-w-0' : 'flex-1 flex flex-col min-h-0 min-w-0'}>
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </div>
       </main>
     </div>
     </JobsInProgressProvider>

@@ -6,7 +6,7 @@ import type { Locale } from '@/lib/i18n';
 import { downloadMediaUrl, setJobFeedback } from '@/lib/api';
 
 const btnCls =
-  'flex items-center justify-center w-9 h-9 rounded-lg text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover active:scale-95 transition-[color,background,transform] duration-150 disabled:opacity-50 disabled:pointer-events-none';
+  'flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover active:scale-95 transition-[color,background,transform] duration-150 disabled:opacity-50 disabled:pointer-events-none';
 const iconCls = 'w-5 h-5 shrink-0';
 
 export interface ResultActionsBarProps {

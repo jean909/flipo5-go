@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import { generatePromptVariants } from '@/lib/api';
@@ -35,6 +35,11 @@ const MOVEMENT_OPTIONS = [
 ];
 
 export function PromptBuilderDialog({ open, onClose, onPick, locale, mode }: PromptBuilderDialogProps) {
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
   const [step, setStep] = useState(1);
   const [description, setDescription] = useState('');
   const [angle, setAngle] = useState('');
@@ -108,7 +113,7 @@ export function PromptBuilderDialog({ open, onClose, onPick, locale, mode }: Pro
               {step <= maxStep && `Step ${step} of ${maxStep}`}
             </p>
           </div>
-          <button type="button" onClick={handleClose} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Close">×</button>
+          <button type="button" onClick={handleClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Close">×</button>
         </div>
         <div className="p-4 overflow-y-auto flex-1 min-h-0">
           {error && (
