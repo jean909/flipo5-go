@@ -963,6 +963,7 @@ func (s *Server) createUpscale(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "upscale", input, nil)
 	if err != nil {
+		log.Printf("[createUpscale] CreateJob failed: %v", err)
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
