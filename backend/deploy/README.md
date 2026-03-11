@@ -50,3 +50,58 @@ export DEPLOY_SERVER=root@IP_SERVER
 
 1. Git add/commit (backend, deploy, docker-compose, frontend), push.
 2. Pe server: `mkdir -p $DEPLOY_PATH` → `cd $DEPLOY_PATH` → `git pull` → `docker compose build api` → `docker compose up -d`.
+
+## Port 8080 deja folosit
+
+Dacă vezi `Bind for 0.0.0.0:8080 failed: port is already allocated`:
+
+**1. Vezi ce folosește 8080:**
+```bash
+# Variantă 1 (recomandat)
+ss -tlnp | grep 8080
+
+# Variantă 2
+lsof -i :8080
+```
+
+**2. Dacă e un container Docker:**
+```bash
+docker ps
+docker stop <container_id_sau_nume>
+# sau oprește toate containerele din proiect:
+cd ~/backend/flipo5 && docker compose down
+```
+
+**3. Dacă e un proces (ex. vechiul API ruleat direct):**
+```bash
+# Din output la ss/lsof ai PID-ul (ultima coloană)
+kill <PID>
+# sau forțat: kill -9 <PID>
+```
+
+Apoi rulezi din nou: `docker compose up -d`.
+
+## Închidere și ștergere my-backend (sau alt proiect vechi)
+
+Ca să păstrezi doar Flipo5 și să închizi + ștergi datele de la proiectul vechi (ex. my-backend):
+
+```bash
+# 1. Oprește containerele vechi (numele din docker ps)
+docker stop my-backend-api-1 my-backend-redis-1
+
+# 2. Șterge containerele
+docker rm my-backend-api-1 my-backend-redis-1
+
+# 3. Șterge volumele (date Redis etc.) – opțional, dacă vrei totul șters
+docker volume ls | grep my-backend
+docker volume rm <nume_volume_my-backend>
+
+# 4. Șterge imaginile vechi (opțional, eliberează spațiu)
+docker image rm my-backend-api
+```
+
+Apoi pornești doar Flipo5:
+```bash
+cd ~/backend/flipo5
+docker compose up -d
+```

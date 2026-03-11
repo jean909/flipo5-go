@@ -1,7 +1,14 @@
 # Flipo5 backend – run on Hetzner (or local) with: docker compose up -d
-# Requires .env in this directory (DATABASE_URL, REDIS_URL, REPLICATE_API_TOKEN, etc.)
+# Requires .env (DATABASE_URL, REPLICATE_API_TOKEN, SUPABASE_*, etc.). REDIS_URL is set automatically to redis service.
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: flipo5-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
   api:
     build:
       context: ./backend
@@ -9,9 +16,15 @@ services:
     image: flipo5-api:latest
     container_name: flipo5-api
     restart: unless-stopped
+    depends_on:
+      - redis
     ports:
       - "8080:8080"
     env_file:
       - .env
     environment:
       - PORT=8080
+      - REDIS_URL=redis://redis:6379
+
+volumes:
+  redis_data:

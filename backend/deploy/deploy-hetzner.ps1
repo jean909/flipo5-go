@@ -37,11 +37,19 @@ if ($staged) {
 Write-Host "=== Pushing to git ==="
 git push
 
-# Pe server: creeaza folderul daca nu exista (ex: ~/backend/flipo5 pentru mai multe aplicatii)
+# Pe server: creeaza folderul daca nu exista; daca nu e clone git, face clone la prima rulare
 $RemotePath = if ($env:DEPLOY_PATH) { $env:DEPLOY_PATH } else { "~/backend/flipo5" }
+$RepoUrl = (git remote get-url origin 2>$null)
+if (-not $RepoUrl) {
+    Write-Host "Warning: could not get git remote URL. First time on server, run: ssh $Server 'git clone <URL> $RemotePath'"
+}
 Write-Host "=== Deploying to $Server (path: $RemotePath) ==="
-# mkdir -p creaza tot path-ul; apoi cd si git pull + docker
-$remoteCmd = "mkdir -p $RemotePath && cd $RemotePath && git pull && docker compose build api && docker compose up -d"
+# Daca nu exista .git in folder, face clone; altfel git pull. Apoi docker.
+if ($RepoUrl) {
+    $remoteCmd = "mkdir -p $RemotePath && cd $RemotePath && if [ ! -d .git ]; then git clone $RepoUrl . ; else git pull; fi && docker compose build api && docker compose up -d"
+} else {
+    $remoteCmd = "mkdir -p $RemotePath && cd $RemotePath && git pull && docker compose build api && docker compose up -d"
+}
 ssh $Server $remoteCmd
 Write-Host "Done. Check: ssh $Server 'cd $RemotePath && docker compose ps'"
 Write-Host "Logs: ssh $Server 'cd $RemotePath && docker compose logs api --tail 20'"
