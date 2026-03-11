@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -944,6 +945,97 @@ func (h *Handlers) SummarizeThreadHandler(ctx context.Context, t *asynq.Task) er
 	return nil
 }
 
+// fetchPageText fetches a URL and returns stripped plain text (max ~6000 chars).
+func fetchPageText(ctx context.Context, rawURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Flipo5SEO/1.0)")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("HTTP %d from %s", resp.StatusCode, rawURL)
+	}
+	// Read at most 1 MB
+	body := make([]byte, 0, 1024*1024)
+	buf := make([]byte, 4096)
+	read := 0
+	for read < 1024*1024 {
+		n, readErr := resp.Body.Read(buf)
+		body = append(body, buf[:n]...)
+		read += n
+		if readErr != nil {
+			break
+		}
+	}
+	html := string(body)
+	// Remove <script> and <style> blocks
+	for _, tag := range []string{"script", "style", "noscript", "nav", "footer", "header"} {
+		for {
+			open := strings.Index(strings.ToLower(html), "<"+tag)
+			if open < 0 {
+				break
+			}
+			close := strings.Index(strings.ToLower(html[open:]), "</"+tag+">")
+			if close < 0 {
+				break
+			}
+			html = html[:open] + " " + html[open+close+len("</"+tag+">"):]
+		}
+	}
+	// Strip remaining HTML tags
+	inTag := false
+	var sb strings.Builder
+	for _, ch := range html {
+		if ch == '<' {
+			inTag = true
+			sb.WriteRune(' ')
+			continue
+		}
+		if ch == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			sb.WriteRune(ch)
+		}
+	}
+	text := sb.String()
+	// Decode common entities
+	replacer := strings.NewReplacer(
+		"&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`,
+		"&apos;", "'", "&#39;", "'", "&nbsp;", " ", "&hellip;", "...",
+	)
+	text = replacer.Replace(text)
+	// Normalize whitespace
+	var clean strings.Builder
+	prevSpace := false
+	for _, ch := range text {
+		isSpace := ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+		if isSpace {
+			if !prevSpace {
+				clean.WriteRune('\n')
+			}
+			prevSpace = true
+		} else {
+			clean.WriteRune(ch)
+			prevSpace = false
+		}
+	}
+	result := strings.TrimSpace(clean.String())
+	// Limit to ~6000 chars for AI prompt
+	if len(result) > 6000 {
+		result = result[:6000] + "…"
+	}
+	return result, nil
+}
+
 func (h *Handlers) SEOHandler(ctx context.Context, t *asynq.Task) error {
 	var p SEOPayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -976,34 +1068,50 @@ func (h *Handlers) SEOHandler(ctx context.Context, t *asynq.Task) error {
 	}
 
 	userContent := ""
+	fetchedURL := ""
 	if sourceURL != "" {
-		userContent = "URL to analyze: " + sourceURL + "\n\n"
+		// Actually fetch the page content
+		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		fetched, fetchErr := fetchPageText(fetchCtx, sourceURL)
+		cancel()
+		if fetchErr != nil {
+			log.Printf("[SEOHandler] URL fetch failed for %s: %v", sourceURL, fetchErr)
+			// Fallback: tell AI the URL and ask it to work from that
+			userContent = "URL: " + sourceURL + "\n(page could not be fetched — use the URL to infer topic and create SEO content)\n\n"
+		} else {
+			fetchedURL = sourceURL
+			userContent = "Source URL: " + sourceURL + "\n\nPage content extracted:\n" + fetched + "\n\n"
+		}
 	}
 	if sourceText != "" {
-		userContent += "Content to optimize:\n" + sourceText
+		userContent += "Additional content to optimize:\n" + sourceText
 	}
 	if userContent == "" {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "no source text or URL provided", 0, "")
 		return nil
 	}
+	_ = fetchedURL // used for logging only
 
-	systemPrompt := `You are an expert SEO content strategist and copywriter. Your task is to analyze the provided content and create a fully SEO-optimized article.
+	systemPrompt := `You are a senior SEO specialist and content strategist. Your task is to analyze the provided page content and produce a comprehensive SEO optimization package.
 
-Respond ONLY with a valid JSON object (no markdown, no code fences) with exactly these keys:
-- "meta_title": string (50-60 characters, compelling, includes primary keyword)
-- "meta_description": string (150-160 characters, includes CTA)
-- "keywords": array of strings (8-12 primary and secondary keywords)
-- "slug": string (URL-friendly slug, lowercase, hyphens)
-- "article": string (full SEO article in markdown, 800-1200 words, with H2/H3 headings, intro, body, conclusion)
-- "html": string (the article converted to clean semantic HTML5 with proper heading tags, paragraph tags, no inline styles)
+Respond ONLY with a valid JSON object (no markdown fences, no comments) with EXACTLY these keys:
+- "meta_title": string, 50-60 chars, compelling, primary keyword near start
+- "meta_description": string, 150-160 chars, includes a CTA verb
+- "keywords": array of 10-14 strings (mix of short-tail and long-tail)
+- "slug": string, URL-safe, max 5-6 words, hyphens only
+- "article": string, 1000-1400 words, markdown, with intro + 3-4 H2 sections + FAQ + conclusion
+- "html": string, clean semantic HTML5 (h1,h2,h3,p,ul,li,strong), no inline styles
+- "focus_keyword": string, single most important keyword
+- "readability_tips": array of 3-5 short strings with concrete improvement suggestions
+- "internal_links": array of 3-5 objects with {anchor: string, topic: string} — suggested internal link topics
 
 Language: ` + lang + `
-Tone: Professional, engaging, optimized for search intent.`
+Tone: Authoritative, trustworthy, conversion-focused.`
 
 	input := map[string]interface{}{
 		"system_prompt": systemPrompt,
-		"prompt":        "Analyze and optimize:\n\n" + userContent,
-		"max_tokens":    4096,
+		"prompt":        "Analyze and produce full SEO package for:\n\n" + userContent,
+		"max_tokens":    6000,
 	}
 
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, model, input)
