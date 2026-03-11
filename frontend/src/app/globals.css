@@ -46,7 +46,6 @@
 
 /* Mobile-first: prevent iOS zoom on focus (inputs need min 16px) */
 html {
-  scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -61,6 +60,26 @@ body {
 /* Inputs/select/textarea: min 16px to prevent iOS zoom on focus */
 input, select, textarea {
   font-size: max(16px, 1rem);
+}
+
+/* Theme-native selects: dark dropdown to match app theme (no white/blue) */
+.select-theme {
+  color-scheme: dark;
+}
+.select-theme select {
+  background-color: var(--theme-bg-elevated);
+  color: var(--fg);
+  border-color: var(--border);
+  accent-color: var(--theme-accent);
+}
+.select-theme select:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+.select-theme select option {
+  background-color: var(--theme-bg-elevated);
+  color: var(--fg);
 }
 
 /* Grid overlay */

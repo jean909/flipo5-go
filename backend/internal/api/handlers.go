@@ -908,8 +908,14 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createUpscale(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ImageURL string `json:"image_url"`
-		Scale    int    `json:"scale"`
+		ImageURL                 string   `json:"image_url"`
+		Scale                    int      `json:"scale"`
+		EnhanceModel             string   `json:"enhance_model"`
+		OutputFormat             string   `json:"output_format"`
+		FaceEnhancement          *bool    `json:"face_enhancement"`
+		SubjectDetection         string   `json:"subject_detection"`
+		FaceEnhancementCreativity *float64 `json:"face_enhancement_creativity"`
+		FaceEnhancementStrength  *float64 `json:"face_enhancement_strength"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -936,6 +942,24 @@ func (s *Server) createUpscale(w http.ResponseWriter, r *http.Request) {
 	input := map[string]interface{}{
 		"image_url": imageURL,
 		"scale":     req.Scale,
+	}
+	if req.EnhanceModel != "" {
+		input["enhance_model"] = req.EnhanceModel
+	}
+	if req.OutputFormat != "" {
+		input["output_format"] = req.OutputFormat
+	}
+	if req.FaceEnhancement != nil {
+		input["face_enhancement"] = *req.FaceEnhancement
+	}
+	if req.SubjectDetection != "" {
+		input["subject_detection"] = req.SubjectDetection
+	}
+	if req.FaceEnhancementCreativity != nil {
+		input["face_enhancement_creativity"] = *req.FaceEnhancementCreativity
+	}
+	if req.FaceEnhancementStrength != nil {
+		input["face_enhancement_strength"] = *req.FaceEnhancementStrength
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "upscale", input, nil)
 	if err != nil {

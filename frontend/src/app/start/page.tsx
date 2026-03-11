@@ -4,13 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { checkEmail, signInWithPassword, signUpWithPassword, updateProfile, syncMe } from '@/lib/api';
+import { checkEmail, signInWithPassword, signUpWithPassword, updateProfile, syncMe, resetPasswordForEmail } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { Header } from '@/app/components/Header';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 
-type Step = 'email' | 'password' | 'dialog' | 'signup' | 'confirm_email' | 'onboarding' | 'plan';
+type Step = 'email' | 'password' | 'forgot' | 'forgot_sent' | 'dialog' | 'signup' | 'confirm_email' | 'onboarding' | 'plan';
 
 const PLANS = [
   { id: 'free', nameKey: 'start.plan.free', price: 0, credits: 100 },
@@ -205,10 +205,57 @@ export default function StartPage() {
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
                   {loading ? '...' : t(locale, 'login.submit')}
                 </motion.button>
+                <button type="button" onClick={() => { setStep('forgot'); setError(''); }} className="block w-full mt-2 text-sm text-theme-fg-subtle hover:text-theme-fg text-center">
+                  {t(locale, 'start.forgotPassword')}
+                </button>
               </form>
               <button type="button" onClick={() => { setStep('email'); setError(''); }} className="mt-4 w-full text-sm text-theme-fg-subtle hover:text-theme-fg">
                 ← {t(locale, 'start.back')}
               </button>
+            </motion.div>
+          )}
+
+          {step === 'forgot' && (
+            <motion.div
+              key="forgot"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={cardCls}
+            >
+              <h1 className="font-display text-xl font-bold text-white mb-2 tracking-tight">{t(locale, 'start.forgotTitle')}</h1>
+              <p className="text-theme-fg-muted text-sm mb-4">{email}</p>
+              <form onSubmit={async (e) => { e.preventDefault(); setError(''); setLoading(true); try { const { error: err } = await resetPasswordForEmail(email); if (err) { setError(err); setLoading(false); return; } setStep('forgot_sent'); } catch { setError(t(locale, 'error.generic')); } finally { setLoading(false); } }} className="space-y-5">
+                {error && <p className="text-sm text-theme-danger">{error}</p>}
+                <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
+                  {loading ? '...' : t(locale, 'start.forgotSend')}
+                </motion.button>
+              </form>
+              <button type="button" onClick={() => { setStep('password'); setError(''); }} className="mt-4 w-full text-sm text-theme-fg-subtle hover:text-theme-fg">
+                ← {t(locale, 'start.back')}
+              </button>
+            </motion.div>
+          )}
+
+          {step === 'forgot_sent' && (
+            <motion.div
+              key="forgot_sent"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className={cardCls}
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-theme-border bg-theme-bg-subtle">
+                  <EnvelopeIcon className="h-6 w-6 text-theme-fg opacity-90" />
+                </div>
+                <h2 className="font-display text-lg font-bold text-white mb-2">{t(locale, 'login.checkEmail')}</h2>
+                <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'start.forgotCheckEmail')}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-theme-fg-subtle mb-6">{email}</p>
+                <motion.button type="button" onClick={() => { setStep('email'); setError(''); }} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full rounded-xl border border-theme-border bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors">
+                  {t(locale, 'start.another')}
+                </motion.button>
+              </div>
             </motion.div>
           )}
 

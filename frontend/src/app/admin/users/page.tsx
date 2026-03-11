@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { getAdminUsers } from '@/lib/api';
 import type { User } from '@/lib/api';
+import { useLocale } from '@/app/components/LocaleContext';
+import { t } from '@/lib/i18n';
 
 const PAGE_SIZE = 20;
 
 export default function AdminUsersPage() {
+  const { locale } = useLocale();
   const [users, setUsers] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -21,17 +24,21 @@ export default function AdminUsersPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => {
+  const fetchUsers = useCallback(() => {
     setLoading(true);
+    setErr(null);
     getAdminUsers({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, search: debouncedSearch || undefined })
       .then(({ users: u, total: tot }) => {
         setUsers(u);
         setTotal(tot);
-        setErr(null);
       })
-      .catch((e) => setErr(e.message))
+      .catch((e) => setErr(e?.message || t(locale, 'admin.loadError')))
       .finally(() => setLoading(false));
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, locale]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -49,8 +56,11 @@ export default function AdminUsersPage() {
         <span className="text-sm text-theme-fg-muted">{total} total</span>
       </div>
       {err && (
-        <div className="mb-4 rounded-lg border border-theme-danger/30 bg-theme-danger/10 px-4 py-3 text-theme-danger">
-          {err}
+        <div className="mb-4 rounded-lg border border-theme-danger/30 bg-theme-danger/10 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-theme-danger">{err}</span>
+          <button type="button" onClick={() => fetchUsers()} className="px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium hover:bg-theme-bg-hover-strong">
+            {t(locale, 'admin.retry')}
+          </button>
         </div>
       )}
       <div className="rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden">

@@ -2,12 +2,29 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/app/components/LocaleContext';
-import { createUpscale, listContent, uploadAttachments } from '@/lib/api';
+import { createUpscale, listContent, uploadAttachments, type UpscaleAdvancedOptions } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { t } from '@/lib/i18n';
 import { JobCard } from '../components/JobCard';
 
 type Scale = 2 | 4;
+
+const ENHANCE_MODELS = [
+  { value: 'Standard V2', key: 'standard' },
+  { value: 'Low Resolution V2', key: 'lowres' },
+  { value: 'CGI', key: 'cgi' },
+  { value: 'High Fidelity V2', key: 'hifi' },
+  { value: 'Text Refine', key: 'text' },
+] as const;
+
+const defaultAdvanced: UpscaleAdvancedOptions = {
+  enhance_model: 'Standard V2',
+  output_format: 'jpg',
+  face_enhancement: false,
+  subject_detection: 'None',
+  face_enhancement_creativity: 0,
+  face_enhancement_strength: 0.8,
+};
 
 export default function UpscalingPage() {
   const { locale } = useLocale();
@@ -15,6 +32,8 @@ export default function UpscalingPage() {
   const [source, setSource] = useState<'upload' | 'content'>('upload');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [scale, setScale] = useState<Scale>(2);
+  const [advanced, setAdvanced] = useState<UpscaleAdvancedOptions>(defaultAdvanced);
+  const [showAdvancedDialog, setShowAdvancedDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +99,17 @@ export default function UpscalingPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const { job_id } = await createUpscale(imageUrl, scale);
+      const opts: UpscaleAdvancedOptions = {
+        enhance_model: advanced.enhance_model || defaultAdvanced.enhance_model,
+        output_format: advanced.output_format || defaultAdvanced.output_format,
+        face_enhancement: advanced.face_enhancement ?? defaultAdvanced.face_enhancement,
+        subject_detection: advanced.subject_detection || defaultAdvanced.subject_detection,
+      };
+      if (opts.face_enhancement) {
+        opts.face_enhancement_creativity = advanced.face_enhancement_creativity ?? defaultAdvanced.face_enhancement_creativity;
+        opts.face_enhancement_strength = advanced.face_enhancement_strength ?? defaultAdvanced.face_enhancement_strength;
+      }
+      const { job_id } = await createUpscale(imageUrl, scale, opts);
       setJobId(job_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upscale failed');
@@ -178,22 +207,33 @@ export default function UpscalingPage() {
 
         {/* Bottom: options */}
         <div className="mt-8 pt-6 border-t border-theme-border space-y-5">
-          <div>
-            <p className="text-sm font-medium text-theme-fg mb-2">{t(locale, 'upscaling.scale')}</p>
-            <div className="flex gap-2">
-              {([2, 4] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setScale(s)}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
-                    scale === s ? 'bg-theme-bg-hover-strong text-theme-fg border-theme-border-hover' : 'bg-theme-bg-subtle text-theme-fg border-theme-border hover:bg-theme-bg-hover'
-                  }`}
-                >
-                  {s}x
-                </button>
-              ))}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-sm font-medium text-theme-fg mb-2">{t(locale, 'upscaling.scale')}</p>
+              <div className="flex gap-2">
+                {([2, 4] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setScale(s)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
+                      scale === s ? 'bg-theme-bg-hover-strong text-theme-fg border-theme-border-hover' : 'bg-theme-bg-subtle text-theme-fg border-theme-border hover:bg-theme-bg-hover'
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedDialog(true)}
+              className="p-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg hover:border-theme-border-hover transition-colors"
+              title={t(locale, 'upscaling.advanced')}
+              aria-label={t(locale, 'upscaling.advanced')}
+            >
+              <GearIcon className="w-5 h-5" />
+            </button>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
@@ -213,6 +253,98 @@ export default function UpscalingPage() {
           </div>
         )}
       </div>
+
+      {/* Advanced options dialog */}
+      {showAdvancedDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-bg-overlay" role="dialog" aria-modal="true" aria-labelledby="advanced-dialog-title">
+          <div className="bg-theme-bg-elevated border border-theme-border rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-theme-border flex items-center justify-between shrink-0">
+              <h2 id="advanced-dialog-title" className="text-lg font-semibold text-theme-fg">{t(locale, 'upscaling.advanced')}</h2>
+              <button type="button" onClick={() => setShowAdvancedDialog(false)} className="p-2 rounded-lg text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg" aria-label="Close">×</button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-4 scrollbar-subtle select-theme" style={{ colorScheme: 'dark' }}>
+              <div>
+                <label className="block text-sm font-medium text-theme-fg mb-1">{t(locale, 'upscaling.advancedEnhanceModel')}</label>
+                <select
+                  value={advanced.enhance_model ?? 'Standard V2'}
+                  onChange={(e) => setAdvanced((a) => ({ ...a, enhance_model: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-theme-border bg-theme-bg-elevated text-theme-fg focus:outline-none focus:ring-2 focus:ring-theme-border-hover focus:border-theme-border-hover"
+                >
+                  {ENHANCE_MODELS.map((m) => (
+                    <option key={m.value} value={m.value}>{t(locale, `upscaling.enhanceModel.${m.key}`)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-theme-fg mb-1">{t(locale, 'upscaling.advancedOutputFormat')}</label>
+                <select
+                  value={advanced.output_format ?? 'jpg'}
+                  onChange={(e) => setAdvanced((a) => ({ ...a, output_format: e.target.value as 'jpg' | 'png' }))}
+                  className="w-full px-3 py-2 rounded-xl border border-theme-border bg-theme-bg-elevated text-theme-fg focus:outline-none focus:ring-2 focus:ring-theme-border-hover focus:border-theme-border-hover"
+                >
+                  <option value="jpg">JPG</option>
+                  <option value="png">PNG</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-theme-fg mb-1">{t(locale, 'upscaling.advancedSubjectDetection')}</label>
+                <select
+                  value={advanced.subject_detection ?? 'None'}
+                  onChange={(e) => setAdvanced((a) => ({ ...a, subject_detection: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-theme-border bg-theme-bg-elevated text-theme-fg focus:outline-none focus:ring-2 focus:ring-theme-border-hover focus:border-theme-border-hover"
+                >
+                  <option value="None">{t(locale, 'upscaling.subjectDetection.none')}</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="face-enhance"
+                  checked={advanced.face_enhancement ?? false}
+                  onChange={(e) => setAdvanced((a) => ({ ...a, face_enhancement: e.target.checked }))}
+                  className="rounded border-theme-border"
+                />
+                <label htmlFor="face-enhance" className="text-sm font-medium text-theme-fg">{t(locale, 'upscaling.advancedFaceEnhancement')}</label>
+              </div>
+              {(advanced.face_enhancement ?? false) && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-theme-fg mb-1">{t(locale, 'upscaling.advancedFaceCreativity')} (0–1)</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={advanced.face_enhancement_creativity ?? 0}
+                      onChange={(e) => setAdvanced((a) => ({ ...a, face_enhancement_creativity: parseFloat(e.target.value) }))}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-theme-fg-muted">{(advanced.face_enhancement_creativity ?? 0).toFixed(1)}</span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-theme-fg mb-1">{t(locale, 'upscaling.advancedFaceStrength')} (0–1)</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={advanced.face_enhancement_strength ?? 0.8}
+                      onChange={(e) => setAdvanced((a) => ({ ...a, face_enhancement_strength: parseFloat(e.target.value) }))}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-theme-fg-muted">{(advanced.face_enhancement_strength ?? 0.8).toFixed(1)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="p-4 border-t border-theme-border shrink-0">
+              <button type="button" onClick={() => setShowAdvancedDialog(false)} className="w-full py-2.5 rounded-xl bg-theme-bg-hover-strong text-theme-fg font-medium hover:bg-theme-bg-hover">
+                {t(locale, 'upscaling.advancedDone')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -221,6 +353,15 @@ function UploadIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+    </svg>
+  );
+}
+
+function GearIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   );
 }

@@ -782,13 +782,41 @@ func (h *Handlers) UpscaleHandler(ctx context.Context, t *asynq.Task) error {
 	if scale == 4 {
 		upscaleFactor = "4x"
 	}
+	enhanceModel := "Standard V2"
+	if v, ok := jobInput["enhance_model"].(string); ok && v != "" {
+		enhanceModel = v
+	}
+	outputFormat := "jpg"
+	if v, ok := jobInput["output_format"].(string); ok && (v == "jpg" || v == "png") {
+		outputFormat = v
+	}
+	faceEnhancement := false
+	if v, ok := jobInput["face_enhancement"].(bool); ok {
+		faceEnhancement = v
+	}
+	subjectDetection := "None"
+	if v, ok := jobInput["subject_detection"].(string); ok && v != "" {
+		subjectDetection = v
+	}
+	faceCreativity := 0.0
+	if v, ok := jobInput["face_enhancement_creativity"].(float64); ok && v >= 0 && v <= 1 {
+		faceCreativity = v
+	}
+	faceStrength := 0.8
+	if v, ok := jobInput["face_enhancement_strength"].(float64); ok && v >= 0 && v <= 1 {
+		faceStrength = v
+	}
 	input := repgo.PredictionInput{
-		"image":          imageURL,
-		"enhance_model":  "Standard V2",
-		"output_format":  "jpg",
-		"upscale_factor": upscaleFactor,
-		"face_enhancement": false,
-		"subject_detection": "None",
+		"image":            imageURL,
+		"enhance_model":    enhanceModel,
+		"output_format":    outputFormat,
+		"upscale_factor":   upscaleFactor,
+		"face_enhancement": faceEnhancement,
+		"subject_detection": subjectDetection,
+	}
+	if faceEnhancement {
+		input["face_enhancement_creativity"] = faceCreativity
+		input["face_enhancement_strength"] = faceStrength
 	}
 	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {

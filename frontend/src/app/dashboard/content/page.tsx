@@ -34,6 +34,7 @@ export default function ContentPage() {
   const router = useRouter();
   const [items, setItems] = useState<ContentJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
 
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
@@ -45,6 +46,7 @@ export default function ContentPage() {
   const fetchContent = useCallback(() => {
     let cancelled = false;
     setLoading(true);
+    setListError(null);
     listContent({
       page,
       limit: PAGE_SIZE,
@@ -61,10 +63,11 @@ export default function ContentPage() {
         if (cancelled) return;
         setItems([]);
         setTotal(0);
+        setListError(t(locale, 'content.loadError'));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [page, typeFilter, searchQ]);
+  }, [page, typeFilter, searchQ, locale]);
 
   useEffect(() => {
     const cleanup = fetchContent();
@@ -122,10 +125,23 @@ export default function ContentPage() {
       </div>
 
       {loading && <p className="text-theme-fg-subtle py-4">{t(locale, 'common.loading')}</p>}
-      {!loading && items.length === 0 && (
-        <p className="text-theme-fg-subtle py-4">{t(locale, 'content.empty')}</p>
+      {!loading && listError && (
+        <div className="py-8 flex flex-col items-center gap-4">
+          <p className="text-theme-danger text-center">{listError}</p>
+          <button type="button" onClick={() => fetchContent()} className="px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg font-medium hover:bg-theme-bg-hover-strong transition-colors">
+            {t(locale, 'content.retry')}
+          </button>
+        </div>
       )}
-      {!loading && items.length > 0 && (
+      {!loading && !listError && items.length === 0 && (
+        <div className="py-12 flex flex-col items-center gap-6 text-center">
+          <p className="text-theme-fg-muted max-w-sm">{t(locale, 'content.empty')}</p>
+          <Link href="/dashboard" className="px-5 py-2.5 rounded-xl bg-theme-bg-hover-strong text-theme-fg font-medium border border-theme-border-hover hover:bg-theme-bg-hover transition-colors">
+            {t(locale, 'content.emptyCta')}
+          </Link>
+        </div>
+      )}
+      {!loading && !listError && items.length > 0 && (
         <>
           <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {items.map((job) => (

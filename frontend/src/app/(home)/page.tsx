@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, useInView } from 'framer-motion';
 import { Header } from '@/app/components/Header';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
@@ -24,6 +24,8 @@ const sections = [
 export default function Home() {
   const router = useRouter();
   const { locale } = useLocale();
+  const bringToLifeRef = useRef<HTMLElement>(null);
+  const bringToLifeInView = useInView(bringToLifeRef, { once: true, amount: 0.2 });
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -46,8 +48,6 @@ export default function Home() {
               alt=""
               width={1920}
               height={1080}
-              fetchPriority="high"
-              decoding="async"
               className="w-full h-full object-cover object-center"
             />
           </div>
@@ -100,58 +100,137 @@ export default function Home() {
           </div>
         </div>
 
-        {/* —— Our story —— */}
+        {/* —— Bring to life: video larger, text aside —— */}
+        <motion.section
+          ref={bringToLifeRef}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={{ hidden: {}, visible: {} }}
+          className="relative py-24 sm:py-32 lg:py-40 px-4 sm:px-6 lg:px-8"
+        >
+          <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1.25fr_0.75fr] gap-10 lg:gap-14 xl:gap-16 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: 32 }}
+              animate={bringToLifeInView ? { opacity: 1, x: 0 } : { opacity: 0, x: 32 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              className="relative lg:order-1"
+            >
+              <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/40 shadow-[0_0_80px_-16px_rgba(255,255,255,0.06)] ring-1 ring-white/5">
+                <div className="aspect-video w-full min-h-[240px] sm:min-h-[280px]">
+                  <video
+                    src="/home/bring%20to%20life.mp4"
+                    className="w-full h-full object-cover"
+                    playsInline
+                    muted
+                    loop
+                    autoPlay
+                    aria-hidden
+                  />
+                </div>
+                <div className="absolute inset-0 rounded-2xl sm:rounded-3xl pointer-events-none ring-inset ring-white/5" aria-hidden />
+              </div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, x: -24 }}
+              animate={bringToLifeInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -24 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              className="lg:order-2 lg:pl-2"
+            >
+              <span className="text-[11px] uppercase tracking-[0.3em] text-neutral-500">Edit Studio</span>
+              <motion.h2
+                className="mt-3 font-display text-3xl sm:text-4xl lg:text-5xl xl:text-[3.25rem] font-bold tracking-tight leading-[1.06]"
+                initial="hidden"
+                animate={bringToLifeInView ? 'visible' : 'hidden'}
+                variants={{
+                  hidden: {},
+                  visible: { transition: { staggerChildren: 0.35, delayChildren: 0.15 } },
+                }}
+              >
+                {(['line1', 'line2'] as const).map((key) => (
+                  <motion.span
+                    key={key}
+                    className="block py-0.5"
+                    variants={{
+                      hidden: { color: 'rgb(161 161 170)' },
+                      visible: { color: 'rgb(255 255 255)' },
+                    }}
+                    transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    {t(locale, `home.bringToLife.${key}`)}
+                  </motion.span>
+                ))}
+              </motion.h2>
+            </motion.div>
+          </div>
+        </motion.section>
+
+        {/* —— Our story (Built in Europe) + map —— */}
         <section className="relative py-16 sm:py-24 lg:py-32 px-4 sm:px-6 lg:px-16">
             <div className="max-w-6xl mx-auto">
-              <motion.p
-                initial={{ opacity: 0, y: 8 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4 }}
-                className="text-[11px] uppercase tracking-[0.3em] text-neutral-400 mb-3"
-              >
-                {t(locale, 'home.story.title')}
-              </motion.p>
-              <motion.h2
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: 0.05 }}
-                className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-6"
-              >
-                {t(locale, 'home.story.subtitle')}
-              </motion.h2>
-              <motion.p
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="text-neutral-300 text-base sm:text-lg lg:text-xl max-w-2xl leading-relaxed mb-12"
-              >
-                {t(locale, 'home.story.body')}
-              </motion.p>
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: 0.15 }}
-                className="flex flex-wrap gap-3 mb-16"
-              >
-                {(['flexibility', 'privacy', 'speed', 'creativity'] as const).map((pillar) => (
-                  <span
-                    key={pillar}
-                    className="rounded-full border border-white/25 bg-white/5 px-4 py-2 text-sm font-medium text-white/90"
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-12 lg:gap-16 items-start">
+                <div>
+                  <motion.p
+                    initial={{ opacity: 0, y: 8 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.4 }}
+                    className="text-[11px] uppercase tracking-[0.3em] text-neutral-400 mb-3"
                   >
-                    {t(locale, `home.story.pillar.${pillar}`)}
-                  </span>
-                ))}
-              </motion.div>
+                    {t(locale, 'home.story.title')}
+                  </motion.p>
+                  <motion.h2
+                    initial={{ opacity: 0, y: 12 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: 0.05 }}
+                    className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-6"
+                  >
+                    {t(locale, 'home.story.subtitle')}
+                  </motion.h2>
+                  <motion.p
+                    initial={{ opacity: 0, y: 12 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: 0.1 }}
+                    className="text-neutral-300 text-base sm:text-lg lg:text-xl max-w-2xl leading-relaxed mb-10"
+                  >
+                    {t(locale, 'home.story.body')}
+                  </motion.p>
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.4, delay: 0.15 }}
+                    className="flex flex-wrap gap-3"
+                  >
+                    {(['flexibility', 'privacy', 'speed', 'creativity'] as const).map((pillar) => (
+                      <span
+                        key={pillar}
+                        className="rounded-full border border-white/25 bg-white/5 px-4 py-2 text-sm font-medium text-white/90"
+                      >
+                        {t(locale, `home.story.pillar.${pillar}`)}
+                      </span>
+                    ))}
+                  </motion.div>
+                </div>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                  className="w-full lg:w-64 xl:w-72 shrink-0 rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-center"
+                  aria-hidden
+                >
+                  <EuropeMapIcon className="w-full h-auto text-white/20" />
+                </motion.div>
+              </div>
               <motion.div
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.5, delay: 0.2 }}
-                className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6"
+                className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6 mt-16"
               >
                 {(['2022', '2023', '2024'] as const).map((year) => (
                   <div key={year} className="flex gap-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
@@ -235,6 +314,17 @@ export default function Home() {
         </motion.section>
       </main>
     </div>
+  );
+}
+
+function EuropeMapIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 240 200" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" aria-hidden>
+      {/* Stylized Europe outline: Iberia, France, UK, Central/North */}
+      <path d="M45 145 L55 125 L50 100 L65 85 L80 90 L95 75 L110 80 L120 95 L135 85 L155 90 L175 75 L195 80 L210 95 L220 115 L215 135 L200 150 L175 155 L150 145 L130 155 L105 150 L80 160 L60 155 Z" />
+      <path d="M95 75 L85 95 L95 110 L110 100 Z" />
+      <path d="M155 90 L148 108 L162 115 L172 100 Z" />
+    </svg>
   );
 }
 

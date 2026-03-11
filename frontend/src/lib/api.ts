@@ -175,6 +175,15 @@ export async function signInWithMagicLink(email: string): Promise<{ error?: stri
   return { error: error?.message };
 }
 
+/** Send password reset email. User clicks link and lands on /auth/callback then /auth/set-password. */
+export async function resetPasswordForEmail(email: string): Promise<{ error?: string }> {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${origin}/auth/callback`,
+  });
+  return { error: error?.message };
+}
+
 /** Upload files (e.g. images) to R2. Returns public URLs. */
 export async function uploadAttachments(files: File[]): Promise<string[]> {
   if (files.length === 0) return [];
@@ -413,13 +422,33 @@ export async function createVideo(params: CreateVideoParams): Promise<{ job_id: 
   return res.json();
 }
 
-export async function createUpscale(imageUrl: string, scale: 2 | 4): Promise<{ job_id: string }> {
+export interface UpscaleAdvancedOptions {
+  enhance_model?: string;
+  output_format?: 'jpg' | 'png';
+  face_enhancement?: boolean;
+  subject_detection?: string;
+  face_enhancement_creativity?: number;
+  face_enhancement_strength?: number;
+}
+
+export async function createUpscale(
+  imageUrl: string,
+  scale: 2 | 4,
+  options?: UpscaleAdvancedOptions
+): Promise<{ job_id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
+  const body: Record<string, unknown> = { image_url: imageUrl, scale };
+  if (options?.enhance_model) body.enhance_model = options.enhance_model;
+  if (options?.output_format) body.output_format = options.output_format;
+  if (options?.face_enhancement !== undefined) body.face_enhancement = options.face_enhancement;
+  if (options?.subject_detection) body.subject_detection = options.subject_detection;
+  if (options?.face_enhancement_creativity !== undefined) body.face_enhancement_creativity = options.face_enhancement_creativity;
+  if (options?.face_enhancement_strength !== undefined) body.face_enhancement_strength = options.face_enhancement_strength;
   const res = await fetch(`${API_URL}/api/upscale`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ image_url: imageUrl, scale }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));

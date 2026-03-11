@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getAdminJobs, type AdminJob } from '@/lib/api';
+import { useLocale } from '@/app/components/LocaleContext';
+import { t } from '@/lib/i18n';
 
 const PAGE_SIZE = 30;
 
 export default function AdminJobsPage() {
+  const { locale } = useLocale();
   const searchParams = useSearchParams();
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [total, setTotal] = useState(0);
@@ -18,8 +21,9 @@ export default function AdminJobsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchJobs = useCallback(() => {
     setLoading(true);
+    setErr(null);
     getAdminJobs({
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
@@ -30,11 +34,14 @@ export default function AdminJobsPage() {
       .then(({ jobs: j, total: tot }) => {
         setJobs(j);
         setTotal(tot);
-        setErr(null);
       })
-      .catch((e) => setErr(e.message))
+      .catch((e) => setErr(e?.message || t(locale, 'admin.loadError')))
       .finally(() => setLoading(false));
-  }, [page, status, type, userId]);
+  }, [page, status, type, userId, locale]);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -74,8 +81,11 @@ export default function AdminJobsPage() {
         <span className="text-sm text-theme-fg-muted">{total} total</span>
       </div>
       {err && (
-        <div className="mb-4 rounded-lg border border-theme-danger/30 bg-theme-danger/10 px-4 py-3 text-theme-danger">
-          {err}
+        <div className="mb-4 rounded-lg border border-theme-danger/30 bg-theme-danger/10 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-theme-danger">{err}</span>
+          <button type="button" onClick={() => fetchJobs()} className="px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium hover:bg-theme-bg-hover-strong">
+            {t(locale, 'admin.retry')}
+          </button>
         </div>
       )}
       <div className="rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden">

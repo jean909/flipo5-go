@@ -86,6 +86,10 @@ export function Header({ dark }: { dark?: boolean }) {
               {t(locale, 'nav.home')}
             </motion.button>
 
+            <Link href="/careers" className={`px-4 py-2 text-sm font-medium transition-colors ${textNav}`}>
+              {t(locale, 'nav.careers')}
+            </Link>
+
             <div className="relative" onMouseEnter={() => setActiveDropdown('features')}>
               <motion.button
                 whileHover={{ y: -1 }}
@@ -197,6 +201,14 @@ export function Header({ dark }: { dark?: boolean }) {
               >
                 {t(locale, 'nav.home')}
               </motion.button>
+
+              <Link
+                href="/careers"
+                onClick={() => setIsMenuOpen(false)}
+                className={`block w-full text-left px-4 py-3 rounded-lg text-sm font-medium ${textNav}`}
+              >
+                {t(locale, 'nav.careers')}
+              </Link>
 
               <button
                 onClick={() => setActiveDropdown(activeDropdown === 'features' ? null : 'features')}

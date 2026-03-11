@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
-import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, type User, type Job, type Thread } from '@/lib/api';
+import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, type User, type Job, type Thread } from '@/lib/api';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { JobCard } from './components/JobCard';
@@ -57,6 +57,8 @@ export default function DashboardPage() {
   const [latestContent, setLatestContent] = useState<Array<Job & { outputUrls: string[] }>>([]);
   const [contentTotal, setContentTotal] = useState(0);
   const [newsIndex, setNewsIndex] = useState(0);
+  const [lastThreadPreview, setLastThreadPreview] = useState<{ threadId: string; lastPrompt?: string; thumbnailUrl?: string } | null>(null);
+  const [promoCarouselIndex, setPromoCarouselIndex] = useState(0);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -221,9 +223,46 @@ export default function DashboardPage() {
   }, [profileLoaded, user, hasStarted]);
 
   useEffect(() => {
+    if (!profileLoaded || !user || hasStarted || incognito) return;
+    let cancelled = false;
+    listThreads(false)
+      .then((r) => {
+        if (cancelled || !r.threads?.length) return;
+        const first = r.threads[0];
+        return getThread(first.id).then((t) => {
+          if (cancelled || !t.thread || !t.jobs?.length) return;
+          const lastJob = t.jobs[t.jobs.length - 1];
+          const prompt = (lastJob.input as { prompt?: string })?.prompt;
+          const urls = lastJob.status === 'completed' && lastJob.output ? getOutputUrls(lastJob.output) : [];
+          setLastThreadPreview({
+            threadId: t.thread.id,
+            lastPrompt: prompt,
+            thumbnailUrl: urls[0],
+          });
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [profileLoaded, user, hasStarted, incognito]);
+
+  useEffect(() => {
     const id = setInterval(() => setNewsIndex((i) => (i + 1) % 5), 5000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!showPromo) return;
+    const t1 = setTimeout(() => setPromoCarouselIndex(1), 4000);
+    return () => clearTimeout(t1);
+  }, [showPromo]);
+
+  useEffect(() => {
+    if (!showPromo || !lastThreadPreview) return;
+    const id = setInterval(() => {
+      setPromoCarouselIndex((i) => (i === 0 ? 1 : 0));
+    }, 5000);
+    return () => clearInterval(id);
+  }, [showPromo, lastThreadPreview]);
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -1066,60 +1105,97 @@ export default function DashboardPage() {
           </form>
           {error && <p className="mt-4 text-sm text-theme-danger">{error === 'rate' ? t(locale, 'error.rate') : error}</p>}
           {showPromo && (
-            <div className="mt-10 w-full max-w-md mx-auto">
-              {contentTotal >= 5 ? (
-                <Link
-                  href="/dashboard/content"
-                  className="flex relative gap-3 px-3 py-2.5 rounded-xl bg-theme-bg-subtle border border-theme-border-subtle hover:border-theme-border-hover transition-colors items-center"
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPromo(false); }}
-                    className="absolute top-1.5 right-1.5 p-1 rounded-full text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors z-10"
-                    aria-label="Close"
+            <div className="mt-10 w-full max-w-md mx-auto relative min-h-[72px]">
+              <button
+                type="button"
+                onClick={() => setShowPromo(false)}
+                className="absolute top-1.5 right-1.5 p-1 rounded-full text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors z-10"
+                aria-label="Close"
+              >
+                <XIcon className="w-3 h-3" />
+              </button>
+              <AnimatePresence mode="wait" initial={false}>
+                {promoCarouselIndex === 1 && lastThreadPreview ? (
+                  <motion.div
+                    key="continue"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.25 }}
                   >
-                    <XIcon className="w-3 h-3" />
-                  </button>
-                  <div className="flex-1 min-w-0 pr-5">
-                    <p className="text-xs font-medium text-theme-fg truncate">
-                      {t(locale, 'dashboard.checkLatest')}
-                    </p>
-                    <p className="text-[11px] text-theme-fg-subtle/80 mt-0.5 truncate transition-opacity duration-300">
-                      {t(locale, `dashboard.news${newsIndex + 1}`)}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    {latestContent.map((job, i) => (
-                      <div
-                        key={job.id}
-                        className={`w-14 h-14 rounded-lg overflow-hidden border border-theme-border bg-theme-bg-elevated flex-shrink-0 relative ${i === latestContent.length - 1 ? "after:content-[''] after:absolute after:inset-0 after:bg-theme-bg-overlay" : ''}`}
-                      >
-                        {job.outputUrls[0] ? (
-                          job.type === 'video' ? (
-                            <video src={job.outputUrls[0]} className="w-full h-full object-cover" muted preload="metadata" playsInline />
-                          ) : (
-                            <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                          )
-                        ) : null}
+                    <Link
+                      href={`/dashboard?thread=${lastThreadPreview.threadId}`}
+                      className="flex relative gap-3 px-3 py-2.5 rounded-xl bg-theme-bg-subtle border border-theme-border-subtle hover:border-theme-border-hover transition-colors items-center"
+                    >
+                      <div className="flex-1 min-w-0 pr-5">
+                        <p className="text-xs font-medium text-theme-fg truncate">
+                          {t(locale, 'dashboard.continueFromLast')}
+                        </p>
+                        <p className="text-[11px] text-theme-fg-subtle/80 mt-0.5 truncate">
+                          {lastThreadPreview.lastPrompt
+                            ? lastThreadPreview.lastPrompt
+                            : t(locale, 'dashboard.continueFromLastSub')}
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                </Link>
-              ) : (
-                <div className="relative px-3 py-3 rounded-xl bg-theme-bg-subtle text-center">
-                  <button
-                    type="button"
-                    onClick={() => setShowPromo(false)}
-                    className="absolute top-1.5 right-1.5 p-1 rounded-full text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
-                    aria-label="Close"
+                      {lastThreadPreview.thumbnailUrl ? (
+                        <div className="w-14 h-14 rounded-lg overflow-hidden border border-theme-border bg-theme-bg-elevated flex-shrink-0">
+                          <img src={lastThreadPreview.thumbnailUrl} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg border border-theme-border bg-theme-bg-elevated flex-shrink-0 flex items-center justify-center">
+                          <ChatIcon className="w-6 h-6 text-theme-fg-subtle" />
+                        </div>
+                      )}
+                    </Link>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="creations"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.25 }}
                   >
-                    <XIcon className="w-3 h-3" />
-                  </button>
-                  <p className="text-xs text-theme-fg-muted pr-6">
-                    {t(locale, 'dashboard.promo')}
-                  </p>
-                </div>
-              )}
+                    {contentTotal >= 5 ? (
+                      <Link
+                        href="/dashboard/content"
+                        className="flex relative gap-3 px-3 py-2.5 rounded-xl bg-theme-bg-subtle border border-theme-border-subtle hover:border-theme-border-hover transition-colors items-center"
+                      >
+                        <div className="flex-1 min-w-0 pr-5">
+                          <p className="text-xs font-medium text-theme-fg truncate">
+                            {t(locale, 'dashboard.checkLatest')}
+                          </p>
+                          <p className="text-[11px] text-theme-fg-subtle/80 mt-0.5 truncate transition-opacity duration-300">
+                            {t(locale, `dashboard.news${newsIndex + 1}`)}
+                          </p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          {latestContent.map((job, i) => (
+                            <div
+                              key={job.id}
+                              className={`w-14 h-14 rounded-lg overflow-hidden border border-theme-border bg-theme-bg-elevated flex-shrink-0 relative ${i === latestContent.length - 1 ? "after:content-[''] after:absolute after:inset-0 after:bg-theme-bg-overlay" : ''}`}
+                            >
+                              {job.outputUrls[0] ? (
+                                job.type === 'video' ? (
+                                  <video src={job.outputUrls[0]} className="w-full h-full object-cover" muted preload="metadata" playsInline />
+                                ) : (
+                                  <img src={job.outputUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                                )
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      </Link>
+                    ) : (
+                      <div className="relative px-3 py-3 rounded-xl bg-theme-bg-subtle text-center">
+                        <p className="text-xs text-theme-fg-muted pr-6">
+                          {t(locale, 'dashboard.promo')}
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </div>

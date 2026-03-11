@@ -19,11 +19,16 @@ function AuthCallbackContent() {
       const tokenHash = searchParams.get('token_hash');
       const type = searchParams.get('type');
       if (tokenHash && type) {
-        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as 'email' });
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as 'email' | 'recovery' });
         if (cancelled) return;
         if (error) {
           setStatus('error');
           router.replace('/start');
+          return;
+        }
+        if (type === 'recovery') {
+          setStatus('ok');
+          router.replace('/auth/set-password');
           return;
         }
       }
