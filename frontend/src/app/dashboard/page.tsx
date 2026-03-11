@@ -857,7 +857,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setShowPromptBuilder(true)}
-            className="shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg transition-colors rounded-lg hover:bg-theme-bg-hover"
+            className="btn-tap shrink-0 p-2 text-theme-fg-muted hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover"
             title="Prompt builder"
             aria-label="Prompt builder"
           >
@@ -1297,51 +1297,58 @@ export default function DashboardPage() {
               <p className="text-theme-fg-subtle text-sm py-4">{t(locale, 'common.loading')}</p>
             )}
             <AnimatePresence initial={false}>
-            {[
-              ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
-                ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
-                : []),
-              ...threadJobs.map((j) => ({ ...j, id: replaceMap[j.id] || j.id })),
-              ...(jobId &&
-              !threadJobs.some((j) => j.id === jobId) &&
-              effectiveThreadId === pendingJobThreadId
-                ? [{ id: jobId, type: pendingJobType, input: lastSentPrompt ? { prompt: lastSentPrompt } : {} }]
-                : []),
-            ].map((job) => {
-              const promptForRegenerate = (job.input as { prompt?: string })?.prompt;
-              const isRegeneratedSlot = job.id !== '_pending' && Object.values(replaceMap).includes(job.id);
-              return (
-              <motion.div
-                key={job.id}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="flex flex-col gap-2"
-              >
-                {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
-                  <div className="flex justify-end">
-                    <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
-                      {(job.input as { prompt: string }).prompt}
+            {(() => {
+              const displayList = [
+                ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
+                  ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
+                  : []),
+                ...threadJobs.map((j) => ({ ...j, id: replaceMap[j.id] || j.id })),
+                ...(jobId &&
+                !threadJobs.some((j) => j.id === jobId) &&
+                effectiveThreadId === pendingJobThreadId
+                  ? [{ id: jobId, type: pendingJobType, input: lastSentPrompt ? { prompt: lastSentPrompt } : {} }]
+                  : []),
+              ];
+              const lastChatJobId = displayList.filter((j) => j.type === 'chat' && j.id !== '_pending').pop()?.id;
+              return displayList.map((job) => {
+                const promptForRegenerate = (job.input as { prompt?: string })?.prompt;
+                const isRegeneratedSlot = job.id !== '_pending' && Object.values(replaceMap).includes(job.id);
+                const isLastReply = job.id === lastChatJobId;
+                return (
+                <motion.div
+                  key={job.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="flex flex-col gap-2"
+                >
+                  {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
+                        {(job.input as { prompt: string }).prompt}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {job.id !== '_pending' && (
-                <JobCard
-                  jobId={job.id}
-                  locale={locale}
-                  dark
-                  variant="chat"
-                  onNotFound={job.id === jobId ? () => { if (pendingJobType === 'video' && typeof window !== 'undefined') sessionStorage.removeItem('flipo5_video_pending'); setJobId(null); setPendingJobThreadId(null); } : undefined}
-                  onUseAsReference={addReferenceImage}
-                  regenerateUsed={isRegeneratedSlot}
-                  onRegenerate={job.type === 'chat' && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
-                    ? () => handleRegenerate(job.id, promptForRegenerate)
-                    : undefined}
-                  onStartThreadFromText={handleStartThreadFromText}
-                />
-                )}
-              </motion.div>
-            ); })}
+                  )}
+                  {job.id !== '_pending' && (
+                  <JobCard
+                    jobId={job.id}
+                    locale={locale}
+                    dark
+                    variant="chat"
+                    onNotFound={job.id === jobId ? () => { if (pendingJobType === 'video' && typeof window !== 'undefined') sessionStorage.removeItem('flipo5_video_pending'); setJobId(null); setPendingJobThreadId(null); } : undefined}
+                    onUseAsReference={addReferenceImage}
+                    regenerateUsed={isRegeneratedSlot}
+                    onRegenerate={job.type === 'chat' && isLastReply && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
+                      ? () => handleRegenerate(job.id, promptForRegenerate)
+                      : undefined}
+                    onRetry={(oldId, newId) => setReplaceMap((prev) => ({ ...prev, [oldId]: newId }))}
+                    onCancel={undefined}
+                    onStartThreadFromText={handleStartThreadFromText}
+                  />
+                  )}
+                </motion.div>
+              ); });
+            })()}
             </AnimatePresence>
             </div>
           </div>

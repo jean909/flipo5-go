@@ -153,6 +153,23 @@ func (db *DB) UpdateJobStatus(ctx context.Context, id uuid.UUID, status string, 
 	return err
 }
 
+// SetJobCancelled marks a job as cancelled. Only applies if current status is pending or running.
+func (db *DB) SetJobCancelled(ctx context.Context, id, userID uuid.UUID, errMsg string) error {
+	if errMsg == "" {
+		errMsg = "Cancelled by user"
+	}
+	result, err := db.Pool.Exec(ctx,
+		`UPDATE jobs SET status='cancelled', error=$2, updated_at=NOW() WHERE id=$1 AND user_id=$3 AND status IN ('pending','running')`,
+		id, errMsg, userID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("job not found or cannot be cancelled")
+	}
+	return nil
+}
+
 // UpdateJobOutput sets only the output field (e.g. after mirroring media to R2).
 func (db *DB) UpdateJobOutput(ctx context.Context, id uuid.UUID, output interface{}) error {
 	outBytes, _ := json.Marshal(output)

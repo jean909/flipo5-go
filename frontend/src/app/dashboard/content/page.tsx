@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
 import { listContent, type Job } from '@/lib/api';
@@ -124,11 +125,11 @@ export default function ContentPage() {
         </div>
       </div>
 
-      {loading && <p className="text-theme-fg-subtle py-4">{t(locale, 'common.loading')}</p>}
+      {loading && <p className="text-theme-fg-subtle py-4 animate-pulse-subtle">{t(locale, 'common.loading')}</p>}
       {!loading && listError && (
         <div className="py-8 flex flex-col items-center gap-4">
           <p className="text-theme-danger text-center">{listError}</p>
-          <button type="button" onClick={() => fetchContent()} className="px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg font-medium hover:bg-theme-bg-hover-strong transition-colors">
+          <button type="button" onClick={() => fetchContent()} className="btn-tap px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg font-medium hover:bg-theme-bg-hover-strong">
             {t(locale, 'content.retry')}
           </button>
         </div>
@@ -136,7 +137,7 @@ export default function ContentPage() {
       {!loading && !listError && items.length === 0 && (
         <div className="py-12 flex flex-col items-center gap-6 text-center">
           <p className="text-theme-fg-muted max-w-sm">{t(locale, 'content.empty')}</p>
-          <Link href="/dashboard" className="px-5 py-2.5 rounded-xl bg-theme-bg-hover-strong text-theme-fg font-medium border border-theme-border-hover hover:bg-theme-bg-hover transition-colors">
+          <Link href="/dashboard" className="btn-tap inline-block px-5 py-2.5 rounded-xl bg-theme-bg-hover-strong text-theme-fg font-medium border border-theme-border-hover hover:bg-theme-bg-hover">
             {t(locale, 'content.emptyCta')}
           </Link>
         </div>
@@ -144,13 +145,19 @@ export default function ContentPage() {
       {!loading && !listError && items.length > 0 && (
         <>
           <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {items.map((job) => (
-              <li key={job.id} className="flex flex-col gap-1.5">
+            {items.map((job, i) => (
+              <motion.li
+                key={job.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18, delay: Math.min(i * 0.02, 0.12) }}
+                className="flex flex-col gap-1.5"
+              >
                 {(job.type === 'image' || job.type === 'video' || job.type === 'upscale') ? (
                   <button
                     type="button"
                     onClick={() => setViewingMedia({ urls: job.outputUrls })}
-                    className="w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover transition-all group"
+                    className="btn-tap w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover group"
                   >
                     <div className="aspect-square relative bg-theme-bg-elevated">
                       {job.outputUrls[0] ? (
@@ -188,7 +195,7 @@ export default function ContentPage() {
                     {getJobDisplayName(job)}
                   </p>
                 )}
-              </li>
+              </motion.li>
             ))}
           </ul>
 

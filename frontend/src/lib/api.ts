@@ -479,6 +479,33 @@ export interface Job {
 }
 
 /** Salvează feedback (like/dislike) pentru un job – stocat în DB pentru analiză. */
+export async function cancelJob(jobId: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/cancel`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Cancel failed');
+  }
+}
+
+export async function retryJob(jobId: string): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/retry`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Retry failed');
+  }
+  return res.json();
+}
+
 export async function setJobFeedback(jobId: string, rating: 'like' | 'dislike' | null): Promise<void> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
@@ -714,7 +741,7 @@ export async function getProject(id: string): Promise<{ project: Project; items:
   }
   if (!res.ok) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[getProject]', res.status, `${API_URL}/api/projects/${id}`);
+      if (process.env.NODE_ENV === 'development') console.warn('[getProject]', res.status, `${API_URL}/api/projects/${id}`);
     }
     throw new Error('Project not found');
   }

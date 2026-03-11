@@ -250,3 +250,36 @@ input[type="search"]::-ms-clear {
 .transition-faster {
   transition-duration: 120ms;
 }
+
+/* ===== Minimal: tranziții consistente, fără exces ===== */
+/* Tap: feedback foarte subtil la click (scale 0.98) */
+.btn-tap {
+  transition: transform 0.12s ease-out, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.btn-tap:active {
+  transform: scale(0.98);
+}
+
+/* Nav/sidebar: doar tranziție lină pe culori (hover rămâne din componente) */
+.nav-hover {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Inputs/buttons: focus și hover fără salt */
+input, textarea, select, button {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, outline-color 0.15s ease;
+}
+
+/* Loading: puls discret doar pentru text „se încarcă” */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-tap:active { transform: none; }
+  .animate-pulse-subtle { animation: none; opacity: 1; }
+}

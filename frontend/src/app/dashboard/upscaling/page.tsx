@@ -285,7 +285,7 @@ export default function UpscalingPage() {
             type="button"
             onClick={handleUpscale}
             disabled={!imageUrl || submitting}
-            className="px-6 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-theme-bg-hover"
+            className="btn-tap px-6 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-theme-bg-hover"
           >
             {submitting ? t(locale, 'common.loading') : t(locale, 'upscaling.upscale')}
           </button>
@@ -320,7 +320,7 @@ export default function UpscalingPage() {
         <div className="lg:pt-10">
           <h2 className="text-sm font-semibold text-theme-fg-muted uppercase tracking-wider mb-3">{t(locale, 'upscaling.latestUpscaled')}</h2>
           {latestLoading ? (
-            <p className="text-sm text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
+            <p className="text-sm text-theme-fg-subtle animate-pulse-subtle">{t(locale, 'common.loading')}</p>
           ) : latestUpscaled.length === 0 ? (
             <p className="text-sm text-theme-fg-subtle">{t(locale, 'upscaling.noUpscaledYet')}</p>
           ) : (

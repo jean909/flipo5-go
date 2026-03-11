@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getJob, type Job } from '@/lib/api';
+import { getJob, cancelJob, retryJob, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from '../../components/ImageGallery';
 import { VideoPlayer } from '../../components/VideoPlayer';
@@ -16,6 +16,8 @@ export default function JobDetailPage() {
   const { locale } = useLocale();
   const id = params.id as string;
   const [job, setJob] = useState<Job | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +52,9 @@ export default function JobDetailPage() {
         ? t(locale, 'jobs.status.running')
         : job.status === 'completed'
           ? t(locale, 'jobs.status.completed')
-          : t(locale, 'jobs.status.failed');
+          : job.status === 'cancelled'
+            ? t(locale, 'jobs.status.cancelled')
+            : t(locale, 'jobs.status.failed');
 
   const validUrls = getOutputUrls(job.output);
   const out = job.output as { output?: string | string[] } | null;
@@ -63,7 +67,47 @@ export default function JobDetailPage() {
         ← {t(locale, 'nav.jobs')}
       </Link>
       <div className="border border-theme-border rounded-lg p-6 bg-theme-bg-subtle">
-        <p className="text-sm text-theme-fg-muted">{job.type} · {statusLabel}</p>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-sm text-theme-fg-muted">{job.type} · {statusLabel}</p>
+          <div className="flex items-center gap-2">
+            {(job.status === 'pending' || job.status === 'running') && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setCancelLoading(true);
+                  try {
+                    await cancelJob(id);
+                    setJob((j) => (j ? { ...j, status: 'cancelled' } : null));
+                  } finally {
+                    setCancelLoading(false);
+                  }
+                }}
+                disabled={cancelLoading}
+                className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg-muted hover:text-theme-fg"
+              >
+                {cancelLoading ? t(locale, 'common.loading') : t(locale, 'jobs.cancel')}
+              </button>
+            )}
+            {job.status === 'failed' && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setRetryLoading(true);
+                  try {
+                    const { job_id: newId } = await retryJob(id);
+                    router.replace(`/dashboard/jobs/${newId}`);
+                  } finally {
+                    setRetryLoading(false);
+                  }
+                }}
+                disabled={retryLoading}
+                className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong"
+              >
+                {retryLoading ? t(locale, 'common.loading') : t(locale, 'common.retry')}
+              </button>
+            )}
+          </div>
+        </div>
         {job.input && (
           <pre className="mt-2 text-sm text-theme-fg whitespace-pre-wrap break-words overflow-x-auto bg-theme-bg-overlay p-3 rounded border border-theme-border">
             {JSON.stringify(job.input, null, 2)}

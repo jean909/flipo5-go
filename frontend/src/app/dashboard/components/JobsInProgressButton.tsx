@@ -215,22 +215,24 @@ export function JobsInProgressButton() {
               setFailedToasts((prev) => dedupeById([...prev.filter((f) => !toAdd.some((a) => a.id === f.id)), ...toAdd]));
             }
           }
-          const completed = results.filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
-          completed.forEach((j) => removeOptimisticJob(j.id));
-          const toAdd = completed.map((j) => {
-              if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                new Notification(t(locale, 'jobsInProgress.ready'), {
-                  body: t(locale, j.type === 'image' ? 'jobsInProgress.imageReady' : 'jobsInProgress.videoReady'),
-                });
-              }
-              const created = new Date(j.created_at).getTime();
-              const updated = new Date(j.updated_at).getTime();
-              const durationSec = Math.round((updated - created) / 1000);
-              const urls = j.output ? getOutputUrls(j.output) : [];
-              return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+          const allCompleted = results.filter((j): j is Job => !!j && j.status === 'completed');
+          allCompleted.forEach((j) => removeOptimisticJob(j.id));
+          if (allCompleted.length > 0 && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            allCompleted.forEach((j) => {
+              const bodyKey = j.type === 'image' ? 'jobsInProgress.imageReady' : j.type === 'video' ? 'jobsInProgress.videoReady' : j.type === 'chat' ? 'jobsInProgress.chatReady' : 'jobsInProgress.upscaleReady';
+              new Notification(t(locale, 'jobsInProgress.ready'), { body: t(locale, bodyKey) });
             });
-          if (toAdd.length > 0) {
             playCompletionSound();
+          }
+          const completed = results.filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
+          const toAdd = completed.map((j) => {
+            const created = new Date(j.created_at).getTime();
+            const updated = new Date(j.updated_at).getTime();
+            const durationSec = Math.round((updated - created) / 1000);
+            const urls = j.output ? getOutputUrls(j.output) : [];
+            return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+          });
+          if (toAdd.length > 0) {
             setCompletedToasts((prev) => dedupeById([...prev, ...toAdd]));
           }
         }
@@ -258,7 +260,9 @@ export function JobsInProgressButton() {
       
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
       const url = `${API_URL}/api/jobs/stream?token=${encodeURIComponent(token)}`;
-      console.log('[JobsInProgressButton] Connecting to SSE:', url.replace(/token=[^&]+/, 'token=***'));
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[JobsInProgressButton] Connecting to SSE:', url.replace(/token=[^&]+/, 'token=***'));
+      }
       const es = new EventSource(url);
       
       es.onmessage = (event) => {
@@ -266,11 +270,11 @@ export function JobsInProgressButton() {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'connected') {
-            console.log('[JobsInProgressButton] SSE connected');
+            if (process.env.NODE_ENV === 'development') console.log('[JobsInProgressButton] SSE connected');
             return;
           }
           if (data.jobId) {
-            console.log('[JobsInProgressButton] Job update received:', data);
+            if (process.env.NODE_ENV === 'development') console.log('[JobsInProgressButton] Job update received:', data);
             // Debounce: multiple SSE updates (e.g. 2 jobs complete) → one fetch to avoid 429
             setTick(t => t + 1);
             if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
@@ -280,12 +284,12 @@ export function JobsInProgressButton() {
             }, 400);
           }
         } catch (err) {
-          console.warn('[JobsInProgressButton] SSE parse error:', err);
+          if (process.env.NODE_ENV === 'development') console.warn('[JobsInProgressButton] SSE parse error:', err);
         }
       };
       
       es.onerror = (err) => {
-        console.warn('[JobsInProgressButton] SSE error:', err);
+        if (process.env.NODE_ENV === 'development') console.warn('[JobsInProgressButton] SSE error:', err);
         if (!cancelled) {
           // Fallback to polling on SSE error
           setTimeout(() => {

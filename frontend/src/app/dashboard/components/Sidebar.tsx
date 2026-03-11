@@ -126,7 +126,7 @@ export function Sidebar() {
           <Link
             key={href}
             href={href === '/dashboard' && pathname === '/dashboard' ? '/dashboard?new=1' : href}
-            className={`flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
+            className={`nav-hover flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-md text-sm min-w-0 ${
               isActive ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
             }`}
             title={collapsed ? t(locale, labelKey) : undefined}
@@ -153,7 +153,7 @@ export function Sidebar() {
             <button
               type="button"
               onClick={() => setSessionsExpanded((e) => !e)}
-              className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 w-full ${
+              className={`nav-hover flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm min-w-0 w-full ${
                 pathname === '/dashboard/sessions' || sessionsExpanded
                   ? 'bg-theme-bg-hover text-theme-fg'
                   : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'

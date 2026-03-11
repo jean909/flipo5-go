@@ -87,6 +87,8 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/content/from-url", s.addContentFromURL)
 		r.Get("/jobs/{id}", s.getJob)
 		r.Patch("/jobs/{id}/feedback", s.setJobFeedback)
+		r.Post("/jobs/{id}/cancel", s.cancelJob)
+		r.Post("/jobs/{id}/retry", s.retryJob)
 		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
@@ -1264,6 +1266,115 @@ func (s *Server) setJobFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	job, err := s.DB.GetJobForUser(r.Context(), id, userID)
+	if err != nil || job == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if job.Status != "pending" && job.Status != "running" {
+		http.Error(w, `{"error":"job cannot be cancelled"}`, http.StatusBadRequest)
+		return
+	}
+	if job.ReplicateID != nil && *job.ReplicateID != "" && s.Repl != nil {
+		_ = s.Repl.CancelPrediction(r.Context(), *job.ReplicateID)
+	}
+	if err := s.DB.SetJobCancelled(r.Context(), id, userID, "Cancelled by user"); err != nil {
+		http.Error(w, `{"error":"cancel failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	job, err := s.DB.GetJobForUser(r.Context(), id, userID)
+	if err != nil || job == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if job.Status != "failed" {
+		http.Error(w, `{"error":"only failed jobs can be retried"}`, http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	var input map[string]interface{}
+	if len(job.Input) > 0 {
+		if err := json.Unmarshal(job.Input, &input); err != nil {
+			http.Error(w, `{"error":"invalid job input"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if input == nil {
+		input = make(map[string]interface{})
+	}
+	newJobID, err := s.DB.CreateJob(ctx, userID, job.Type, input, job.ThreadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	var task *asynq.Task
+	switch job.Type {
+	case "chat":
+		prompt, _ := input["prompt"].(string)
+		task, _ = queue.NewChatTask(newJobID, prompt)
+	case "image":
+		task, _ = queue.NewImageTask(newJobID)
+	case "video":
+		task, _ = queue.NewVideoTask(newJobID)
+	case "upscale":
+		task, _ = queue.NewUpscaleTask(newJobID)
+	default:
+		http.Error(w, `{"error":"unsupported job type"}`, http.StatusBadRequest)
+		return
+	}
+	if task == nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	s.invalidateContentCache(ctx, userID)
+	if job.ThreadID != nil {
+		s.invalidateThreadCache(ctx, *job.ThreadID, userID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": newJobID.String()})
 }
 
 func (s *Server) adminStats(w http.ResponseWriter, r *http.Request) {

@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { getJob, getToken, getJobStreamUrl } from '@/lib/api';
+import { getJob, getToken, getJobStreamUrl, cancelJob, retryJob } from '@/lib/api';
 import type { Job } from '@/lib/api';
 import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
@@ -61,6 +61,8 @@ export function JobCard({
   onUseAsReference,
   onRegenerate,
   onStartThreadFromText,
+  onCancel,
+  onRetry,
   regenerateUsed = false,
   variant = 'card',
 }: {
@@ -72,10 +74,16 @@ export function JobCard({
   onRegenerate?: () => void;
   /** Start new subject from this message (chat only); not used for image/video */
   onStartThreadFromText?: (text: string) => void;
+  /** Called after job is cancelled (pending/running) */
+  onCancel?: () => void;
+  /** Called with (oldJobId, newJobId) after retry is enqueued (failed jobs) */
+  onRetry?: (oldJobId: string, newJobId: string) => void;
   regenerateUsed?: boolean;
   variant?: 'card' | 'chat';
 }) {
   const [job, setJob] = useState<Job | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [viewingVideoUrl, setViewingVideoUrl] = useState<string | null>(null);
   const [streamOutput, setStreamOutput] = useState('');
@@ -86,6 +94,32 @@ export function JobCard({
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [retryKey, setRetryKey] = useState(0);
+
+  const handleCancel = async () => {
+    if (cancelLoading) return;
+    setCancelLoading(true);
+    try {
+      await cancelJob(jobId);
+      setJob((j) => (j ? { ...j, status: 'cancelled' } : null));
+      onCancel?.();
+    } catch {
+      // ignore
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+  const handleRetry = async () => {
+    if (retryLoading) return;
+    setRetryLoading(true);
+    try {
+      const { job_id: newId } = await retryJob(jobId);
+      onRetry?.(jobId, newId);
+    } catch {
+      // ignore
+    } finally {
+      setRetryLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -239,13 +273,18 @@ export function JobCard({
   // Image job: pending/running = ChatGPT-style gradient loader card
   if (job && job.type === 'image' && (job.status === 'pending' || job.status === 'running')) {
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start flex-col items-start gap-2">
         <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
           <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
             <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
             <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
           </div>
         </div>
+        {onCancel && (
+          <button type="button" onClick={handleCancel} disabled={cancelLoading} className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover-strong">
+            {cancelLoading ? t(locale, 'common.loading') : t(locale, 'jobs.cancel')}
+          </button>
+        )}
       </div>
     );
   }
@@ -253,13 +292,18 @@ export function JobCard({
   // Video job: pending/running = same gradient loader card
   if (job && job.type === 'video' && (job.status === 'pending' || job.status === 'running')) {
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start flex-col items-start gap-2">
         <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
           <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
             <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
             <p className="text-sm text-theme-fg/80">{t(locale, 'video.creating')}</p>
           </div>
         </div>
+        {onCancel && (
+          <button type="button" onClick={handleCancel} disabled={cancelLoading} className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover-strong">
+            {cancelLoading ? t(locale, 'common.loading') : t(locale, 'jobs.cancel')}
+          </button>
+        )}
       </div>
     );
   }
@@ -284,7 +328,12 @@ export function JobCard({
       (job.input as { attachment_urls: unknown[] }).attachment_urls.length > 0
     );
     const attachmentUrls = (job.input as { attachment_urls?: string[] } | null)?.attachment_urls ?? [];
+    const attachmentTypes = (job.input as { attachment_content_types?: string[] } | null)?.attachment_content_types ?? [];
     const validAttachments = attachmentUrls.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+    const isImageAttachment = (i: number) => {
+      const t = attachmentTypes[i];
+      return !t || t.startsWith('image/');
+    };
     const showStream = streamOutput.length > 0 || streamStatus === 'completed' || streamStatus === 'failed';
     const typedText = streamOutput.slice(0, displayLen);
     const showCursor = streamStatus !== 'completed' && streamStatus !== 'failed';
@@ -308,11 +357,22 @@ export function JobCard({
               <Spinner className="h-5 w-5 shrink-0 text-theme-fg/50" />
             )}
           </div>
+          {onCancel && (
+            <button type="button" onClick={handleCancel} disabled={cancelLoading} className="self-start btn-tap text-xs px-2.5 py-1 rounded-md border border-theme-border-hover bg-theme-bg-hover text-theme-fg-muted hover:text-theme-fg">
+              {cancelLoading ? t(locale, 'common.loading') : t(locale, 'jobs.cancel')}
+            </button>
+          )}
           {validAttachments.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {validAttachments.map((url) => (
-                <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
-              ))}
+              {validAttachments.map((url, i) =>
+                isImageAttachment(i) ? (
+                  <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
+                ) : (
+                  <div key={url} className="w-10 h-10 rounded border border-theme-border shrink-0 bg-theme-bg-elevated flex items-center justify-center" title="Document">
+                    <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
+                  </div>
+                )
+              )}
             </div>
           )}
         </div>
@@ -394,8 +454,13 @@ export function JobCard({
   // Image job: failed
   if (job && job.type === 'image' && job.status === 'failed') {
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start flex-col items-start gap-2">
         <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+        {onRetry && (
+          <button type="button" onClick={handleRetry} disabled={retryLoading} className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong">
+            {retryLoading ? t(locale, 'common.loading') : t(locale, 'common.retry')}
+          </button>
+        )}
       </div>
     );
   }
@@ -464,8 +529,13 @@ export function JobCard({
   // Video job: failed
   if (job && job.type === 'video' && job.status === 'failed') {
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start flex-col items-start gap-2">
         <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+        {onRetry && (
+          <button type="button" onClick={handleRetry} disabled={retryLoading} className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong">
+            {retryLoading ? t(locale, 'common.loading') : t(locale, 'common.retry')}
+          </button>
+        )}
       </div>
     );
   }
@@ -475,7 +545,12 @@ export function JobCard({
     const hasText = outputStr.length > 0;
     const hasImages = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http')).length > 0;
     const attachmentUrls = (job.input as { attachment_urls?: string[] } | null)?.attachment_urls ?? [];
+    const attachmentTypes = (job.input as { attachment_content_types?: string[] } | null)?.attachment_content_types ?? [];
     const validAttachments = attachmentUrls.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+    const isImageAttachment = (i: number) => {
+      const t = attachmentTypes[i];
+      return !t || t.startsWith('image/');
+    };
     if (!hasText && !hasImages) {
       return (
         <div className="flex justify-start flex-col items-start">
@@ -483,9 +558,15 @@ export function JobCard({
             <p className="text-[15px] text-theme-fg/50 italic">{t(locale, 'chat.noResponse')}</p>
             {validAttachments.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
-                {validAttachments.map((url) => (
-                  <img key={url} src={url} alt="" className="w-12 h-12 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
-                ))}
+                {validAttachments.map((url, i) =>
+                  isImageAttachment(i) ? (
+                    <img key={url} src={url} alt="" className="w-12 h-12 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
+                  ) : (
+                    <div key={url} className="w-12 h-12 rounded border border-theme-border shrink-0 bg-theme-bg-elevated flex items-center justify-center" title="Document">
+                      <DocumentIcon className="w-6 h-6 text-theme-fg-muted" />
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
@@ -493,7 +574,7 @@ export function JobCard({
             jobId={jobId}
             jobType="chat"
             initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
-            mediaUrls={validAttachments}
+            mediaUrls={validAttachments.filter((_, i) => isImageAttachment(i))}
             threadId={job.thread_id ?? null}
             locale={locale}
             onStartThreadFromText={onStartThreadFromText}
@@ -517,9 +598,15 @@ export function JobCard({
           ))}
           {validAttachments.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
-              {validAttachments.map((url) => (
-                <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
-              ))}
+              {validAttachments.map((url, i) =>
+                isImageAttachment(i) ? (
+                  <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
+                ) : (
+                  <div key={url} className="w-10 h-10 rounded border border-theme-border shrink-0 bg-theme-bg-elevated flex items-center justify-center" title="Document">
+                    <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
+                  </div>
+                )
+              )}
             </div>
           )}
         </div>
@@ -540,11 +627,16 @@ export function JobCard({
     );
   }
 
-  // Chat variant: failed = balon stânga, mesaj scurt
+  // Chat variant: failed = balon stânga, mesaj scurt + Retry
   if (isChat && job.status === 'failed') {
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start flex-col items-start gap-2">
         <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>
+        {onRetry && (
+          <button type="button" onClick={handleRetry} disabled={retryLoading} className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong">
+            {retryLoading ? t(locale, 'common.loading') : t(locale, 'common.retry')}
+          </button>
+        )}
       </div>
     );
   }
@@ -553,11 +645,23 @@ export function JobCard({
   const cardOutputUrls = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http'));
   return (
     <div className={cardCls}>
-      <div className="flex items-center justify-between text-sm">
+      <div className="flex items-center justify-between text-sm flex-wrap gap-2">
         <span className={`${textCls} flex items-center gap-2`}>{isPending && <Spinner />}{statusLabel}</span>
-        <Link href={`/dashboard/jobs/${jobId}`} className={linkCls}>
-          {t(locale, 'jobs.view')}
-        </Link>
+        <div className="flex items-center gap-2">
+          {isPending && onCancel && (
+            <button type="button" onClick={handleCancel} disabled={cancelLoading} className="btn-tap text-xs px-2.5 py-1 rounded-md border border-theme-border-hover bg-theme-bg-hover text-theme-fg-muted hover:text-theme-fg">
+              {cancelLoading ? t(locale, 'common.loading') : t(locale, 'jobs.cancel')}
+            </button>
+          )}
+          {job.status === 'failed' && onRetry && (
+            <button type="button" onClick={handleRetry} disabled={retryLoading} className="btn-tap text-xs px-2.5 py-1 rounded-md border border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong">
+              {retryLoading ? t(locale, 'common.loading') : t(locale, 'common.retry')}
+            </button>
+          )}
+          <Link href={`/dashboard/jobs/${jobId}`} className={linkCls}>
+            {t(locale, 'jobs.view')}
+          </Link>
+        </div>
       </div>
       {isPending && <p className={`mt-2 text-xs ${textCls}`}>{t(locale, 'jobs.waitingForResponse')}</p>}
       {job.status === 'completed' && job.output && (
@@ -594,6 +698,14 @@ function PlayIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24">
       <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
+function DocumentIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
     </svg>
   );
 }
