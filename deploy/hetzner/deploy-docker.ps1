@@ -35,7 +35,9 @@ if ($staged) {
 Write-Host "=== Pushing to git ==="
 git push
 
-Write-Host "=== Deploying to $Server ==="
-ssh $Server "cd ~/my-backend && git pull && docker compose build api && docker compose up -d"
-Write-Host "Done. Check: ssh $Server 'docker compose ps'"
-Write-Host "Logs: ssh $Server 'docker compose logs api --tail 20'"
+# Pe server: repo-ul trebuie să fie în ~/my-backend SAU ~/backend (conține docker-compose.yml în root)
+$RemotePath = $env:DEPLOY_PATH ?? "~/backend"
+Write-Host "=== Deploying to $Server (path: $RemotePath) ==="
+ssh $Server "cd $RemotePath && git pull && docker compose build api && docker compose up -d"
+Write-Host "Done. Check: ssh $Server 'cd $RemotePath && docker compose ps'"
+Write-Host "Logs: ssh $Server 'cd $RemotePath && docker compose logs api --tail 20'"

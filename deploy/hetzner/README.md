@@ -6,30 +6,36 @@ Backend (Go API) pe Hetzner. Frontend poate rula local și se conectează la bac
 
 ### Deploy rapid (după modificări)
 
-**Windows (PowerShell)** – folosește prefixul `.\` (obligatoriu):
+**Recomandat – scripturi în backend** (pentru mai multe aplicații, fiecare cu backendul ei). Pe server se creează folderul dacă nu există (ex. `~/backend/flipo5`):
+
+**Windows (PowerShell)** – din repo root:
 
 ```powershell
-cd "C:\Users\DeveloperPC\Downloads\Flipo5 GO"
-
-# Cu parametri
-.\deploy\hetzner\deploy-docker.ps1 -Server "root@YOUR_SERVER_IP" -Message "Deploy: sync"
-
-# Sau cu env var
 $env:DEPLOY_SERVER = "root@YOUR_SERVER_IP"
-.\deploy\hetzner\deploy-docker.ps1
+# Opțional: $env:DEPLOY_PATH = "~/backend/flipo5"  (implicit)
+.\backend\deploy\deploy-hetzner.ps1
 ```
 
 **Linux / Git Bash:**
 
 ```bash
-# Setează IP-ul o dată
 export DEPLOY_SERVER=root@YOUR_SERVER_IP
+./backend/deploy/deploy-hetzner.sh
+```
 
-# La fiecare modificare: git add, commit, apoi:
+**Alternativ** – scripturi în `deploy/hetzner/` (path implicit pe server: `~/backend`):
+
+```powershell
+.\deploy\hetzner\deploy-docker.ps1 -Server "root@YOUR_SERVER_IP"
+```
+
+```bash
 ./deploy/hetzner/deploy-docker.sh
 ```
 
-Scriptul face: `git push` → pe server: `git pull` + `docker compose build api` + `up -d`.
+Scriptul face: `git push` → pe server: `mkdir -p $DEPLOY_PATH` (dacă e scriptul din backend), apoi `cd` + `git pull` + `docker compose build api` + `up -d`.
+
+**Path pe server:** la `backend/deploy/` implicit e `~/backend/flipo5` (folderul se creează cu `mkdir -p`). La `deploy/hetzner/` implicit e `~/backend`. Setează `DEPLOY_PATH` / `$env:DEPLOY_PATH` pentru alt path.
 
 ### Workers – mai multă paralelizare
 
@@ -178,9 +184,21 @@ Pentru producție cu domeniu:
 curl http://YOUR_SERVER_IP:8080/health
 curl http://YOUR_SERVER_IP:8080/health/ready
 
-# Logs
+# Logs (Docker)
+docker compose logs api --tail 50 -f
+
+# Logs (bare metal)
 sudo journalctl -u flipo5-api -f
 ```
+
+## „no configuration file provided” pe server
+
+Dacă pe server faci `docker compose up` și primești „no configuration file provided”:
+
+1. **Trebuie să fii în root-ul repo-ului**, nu doar în subfolderul `backend`. Root-ul conține `docker-compose.yml`, `backend/`, `deploy/`, etc.
+2. Dacă ai clonat repo-ul într-un folder numit `backend`, atunci root-ul e acolo: `cd ~/backend` și acolo rulezi `docker compose up -d`.
+3. Dacă în `~/backend` nu există `docker-compose.yml`, fă `git pull` (sau clonează din nou repo-ul în `~/backend`) ca să apară fișierul.
+4. Asigură-te că există fișierul **`.env`** în același folder cu `docker-compose.yml`, cu variabilele necesare (DATABASE_URL, REDIS_URL, REPLICATE_API_TOKEN, etc.).
 
 ## Troubleshooting: "Project not found" după create
 

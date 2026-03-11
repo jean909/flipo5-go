@@ -1,0 +1,17 @@
+# Flipo5 backend – run on Hetzner (or local) with: docker compose up -d
+# Requires .env in this directory (DATABASE_URL, REDIS_URL, REPLICATE_API_TOKEN, etc.)
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: flipo5-api:latest
+    container_name: flipo5-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - PORT=8080

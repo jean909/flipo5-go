@@ -43,7 +43,9 @@ fi
 echo "=== Pushing to git ==="
 git push
 
-echo "=== Deploying to $SERVER ==="
-ssh "$SERVER" "cd ~/my-backend && git pull && docker compose build api && docker compose up -d"
-echo "Done. Check: ssh $SERVER 'docker compose ps'"
-echo "Logs: ssh $SERVER 'docker compose logs api --tail 20'"
+# Pe server: repo în ~/backend sau ~/my-backend (root = unde e docker-compose.yml)
+REMOTE_PATH="${DEPLOY_PATH:-~/backend}"
+echo "=== Deploying to $SERVER (path: $REMOTE_PATH) ==="
+ssh "$SERVER" "cd $REMOTE_PATH && git pull && docker compose build api && docker compose up -d"
+echo "Done. Check: ssh $SERVER 'cd $REMOTE_PATH && docker compose ps'"
+echo "Logs: ssh $SERVER 'cd $REMOTE_PATH && docker compose logs api --tail 20'"

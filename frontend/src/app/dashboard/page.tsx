@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [lastThreadPreview, setLastThreadPreview] = useState<{ threadId: string; lastPrompt?: string; thumbnailUrl?: string } | null>(null);
   const [promoCarouselIndex, setPromoCarouselIndex] = useState(0);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [promptDragOver, setPromptDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threadData, setThreadData] = useState<Thread | null>(null);
@@ -140,25 +141,52 @@ export default function DashboardPage() {
     setReferenceImageUrls((prev) => prev.filter((u) => u !== url));
   }, []);
 
+  const isAcceptedAttachment = useCallback((file: File) => {
+    if (file.type.startsWith('image/')) return true;
+    const docTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+    ];
+    return docTypes.includes(file.type);
+  }, []);
   const addAttachment = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) return;
+    if (!isAcceptedAttachment(file)) return;
     const id = Math.random().toString(36).slice(2);
-    setAttachments((prev) => [...prev, { id, file, previewUrl: URL.createObjectURL(file) }]);
+    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
+    setAttachments((prev) => [...prev, { id, file, previewUrl }]);
     if (mode === 'video') setVideoFile(null);
-  }, [mode]);
+  }, [mode, isAcceptedAttachment]);
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
       const one = prev.find((a) => a.id === id);
-      if (one) URL.revokeObjectURL(one.previewUrl);
+      if (one?.previewUrl) URL.revokeObjectURL(one.previewUrl);
       return prev.filter((a) => a.id !== id);
     });
   }, []);
   const clearAttachments = useCallback(() => {
     setAttachments((prev) => {
-      prev.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      prev.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       return [];
     });
   }, []);
+
+  const onPromptDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setPromptDragOver(true);
+  }, []);
+  const onPromptDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setPromptDragOver(false);
+  }, []);
+  const onPromptDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setPromptDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files) for (let i = 0; i < files.length; i++) addAttachment(files[i]);
+  }, [addAttachment]);
 
   const addVideoFile = useCallback((file: File) => {
     const valid = ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
@@ -653,7 +681,7 @@ export default function DashboardPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
         multiple
         className="hidden"
         onChange={(e) => {
@@ -697,7 +725,12 @@ export default function DashboardPage() {
           e.target.value = '';
         }}
       />
-      <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all duration-200 flex items-center flex-wrap gap-1.5 px-2 py-1.5">
+      <div
+        className={`relative rounded-xl border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all duration-200 flex items-center flex-wrap gap-1.5 px-2 py-1.5 ${promptDragOver ? 'border-theme-accent ring-1 ring-theme-accent' : 'border-theme-border'}`}
+        onDragOver={onPromptDragOver}
+        onDragLeave={onPromptDragLeave}
+        onDrop={onPromptDrop}
+      >
         {showPaperclip && (mode !== 'video' || videoModel === '1') && (
           <button
             type="button"
@@ -706,7 +739,11 @@ export default function DashboardPage() {
             aria-label="Attach image"
           >
             {(referenceImageUrls.length > 0 || attachments.length > 0) ? (
-              <img src={referenceImageUrls[0] ?? attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+              (referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
+                <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+              ) : (
+                <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
+              )
             ) : (
               <PaperclipIcon className="w-5 h-5" />
             )}
@@ -764,8 +801,18 @@ export default function DashboardPage() {
             )}
           </button>
         )}
-        {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile || (videoModel === '2' && (startImageFile || endImageFile)))) ? (
+        {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile || (videoModel === '2' && (startImageFile || endImageFile)))) || (mode === 'chat' && attachments.length > 0) ? (
           <>
+            {mode === 'chat' && attachments.map((a) => (
+              <div key={a.id} className="relative shrink-0 group flex items-center gap-1 w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden">
+                {a.previewUrl ? (
+                  <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                ) : (
+                  <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                )}
+                <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+              </div>
+            ))}
             {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
               <div key={url} className="relative shrink-0 group">
                 <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
@@ -775,8 +822,12 @@ export default function DashboardPage() {
               </div>
             ))}
             {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? attachments : attachments.slice(1)).map((a) => (
-              <div key={a.id} className="relative shrink-0 group">
-                <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
+              <div key={a.id} className="relative shrink-0 group flex items-center gap-1 w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden">
+                {a.previewUrl ? (
+                  <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                ) : (
+                  <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                )}
                 <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove">
                   <XIcon className="w-2.5 h-2.5" />
                 </button>
@@ -784,6 +835,11 @@ export default function DashboardPage() {
             ))}
           </>
         ) : null}
+        {promptDragOver && (
+          <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-theme-accent/10 border-2 border-dashed border-theme-accent text-theme-fg text-sm font-medium pointer-events-none z-10">
+            {t(locale, 'chat.dropFiles')}
+          </span>
+        )}
         <input
           type="text"
           value={prompt}
@@ -973,7 +1029,7 @@ export default function DashboardPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                 multiple
                 className="hidden"
                 onChange={(e) => {
@@ -997,11 +1053,20 @@ export default function DashboardPage() {
               />
               <input ref={startImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) addStartImageFile(f); e.target.value = ''; }} />
               <input ref={endImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) addEndImageFile(f); e.target.value = ''; }} />
-              <div className="rounded-xl border border-theme-border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all duration-200 flex items-center flex-wrap gap-1.5 px-2 py-1.5">
+              <div
+                className={`relative rounded-xl border bg-theme-bg-subtle focus-within:border-theme-border-strong focus-within:ring-1 focus-within:ring-theme-border-hover transition-all duration-200 flex items-center flex-wrap gap-1.5 px-2 py-1.5 ${promptDragOver ? 'border-theme-accent ring-1 ring-theme-accent' : 'border-theme-border'}`}
+                onDragOver={onPromptDragOver}
+                onDragLeave={onPromptDragLeave}
+                onDrop={onPromptDrop}
+              >
                 {(mode === 'image' || (mode === 'video' && videoModel === '1')) && (
                   <button type="button" onClick={() => fileInputRef.current?.click()} className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || attachments.length > 0) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`} aria-label="Attach image">
                     {(referenceImageUrls.length > 0 || attachments.length > 0) ? (
-                      <img src={referenceImageUrls[0] ?? attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                      (referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
+                        <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                      ) : (
+                        <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
+                      )
                     ) : (
                       <PaperclipIcon className="w-5 h-5" />
                     )}
@@ -1038,8 +1103,18 @@ export default function DashboardPage() {
                     {videoFile && videoPreviewUrl ? <video src={videoPreviewUrl} className="w-full h-full object-cover" muted /> : <VideoClipIcon className="w-5 h-5" />}
                   </button>
                 )}
-                {((mode === 'image' || (mode === 'video' && videoModel === '1')) && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && videoModel === '1' && videoFile) || (mode === 'video' && videoModel === '2' && (startImageFile || endImageFile)) ? (
+                {((mode === 'image' || (mode === 'video' && videoModel === '1')) && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && videoModel === '1' && videoFile) || (mode === 'video' && videoModel === '2' && (startImageFile || endImageFile)) || (mode === 'chat' && attachments.length > 0) ? (
                   <>
+                    {mode === 'chat' && attachments.map((a) => (
+                      <div key={a.id} className="relative shrink-0 group flex items-center w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden">
+                        {a.previewUrl ? (
+                          <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                        ) : (
+                          <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                        )}
+                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                      </div>
+                    ))}
                     {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
                       <div key={url} className="relative shrink-0 group">
                         <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
@@ -1047,13 +1122,22 @@ export default function DashboardPage() {
                       </div>
                     ))}
                     {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? attachments : attachments.slice(1)).map((a) => (
-                      <div key={a.id} className="relative shrink-0 group">
-                        <img src={a.previewUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" decoding="async" />
+                      <div key={a.id} className="relative shrink-0 group flex items-center w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden">
+                        {a.previewUrl ? (
+                          <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
+                        ) : (
+                          <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                        )}
                         <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
                   </>
                 ) : null}
+                {promptDragOver && (
+                  <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-theme-accent/10 border-2 border-dashed border-theme-accent text-theme-fg text-sm font-medium pointer-events-none z-10">
+                    {t(locale, 'chat.dropFiles')}
+                  </span>
+                )}
                 <input
                   type="text"
                   value={prompt}
@@ -1320,6 +1404,14 @@ function PaperclipIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.519-9.43a2.25 2.25 0 013.182 3.182l-6.364 6.364a2.25 2.25 0 01-3.182-3.182l6.364-6.364z" />
+    </svg>
+  );
+}
+
+function DocumentIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
     </svg>
   );
 }
