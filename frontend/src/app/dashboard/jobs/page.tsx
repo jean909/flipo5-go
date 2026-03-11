@@ -2,21 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { listJobs, type Job } from '@/lib/api';
+import { listJobs, getMe, isAdminUser, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 
 export default function JobsPage() {
   const { locale } = useLocale();
+  const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listJobs()
-      .then((r) => setJobs(r.jobs ?? []))
-      .catch(() => setJobs([]))
-      .finally(() => setLoading(false));
-  }, []);
+    getMe().then((user) => {
+      if (!user || !isAdminUser(user)) {
+        router.replace('/dashboard');
+        return;
+      }
+      listJobs()
+        .then((r) => setJobs(r.jobs ?? []))
+        .catch(() => setJobs([]))
+        .finally(() => setLoading(false));
+    });
+  }, [router]);
 
   const statusT = (status: string) => {
     if (status === 'pending') return t(locale, 'jobs.status.pending');

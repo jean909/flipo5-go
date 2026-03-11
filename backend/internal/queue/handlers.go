@@ -944,11 +944,137 @@ func (h *Handlers) SummarizeThreadHandler(ctx context.Context, t *asynq.Task) er
 	return nil
 }
 
+func (h *Handlers) SEOHandler(ctx context.Context, t *asynq.Task) error {
+	var p SEOPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	if h.Repl == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
+		return nil
+	}
+	model := h.Cfg.ModelText
+	if model == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_TEXT not set", 0, "")
+		return nil
+	}
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	sourceText, _ := jobInput["source_text"].(string)
+	sourceURL, _ := jobInput["source_url"].(string)
+	lang, _ := jobInput["language"].(string)
+	if lang == "" {
+		lang = "English"
+	}
+
+	userContent := ""
+	if sourceURL != "" {
+		userContent = "URL to analyze: " + sourceURL + "\n\n"
+	}
+	if sourceText != "" {
+		userContent += "Content to optimize:\n" + sourceText
+	}
+	if userContent == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "no source text or URL provided", 0, "")
+		return nil
+	}
+
+	systemPrompt := `You are an expert SEO content strategist and copywriter. Your task is to analyze the provided content and create a fully SEO-optimized article.
+
+Respond ONLY with a valid JSON object (no markdown, no code fences) with exactly these keys:
+- "meta_title": string (50-60 characters, compelling, includes primary keyword)
+- "meta_description": string (150-160 characters, includes CTA)
+- "keywords": array of strings (8-12 primary and secondary keywords)
+- "slug": string (URL-friendly slug, lowercase, hyphens)
+- "article": string (full SEO article in markdown, 800-1200 words, with H2/H3 headings, intro, body, conclusion)
+- "html": string (the article converted to clean semantic HTML5 with proper heading tags, paragraph tags, no inline styles)
+
+Language: ` + lang + `
+Tone: Professional, engaging, optimized for search intent.`
+
+	input := map[string]interface{}{
+		"system_prompt": systemPrompt,
+		"prompt":        "Analyze and optimize:\n\n" + userContent,
+		"max_tokens":    4096,
+	}
+
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, model, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, pred.ID)
+
+	// Poll until done (SEO doesn't use streaming)
+	for i := 0; i < 60; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			errMsg := "Prediction failed"
+			if state.Error != nil {
+				if s, ok := state.Error.(string); ok {
+					errMsg = s
+				}
+			}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, errMsg, 0, pred.ID)
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			final := map[string]interface{}{"output": outText}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
+			// Save as user file automatically
+			if outText != "" {
+				title, _ := jobInput["title"].(string)
+				if title == "" {
+					title = "SEO Article"
+				}
+				_, _ = h.DB.CreateUserFile(ctx, job.UserID, title, outText, "seo")
+			}
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"seo"}`, p.JobID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+			}
+			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+				h.invalidateJobCaches(ctx, job)
+			}
+			return nil
+		}
+		time.Sleep(3 * time.Second)
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "timeout", 0, pred.ID)
+	return nil
+}
+
 func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeChat, h.ChatHandler)
 	mux.HandleFunc(TypeImage, h.ImageHandler)
 	mux.HandleFunc(TypeVideo, h.VideoHandler)
 	mux.HandleFunc(TypeUpscale, h.UpscaleHandler)
+	mux.HandleFunc(TypeSEO, h.SEOHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
 	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }

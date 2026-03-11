@@ -283,3 +283,10 @@ input, textarea, select, button {
   .btn-tap:active { transform: none; }
   .animate-pulse-subtle { animation: none; opacity: 1; }
 }
+
+/* Masonry gallery – responsive column width */
+.masonry-cols { column-fill: balance; }
+@media (min-width: 480px)  { .masonry-cols { columns: auto 180px !important; } }
+@media (min-width: 768px)  { .masonry-cols { columns: auto 200px !important; } }
+@media (min-width: 1024px) { .masonry-cols { columns: auto 220px !important; } }
+@media (min-width: 1280px) { .masonry-cols { columns: auto 240px !important; } }

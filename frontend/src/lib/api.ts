@@ -872,6 +872,64 @@ export async function uploadProjectVersion(itemId: string, file: File): Promise<
 }
 
 /** Remove background from project item image. Creates a new version (PNG with transparency). Long timeout (120s) – Replicate can take 30–60s. */
+// ===== Business Zone =====
+
+export interface UserFile {
+  id: string;
+  user_id: string;
+  name: string;
+  content: string;
+  file_type: 'seo' | 'text';
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createSEOJob(params: {
+  source_text?: string;
+  source_url?: string;
+  title?: string;
+  language?: string;
+}): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/seo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'SEO failed');
+  }
+  return res.json();
+}
+
+export async function listFiles(): Promise<{ files: UserFile[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/files`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('List files failed');
+  return res.json();
+}
+
+export async function getFile(id: string): Promise<UserFile> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/files/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('File not found');
+  return res.json();
+}
+
+export async function deleteFile(id: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  await fetch(`${API_URL}/api/files/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+}
+
+export function getFileDownloadUrl(id: string, token: string): string {
+  return `${API_URL}/api/files/${id}?download=1&token=${encodeURIComponent(token)}`;
+}
+
 export async function removeProjectItemBackground(projectId: string, itemId: string): Promise<{ url: string; ok: boolean }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');

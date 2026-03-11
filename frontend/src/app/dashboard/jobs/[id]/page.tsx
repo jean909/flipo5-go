@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getJob, cancelJob, retryJob, type Job } from '@/lib/api';
+import { getJob, cancelJob, retryJob, getMe, isAdminUser, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageGallery } from '../../components/ImageGallery';
 import { VideoPlayer } from '../../components/VideoPlayer';
@@ -18,6 +18,14 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [retryLoading, setRetryLoading] = useState(false);
+
+  useEffect(() => {
+    getMe().then((user) => {
+      if (!user || !isAdminUser(user)) {
+        router.replace('/dashboard');
+      }
+    });
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;

@@ -85,6 +85,20 @@ export default function DashboardLayoutClient({
         </div>
         )}
         <div className={!pathname.startsWith('/dashboard/studio') ? 'pt-[max(3.5rem,calc(2rem+env(safe-area-inset-top)))] pr-[max(5rem,calc(4rem+env(safe-area-inset-right)))] sm:pr-24 flex-1 flex flex-col min-h-0 min-w-0' : 'flex-1 flex flex-col min-h-0 min-w-0'}>
+          {!pathname.startsWith('/dashboard/studio') && pathname === '/dashboard' && (
+            <div className="shrink-0 px-4 sm:px-6 pt-1 pb-2">
+              <Link
+                href="/dashboard?inspire=1"
+                className="btn-tap inline-flex items-center gap-2 text-sm text-theme-fg-muted hover:text-theme-fg transition-colors py-1.5 px-3 rounded-lg bg-theme-bg-subtle border border-theme-border hover:bg-theme-bg-hover hover:border-theme-border-hover"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                </svg>
+                {t(locale, 'dashboard.ourCreations')}
+                <span className="text-theme-fg-subtle" aria-hidden>→</span>
+              </Link>
+            </div>
+          )}
           <ErrorBoundary>{children}</ErrorBoundary>
         </div>
       </main>

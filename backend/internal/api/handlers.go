@@ -90,6 +90,10 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/jobs/{id}/cancel", s.cancelJob)
 		r.Post("/jobs/{id}/retry", s.retryJob)
 		r.Get("/jobs/stream", s.streamAllJobs)
+		r.Post("/seo", s.createSEO)
+		r.Get("/files", s.listFiles)
+		r.Get("/files/{id}", s.getFile)
+		r.Delete("/files/{id}", s.deleteFile)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
 			r.Post("/", s.createProject)
@@ -1375,6 +1379,110 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"job_id": newJobID.String()})
+}
+
+func (s *Server) createSEO(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SourceText string `json:"source_text"`
+		SourceURL  string `json:"source_url"`
+		Title      string `json:"title"`
+		Language   string `json:"language"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.SourceText) == "" && strings.TrimSpace(req.SourceURL) == "" {
+		http.Error(w, `{"error":"source_text or source_url required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		if req.SourceURL != "" {
+			title = "SEO – " + req.SourceURL
+		} else {
+			words := strings.Fields(req.SourceText)
+			if len(words) > 5 {
+				words = words[:5]
+			}
+			title = "SEO – " + strings.Join(words, " ")
+		}
+	}
+	input := map[string]interface{}{
+		"source_text": req.SourceText,
+		"source_url":  req.SourceURL,
+		"title":       title,
+		"language":    req.Language,
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "seo", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewSEOTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	files, err := s.DB.ListUserFiles(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"list files"}`, http.StatusInternalServerError)
+		return
+	}
+	if files == nil {
+		files = []store.UserFile{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
+}
+
+func (s *Server) getFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	f, err := s.DB.GetUserFile(r.Context(), id, userID)
+	if err != nil || f == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	// Download as .txt
+	if r.URL.Query().Get("download") == "1" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+f.Name+`.txt"`)
+		w.Write([]byte(f.Content))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(f)
+}
+
+func (s *Server) deleteFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if err := s.DB.DeleteUserFile(r.Context(), id, userID); err != nil {
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 }
 
 func (s *Server) adminStats(w http.ResponseWriter, r *http.Request) {
