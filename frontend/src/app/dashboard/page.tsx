@@ -524,10 +524,11 @@ export default function DashboardPage() {
         setPendingUserMessage(msg);
         setPendingUserMessageThreadId(tid ?? null);
         let attachmentUrls: string[] = [];
+        const attachmentContentTypes = attachments.map((a) => a.file.type);
         if (attachments.length > 0) {
           attachmentUrls = await uploadAttachments(attachments.map((a) => a.file));
         }
-        const res = await createChat(msg, attachmentUrls.length ? attachmentUrls : undefined, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito);
+        const res = await createChat(msg, attachmentUrls.length ? attachmentUrls : undefined, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito, attachmentUrls.length ? attachmentContentTypes : undefined);
         setPendingUserMessage('');
         setPendingUserMessageThreadId(null);
         setJobId(res.job_id);

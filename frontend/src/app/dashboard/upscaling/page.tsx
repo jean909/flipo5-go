@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
-import { createUpscale, listContent, uploadAttachments, type UpscaleAdvancedOptions } from '@/lib/api';
+import { createUpscale, listContent, uploadAttachments, getJob, type UpscaleAdvancedOptions, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { t } from '@/lib/i18n';
 import { JobCard } from '../components/JobCard';
@@ -38,8 +39,49 @@ export default function UpscalingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [resultJob, setResultJob] = useState<Job | null>(null);
   const [contentImages, setContentImages] = useState<{ url: string }[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
+  const [latestUpscaled, setLatestUpscaled] = useState<Job[]>([]);
+  const [latestLoading, setLatestLoading] = useState(false);
+
+  const loadLatestUpscaled = useCallback(() => {
+    setLatestLoading(true);
+    listContent({ page: 1, limit: 20, type: 'image' })
+      .then((r) => {
+        const upscaleJobs = (r.jobs ?? []).filter((j) => j.type === 'upscale').slice(0, 5);
+        setLatestUpscaled(upscaleJobs);
+      })
+      .catch(() => setLatestUpscaled([]))
+      .finally(() => setLatestLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadLatestUpscaled();
+  }, [loadLatestUpscaled]);
+
+  useEffect(() => {
+    if (!jobId) {
+      setResultJob(null);
+      return;
+    }
+    let cancelled = false;
+    function poll() {
+      getJob(jobId).then((j) => {
+        if (cancelled) return;
+        if (j && j.status === 'completed') {
+          setResultJob(j);
+          loadLatestUpscaled();
+          return;
+        }
+        if (j && (j.status === 'pending' || j.status === 'running')) {
+          setTimeout(poll, 2500);
+        }
+      });
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [jobId, loadLatestUpscaled]);
 
   const loadContentImages = useCallback(() => {
     setContentLoading(true);
@@ -118,9 +160,12 @@ export default function UpscalingPage() {
     }
   };
 
+  const resultOutputUrl = resultJob ? getOutputUrls(resultJob.output)[0] : null;
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle flex flex-col items-center px-4 py-8">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-[1fr,240px] gap-8">
+        <div>
         <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'upscaling.title')}</h1>
 
         {/* Top: dashed-border upload / preview zone — no fill, sleek border only */}
@@ -249,9 +294,57 @@ export default function UpscalingPage() {
         {jobId && (
           <div className="mt-8 pt-8 border-t border-theme-border">
             <h2 className="text-lg font-medium text-theme-fg mb-4">{t(locale, 'upscaling.result')}</h2>
-            <JobCard jobId={jobId} locale={locale} onNotFound={() => setJobId(null)} />
+            {resultJob && resultOutputUrl ? (
+              <div className="flex flex-col gap-4">
+                <img
+                  src={resultOutputUrl}
+                  alt=""
+                  className="max-w-full max-h-[420px] w-auto h-auto object-contain rounded-xl border border-theme-border"
+                  decoding="async"
+                />
+                <Link
+                  href="/dashboard/content"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-theme-fg-muted hover:text-theme-fg transition-colors"
+                >
+                  {t(locale, 'upscaling.seeInMyContent')} →
+                </Link>
+              </div>
+            ) : (
+              <JobCard jobId={jobId} locale={locale} onNotFound={() => setJobId(null)} />
+            )}
           </div>
         )}
+        </div>
+
+        {/* Right: Latest upscaled */}
+        <div className="lg:pt-10">
+          <h2 className="text-sm font-semibold text-theme-fg-muted uppercase tracking-wider mb-3">{t(locale, 'upscaling.latestUpscaled')}</h2>
+          {latestLoading ? (
+            <p className="text-sm text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
+          ) : latestUpscaled.length === 0 ? (
+            <p className="text-sm text-theme-fg-subtle">{t(locale, 'upscaling.noUpscaledYet')}</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {latestUpscaled.map((job) => {
+                const url = getOutputUrls(job.output)[0];
+                return (
+                  <li key={job.id}>
+                    <Link
+                      href="/dashboard/content"
+                      className="block rounded-xl border border-theme-border overflow-hidden hover:border-theme-border-hover transition-colors bg-theme-bg-subtle"
+                    >
+                      {url ? (
+                        <img src={url} alt="" className="w-full aspect-square object-cover" loading="lazy" decoding="async" />
+                      ) : (
+                        <div className="w-full aspect-square bg-theme-bg-elevated flex items-center justify-center text-theme-fg-subtle text-xs">—</div>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </div>
 
       {/* Advanced options dialog */}

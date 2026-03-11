@@ -347,10 +347,11 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt         string   `json:"prompt"`
-		AttachmentURLs []string `json:"attachment_urls,omitempty"`
-		ThreadID       string   `json:"thread_id,omitempty"`
-		Incognito      bool     `json:"incognito,omitempty"`
+		Prompt                  string   `json:"prompt"`
+		AttachmentURLs         []string `json:"attachment_urls,omitempty"`
+		AttachmentContentTypes []string `json:"attachment_content_types,omitempty"` // e.g. "image/jpeg", "application/pdf" – only image/* are sent to Replicate
+		ThreadID                string   `json:"thread_id,omitempty"`
+		Incognito               bool     `json:"incognito,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -390,6 +391,9 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	input := map[string]interface{}{"prompt": req.Prompt}
 	if len(req.AttachmentURLs) > 0 {
 		input["attachment_urls"] = req.AttachmentURLs
+		if len(req.AttachmentContentTypes) > 0 {
+			input["attachment_content_types"] = req.AttachmentContentTypes
+		}
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "chat", input, threadID)
 	if err != nil {

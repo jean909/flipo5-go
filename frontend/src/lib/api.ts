@@ -260,12 +260,16 @@ export async function createChat(
   prompt: string,
   attachmentUrls?: string[],
   threadId?: string,
-  incognito?: boolean
+  incognito?: boolean,
+  attachmentContentTypes?: string[]
 ): Promise<{ job_id: string; thread_id?: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const body: { prompt: string; attachment_urls?: string[]; thread_id?: string; incognito?: boolean } = { prompt };
-  if (attachmentUrls?.length) body.attachment_urls = attachmentUrls;
+  const body: { prompt: string; attachment_urls?: string[]; attachment_content_types?: string[]; thread_id?: string; incognito?: boolean } = { prompt };
+  if (attachmentUrls?.length) {
+    body.attachment_urls = attachmentUrls;
+    if (attachmentContentTypes?.length) body.attachment_content_types = attachmentContentTypes;
+  }
   if (threadId) body.thread_id = threadId;
   if (incognito) body.incognito = true;
   const res = await fetch(`${API_URL}/api/chat`, {

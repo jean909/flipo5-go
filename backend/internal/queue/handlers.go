@@ -235,14 +235,29 @@ Response style:
 		_ = json.Unmarshal(job.Input, &jobInput)
 	}
 	if urls, ok := jobInput["attachment_urls"].([]interface{}); ok && len(urls) > 0 {
+		types, _ := jobInput["attachment_content_types"].([]interface{})
 		images := make([]string, 0, len(urls))
-		for _, u := range urls {
-			if s, ok := u.(string); ok && s != "" {
-				images = append(images, s)
+		hasNonImage := false
+		for i, u := range urls {
+			urlStr, ok := u.(string)
+			if !ok || urlStr == "" {
+				continue
 			}
+			// Only send image URLs to Replicate (vision models). PDFs/docs cause E006 "invalid input".
+			if i < len(types) {
+				if t, ok := types[i].(string); ok && !strings.HasPrefix(t, "image/") {
+					hasNonImage = true
+					continue
+				}
+			}
+			images = append(images, urlStr)
 		}
 		if len(images) > 0 {
 			input["images"] = images
+		}
+		if hasNonImage {
+			// So the model can tell the user we can't read PDFs/docs yet
+			input["prompt"] = prompt + "\n\n[The user attached document file(s) (e.g. PDF) which cannot be analyzed. Suggest they paste the relevant text or upload an image/screenshot of the page.]"
 		}
 	}
 	// Prefer streaming: create prediction with stream, then consume stream and update job output per chunk
