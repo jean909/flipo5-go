@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -63,4 +64,16 @@ func (db *DB) DeleteUserFile(ctx context.Context, fileID, userID uuid.UUID) erro
 	_, err := db.Pool.Exec(ctx,
 		`DELETE FROM user_files WHERE id = $1 AND user_id = $2`, fileID, userID)
 	return err
+}
+
+func (db *DB) RenameUserFile(ctx context.Context, fileID, userID uuid.UUID, name string) error {
+	result, err := db.Pool.Exec(ctx,
+		`UPDATE user_files SET name=$3, updated_at=NOW() WHERE id=$1 AND user_id=$2`, fileID, userID, name)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("file not found")
+	}
+	return nil
 }

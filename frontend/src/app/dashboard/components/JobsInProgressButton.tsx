@@ -400,6 +400,7 @@ export function JobsInProgressButton() {
     if (type === 'video') return t(locale, 'jobs.type.video');
     if (type === 'upscale') return t(locale, 'jobs.type.upscale');
     if (type === 'seo') return t(locale, 'jobs.type.seo');
+    if (type === 'outline') return t(locale, 'jobs.type.outline');
     return type;
   };
 

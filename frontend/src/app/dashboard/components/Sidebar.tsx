@@ -246,6 +246,7 @@ export function Sidebar() {
             </p>
             {[
               { href: '/dashboard/seo', labelKey: 'nav.seo', icon: SEOIcon },
+              { href: '/dashboard/outline', labelKey: 'nav.outline', icon: OutlineIcon },
               { href: '/dashboard/files', labelKey: 'nav.files', icon: FilesIcon },
             ].map(({ href, labelKey, icon: Icon }) => {
               const isActive = pathname.startsWith(href);
@@ -268,6 +269,9 @@ export function Sidebar() {
           <>
             <Link href="/dashboard/seo" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/seo') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.seo')}>
               <SEOIcon className="w-5 h-5 shrink-0" />
+            </Link>
+            <Link href="/dashboard/outline" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/outline') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.outline')}>
+              <OutlineIcon className="w-5 h-5 shrink-0" />
             </Link>
             <Link href="/dashboard/files" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/files') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.files')}>
               <FilesIcon className="w-5 h-5 shrink-0" />
@@ -472,6 +476,14 @@ function SEOIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+    </svg>
+  );
+}
+
+function OutlineIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
     </svg>
   );
 }

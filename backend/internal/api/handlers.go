@@ -91,8 +91,10 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/jobs/{id}/retry", s.retryJob)
 		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Post("/seo", s.createSEO)
+		r.Post("/outline", s.createOutline)
 		r.Get("/files", s.listFiles)
 		r.Get("/files/{id}", s.getFile)
+		r.Patch("/files/{id}", s.renameFile)
 		r.Delete("/files/{id}", s.deleteFile)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", s.listProjects)
@@ -1429,6 +1431,63 @@ func (s *Server) createSEO(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) createOutline(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Topic     string `json:"topic"`
+		Audience  string `json:"audience"`
+		Language  string `json:"language"`
+		WordCount string `json:"word_count"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Topic) == "" {
+		http.Error(w, `{"error":"topic required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"topic":      strings.TrimSpace(req.Topic),
+		"audience":   req.Audience,
+		"language":   req.Language,
+		"word_count": req.WordCount,
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "outline", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewOutlineTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) renameFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if err := s.DB.RenameUserFile(r.Context(), id, userID, strings.TrimSpace(req.Name)); err != nil {
+		http.Error(w, `{"error":"rename failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 }
 
 func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {

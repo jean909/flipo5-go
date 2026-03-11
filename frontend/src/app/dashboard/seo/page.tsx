@@ -199,6 +199,7 @@ export default function SEOPage() {
 
   // Input
   const [inputMode, setInputMode] = useState<'url' | 'text'>('url');
+  const [outputFormat, setOutputFormat] = useState<'markdown' | 'html' | 'both'>('both');
   const [sourceText, setSourceText] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [titleInput, setTitleInput] = useState('');
@@ -232,7 +233,12 @@ export default function SEOPage() {
       if (!job) { if (!cancelled) { setError(t(locale, 'seo.error')); setLoading(false); } return; }
       if (job.status === 'completed') {
         const out = (job.output as { output?: string } | null)?.output ?? '';
-        setResult(parseResult(out));
+        const parsed = parseResult(out);
+        setResult(parsed);
+        // Auto-select the relevant tab based on output format
+        if (outputFormat === 'html' && parsed.html) setActiveTab('html');
+        else if (outputFormat === 'markdown' && parsed.article) setActiveTab('article');
+        else setActiveTab('article');
         setLoadingMsg('');
         setLoading(false);
       } else if (job.status === 'failed') {
@@ -256,7 +262,7 @@ export default function SEOPage() {
     setError(''); setResult(null); setLoading(true); setActiveTab('article');
     setLoadingMsg(url ? 'Fetching page content…' : 'Preparing content…');
     try {
-      const { job_id } = await createSEOJob({ source_text: text || undefined, source_url: url || undefined, title: titleInput.trim() || undefined, language });
+      const { job_id } = await createSEOJob({ source_text: text || undefined, source_url: url || undefined, title: titleInput.trim() || undefined, language, output_format: outputFormat });
       setJobId(job_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : t(locale, 'seo.error'));
@@ -296,8 +302,10 @@ export default function SEOPage() {
 
         {/* Input card */}
         <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 mb-8 flex flex-col gap-4">
-          {/* Mode selector */}
-          <div className="flex gap-1">
+          {/* Input + Output selectors */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            {/* Input mode */}
+            <div className="flex gap-1">
             <button type="button" onClick={() => setInputMode('url')}
               className={`btn-tap inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${inputMode === 'url' ? 'bg-theme-bg-hover text-theme-fg border border-theme-border-hover' : 'text-theme-fg-muted hover:text-theme-fg border border-transparent'}`}>
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -312,6 +320,24 @@ export default function SEOPage() {
               </svg>
               Text
             </button>
+            </div>
+
+            {/* Output format */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-theme-fg-subtle">Output:</span>
+              <div className="flex gap-0.5">
+                {([
+                  { key: 'markdown', label: 'Markdown' },
+                  { key: 'html', label: 'HTML' },
+                  { key: 'both', label: 'Both' },
+                ] as const).map(({ key, label }) => (
+                  <button key={key} type="button" onClick={() => setOutputFormat(key)}
+                    className={`btn-tap px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${outputFormat === key ? 'bg-theme-bg-hover text-theme-fg border border-theme-border-hover' : 'text-theme-fg-muted hover:text-theme-fg border border-transparent'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {inputMode === 'url' ? (
@@ -526,27 +552,47 @@ export default function SEOPage() {
                   {/* SERP Preview */}
                   {activeTab === 'serp' && (
                     <div className="p-6 flex flex-col gap-5">
-                      <p className="text-xs text-theme-fg-subtle">Google Search preview — using your domain {domain ? <strong className="text-theme-fg">{domain}</strong> : <span className="text-theme-fg-subtle">(set your domain above)</span>}</p>
-                      <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5 max-w-lg">
-                        <p className="text-xs text-theme-fg-subtle font-mono mb-1">{domain || 'yourdomain.com'} › {result.slug ?? 'article'}</p>
-                        <p className="text-lg font-medium leading-snug mb-1.5" style={{ color: '#8ab4f8' }}>{result.meta_title ?? 'Page Title'}</p>
-                        <p className="text-sm text-theme-fg-muted leading-relaxed">{result.meta_description ?? ''}</p>
-                        {result.keywords?.length ? (
-                          <div className="mt-2.5 flex flex-wrap gap-1">
-                            {result.keywords.slice(0, 5).map((kw) => <span key={kw} className="px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-theme-fg-subtle border border-white/8">{kw}</span>)}
+                      <p className="text-xs text-theme-fg-subtle">
+                        Google Search preview — domain: {domain ? <strong className="text-theme-fg font-mono">{domain}</strong> : <span className="text-theme-danger">set your domain in the form above</span>}
+                      </p>
+                      {/* Desktop + Mobile side by side */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Desktop */}
+                        <div>
+                          <p className="text-[10px] font-semibold text-theme-fg-subtle uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0H3" /></svg>
+                            Desktop
+                          </p>
+                          <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                            <p className="text-[11px] text-theme-fg-subtle font-mono mb-1 truncate">{domain || 'yourdomain.com'} › {result.slug ?? 'article'}</p>
+                            <p className="text-[17px] font-medium leading-snug mb-1 truncate" style={{ color: '#8ab4f8' }}>{result.meta_title ?? 'Page Title'}</p>
+                            <p className="text-sm text-theme-fg-muted leading-relaxed line-clamp-2">{result.meta_description ?? ''}</p>
                           </div>
-                        ) : null}
+                        </div>
+                        {/* Mobile */}
+                        <div>
+                          <p className="text-[10px] font-semibold text-theme-fg-subtle uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" /></svg>
+                            Mobile
+                          </p>
+                          <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="w-4 h-4 rounded-full bg-white/10 shrink-0" />
+                              <p className="text-[10px] text-theme-fg-subtle font-mono truncate">{domain || 'yourdomain.com'}</p>
+                            </div>
+                            <p className="text-[15px] font-medium leading-snug mb-1" style={{ color: '#8ab4f8' }}>{result.meta_title ?? 'Page Title'}</p>
+                            <p className="text-xs text-theme-fg-muted leading-relaxed line-clamp-3">{result.meta_description ?? ''}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="p-3 rounded-xl bg-theme-bg border border-theme-border">
-                          <p className="text-xs text-theme-fg-subtle mb-1">Title length</p>
+                          <p className="text-[10px] text-theme-fg-subtle mb-1">Title length — optimal 50–65</p>
                           <CharBar value={result.meta_title?.length ?? 0} min={50} max={65} />
-                          <p className="text-[10px] text-theme-fg-subtle mt-1">Optimal: 50–65 chars</p>
                         </div>
                         <div className="p-3 rounded-xl bg-theme-bg border border-theme-border">
-                          <p className="text-xs text-theme-fg-subtle mb-1">Description length</p>
+                          <p className="text-[10px] text-theme-fg-subtle mb-1">Description length — optimal 150–165</p>
                           <CharBar value={result.meta_description?.length ?? 0} min={150} max={165} />
-                          <p className="text-[10px] text-theme-fg-subtle mt-1">Optimal: 150–165 chars</p>
                         </div>
                       </div>
                     </div>

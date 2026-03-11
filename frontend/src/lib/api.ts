@@ -889,6 +889,8 @@ export async function createSEOJob(params: {
   source_url?: string;
   title?: string;
   language?: string;
+  /** 'markdown' = article only, 'html' = HTML only, 'both' = article + HTML */
+  output_format?: 'markdown' | 'html' | 'both';
 }): Promise<{ job_id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
@@ -917,6 +919,36 @@ export async function getFile(id: string): Promise<UserFile> {
   if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_URL}/api/files/${id}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error('File not found');
+  return res.json();
+}
+
+export async function renameFile(id: string, name: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  await fetch(`${API_URL}/api/files/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function createOutlineJob(params: {
+  topic: string;
+  audience?: string;
+  language?: string;
+  word_count?: string;
+}): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/outline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Outline failed');
+  }
   return res.json();
 }
 

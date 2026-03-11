@@ -14,6 +14,7 @@ const (
 	TypeVideo             = "video"
 	TypeUpscale           = "upscale"
 	TypeSEO               = "seo"
+	TypeOutline           = "outline"
 	TypeSummarizeThread   = "summarize_thread"
 	TypeCancelStaleJobs   = "cancel_stale_jobs"
 	JobTimeoutMinutes     = 5
@@ -81,6 +82,18 @@ func NewSEOTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeSEO, payload, asynq.Queue("default"), asynq.MaxRetry(2), taskTimeout), nil
+}
+
+type OutlinePayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewOutlineTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(OutlinePayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeOutline, payload, asynq.Queue("default"), asynq.MaxRetry(2), taskTimeout), nil
 }
 
 type SummarizeThreadPayload struct {
