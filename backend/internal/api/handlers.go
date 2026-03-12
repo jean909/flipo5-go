@@ -99,9 +99,11 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/", s.listProducts)
 			r.Post("/", s.createProduct)
 			r.Post("/improve-description", s.createProductDescriptionImprove)
+			r.Post("/improve-scene", s.createProductSceneImprove)
 			r.Get("/{id}", s.getProduct)
 			r.Post("/{id}/photos", s.addProductPhotos)
 			r.Post("/{id}/score", s.createProductScore)
+			r.Post("/{id}/suggest-scenes", s.createProductSuggestScenes)
 			r.Delete("/{id}/photos/{photoId}", s.deleteProductPhoto)
 			r.Delete("/{id}", s.deleteProduct)
 		})
@@ -1655,6 +1657,70 @@ func (s *Server) createProductDescriptionImprove(w http.ResponseWriter, r *http.
 		return
 	}
 	task, _ := queue.NewProductDescriptionTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) createProductSceneImprove(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ScenePrompt string `json:"scene_prompt"`
+		ProductID   string `json:"product_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	scenePrompt := strings.TrimSpace(req.ScenePrompt)
+	if scenePrompt == "" {
+		http.Error(w, `{"error":"scene_prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	input := map[string]interface{}{"scene_prompt": scenePrompt}
+	if id := strings.TrimSpace(req.ProductID); id != "" {
+		input["product_id"] = id
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "product_scene_improve", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job failed"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewProductSceneImproveTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) createProductSuggestScenes(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	productID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if _, err := s.DB.GetProduct(r.Context(), productID, userID); err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	ctx := r.Context()
+	input := map[string]interface{}{"product_id": productID.String()}
+	jobID, err := s.DB.CreateJob(ctx, userID, "product_suggest_scenes", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job failed"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewProductSuggestScenesTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue failed"}`, http.StatusInternalServerError)
 		return

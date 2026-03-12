@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import {
@@ -13,6 +13,8 @@ import {
   addProductPhotos,
   createProductScoreJob,
   createProductDescriptionImproveJob,
+  createProductSceneImproveJob,
+  createProductSuggestScenesJob,
   createImage,
   getJob,
   type Product,
@@ -23,6 +25,7 @@ import { getOutputUrls } from '@/lib/jobOutput';
 
 const MIN_AVG_SCORE = 5;
 const MIN_DESCRIPTION_LENGTH_FOR_IMPROVE = 15;
+const MIN_SCENE_LENGTH_FOR_IMPROVE = 10;
 
 const CATEGORY_OPTIONS = [
   { value: '', labelKey: 'productPictures.categoryNone' as const },
@@ -34,6 +37,17 @@ const CATEGORY_OPTIONS = [
   { value: 'beauty', labelKey: 'productPictures.categoryBeauty' as const },
   { value: 'other', labelKey: 'productPictures.categoryOther' as const },
 ] as const;
+
+const SCENE_TEMPLATES = [
+  { labelKey: 'productPictures.sceneWhite' as const, prompt: 'product on pure white background, studio lighting, e-commerce style' },
+  { labelKey: 'productPictures.sceneLiving' as const, prompt: 'product in a modern living room, natural daylight, lifestyle shot' },
+  { labelKey: 'productPictures.sceneMinimal' as const, prompt: 'product on minimalist light gray background, soft shadows, clean product shot' },
+  { labelKey: 'productPictures.sceneMarble' as const, prompt: 'product on white marble surface, luxury feel, soft reflections' },
+  { labelKey: 'productPictures.sceneWood' as const, prompt: 'product on wooden table, warm natural light, cozy atmosphere' },
+  { labelKey: 'productPictures.sceneOutdoor' as const, prompt: 'product outdoors in nature, soft daylight, greenery in background' },
+  { labelKey: 'productPictures.sceneFlatlay' as const, prompt: 'product in flat lay composition, top-down view, styled with complementary objects' },
+  { labelKey: 'productPictures.sceneGradient' as const, prompt: 'product on soft gradient background, modern and clean, professional lighting' },
+];
 
 function averageScore(photos: ProductPhoto[]): number | null {
   const withScore = photos.filter((p) => p.score != null);
@@ -67,6 +81,12 @@ export default function ProductPicturesPage() {
   const [improveProductUrl, setImproveProductUrl] = useState('');
   const [improveJobId, setImproveJobId] = useState<string | null>(null);
   const [improveLoading, setImproveLoading] = useState(false);
+  const [sceneImproveDialogOpen, setSceneImproveDialogOpen] = useState(false);
+  const [sceneImproveJobId, setSceneImproveJobId] = useState<string | null>(null);
+  const [sceneImproveLoading, setSceneImproveLoading] = useState(false);
+  const [suggestScenesJobId, setSuggestScenesJobId] = useState<string | null>(null);
+  const [suggestScenesLoading, setSuggestScenesLoading] = useState(false);
+  const [suggestedScenes, setSuggestedScenes] = useState<string[]>([]);
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -95,6 +115,12 @@ export default function ProductPicturesPage() {
   useEffect(() => {
     if (productId) loadProduct(productId);
   }, [productId, loadProduct]);
+
+  useEffect(() => {
+    setSuggestedScenes([]);
+    setSuggestScenesJobId(null);
+    setSuggestScenesLoading(false);
+  }, [productId]);
 
   const handleCreateProduct = async () => {
     const name = productName.trim();
@@ -185,6 +211,91 @@ export default function ProductPicturesPage() {
     poll();
     return () => { cancelled = true; };
   }, [improveJobId, improveLoading]);
+
+  const canShowSceneImproveHint = prompt.trim().length >= MIN_SCENE_LENGTH_FOR_IMPROVE;
+
+  const handleOpenSceneImproveDialog = () => {
+    setError('');
+    setSceneImproveDialogOpen(true);
+  };
+
+  const handleImproveScene = async () => {
+    const scene = prompt.trim();
+    if (!scene || !productId) return;
+    setError('');
+    try {
+      const { job_id } = await createProductSceneImproveJob({ scene_prompt: scene, product_id: productId });
+      setSceneImproveJobId(job_id);
+      setSceneImproveLoading(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+      setSceneImproveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!sceneImproveJobId || !sceneImproveLoading) return;
+    let cancelled = false;
+    function poll() {
+      getJob(sceneImproveJobId).then((j) => {
+        if (cancelled) return;
+        if (j?.status === 'completed') {
+          const out = j.output && typeof j.output === 'object' && 'output' in j.output
+            ? String((j.output as { output?: string }).output ?? '')
+            : '';
+          if (out) setPrompt(out);
+          setSceneImproveDialogOpen(false);
+          setSceneImproveJobId(null);
+          setSceneImproveLoading(false);
+          return;
+        }
+        if (j?.status === 'failed') {
+          setError(j.error ?? 'Improve failed');
+          setSceneImproveJobId(null);
+          setSceneImproveLoading(false);
+          return;
+        }
+        setTimeout(poll, 2000);
+      });
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [sceneImproveJobId, sceneImproveLoading]);
+
+  useEffect(() => {
+    if (step !== 3 || !productId || suggestScenesLoading || suggestedScenes.length > 0 || suggestScenesJobId) return;
+    createProductSuggestScenesJob(productId)
+      .then((r) => {
+        setSuggestScenesJobId(r.job_id);
+        setSuggestScenesLoading(true);
+      })
+      .catch(() => setSuggestScenesLoading(false));
+  }, [step, productId, suggestScenesLoading, suggestedScenes.length, suggestScenesJobId]);
+
+  useEffect(() => {
+    if (!suggestScenesJobId || !suggestScenesLoading) return;
+    let cancelled = false;
+    function poll() {
+      getJob(suggestScenesJobId).then((j) => {
+        if (cancelled) return;
+        if (j?.status === 'completed' && j.output && typeof j.output === 'object' && 'scenes' in j.output) {
+          const arr = (j.output as { scenes?: string[] }).scenes;
+          setSuggestedScenes(Array.isArray(arr) ? arr.slice(0, 10) : []);
+          setSuggestScenesJobId(null);
+          setSuggestScenesLoading(false);
+          return;
+        }
+        if (j?.status === 'failed') {
+          setSuggestScenesJobId(null);
+          setSuggestScenesLoading(false);
+          return;
+        }
+        setTimeout(poll, 2000);
+      });
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [suggestScenesJobId, suggestScenesLoading]);
 
   const handleImageFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -291,6 +402,14 @@ export default function ProductPicturesPage() {
   const avgScore = averageScore(photos);
   const canGenerate = avgScore != null && avgScore >= MIN_AVG_SCORE && photos.length > 0;
   const scoreBlocked = avgScore != null && avgScore < MIN_AVG_SCORE;
+
+  const previewGeneratedUrls = useMemo(() => {
+    const out: string[] = [];
+    generatedJobs.forEach((job) => {
+      getOutputUrls(job.output).forEach((u) => out.push(u));
+    });
+    return out;
+  }, [generatedJobs]);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
@@ -545,7 +664,37 @@ export default function ProductPicturesPage() {
 
         {/* Step 3: Generate */}
         {step === 3 && productId && product && photos.length > 0 && canGenerate && (
-          <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 space-y-5">
+          <div className="relative rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 space-y-5">
+            {previewGeneratedUrls.length > 0 && (
+              <div className="absolute top-4 right-4 group">
+                <div
+                  className="w-9 h-9 rounded-lg bg-theme-fg/10 flex items-center justify-center text-theme-fg-muted hover:text-theme-fg hover:bg-theme-fg/15 transition-colors cursor-default"
+                  title={t(locale, 'productPictures.previewGenerated')}
+                  aria-hidden
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                  </svg>
+                </div>
+                <div className="absolute right-0 top-full mt-1.5 w-48 p-2 rounded-xl border border-theme-border bg-theme-bg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible group-hover:pointer-events-auto pointer-events-none transition-all duration-150 z-20">
+                  <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider mb-2">{t(locale, 'productPictures.previewGenerated')}</p>
+                  <div className="grid grid-cols-3 gap-1.5 max-h-40 overflow-y-auto">
+                    {previewGeneratedUrls.slice(0, 9).map((url, i) => (
+                      <div key={i} className="aspect-square rounded-lg border border-theme-border overflow-hidden bg-theme-bg-subtle">
+                        <img
+                          src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {previewGeneratedUrls.length > 9 && (
+                    <p className="text-[10px] text-theme-fg-subtle mt-1">+{previewGeneratedUrls.length - 9}</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="text-sm text-theme-fg-muted">
               <span>{t(locale, 'productPictures.product')}: <strong className="text-theme-fg">{product.name}</strong></span>
               {(product.category || product.brand) && (
@@ -556,15 +705,90 @@ export default function ProductPicturesPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'productPictures.scenePrompt')}</label>
-              <input
-                type="text"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={t(locale, 'productPictures.scenePlaceholder')}
-                disabled={generateLoading}
-                className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder={t(locale, 'productPictures.scenePlaceholder')}
+                  disabled={generateLoading || sceneImproveLoading}
+                  className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
+                />
+                {canShowSceneImproveHint && !sceneImproveLoading && !generateLoading && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSceneImproveDialog}
+                    className="absolute right-2 bottom-2 text-xs font-medium text-theme-fg-muted hover:text-theme-fg rounded-md px-2 py-1 bg-theme-fg/5 hover:bg-theme-fg/10 transition-colors"
+                  >
+                    {t(locale, 'productPictures.improve')}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-theme-fg-muted mt-1.5 mb-1.5">{t(locale, 'productPictures.sceneIdeas')}</p>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {SCENE_TEMPLATES.map((tpl) => (
+                  <button
+                    key={tpl.labelKey}
+                    type="button"
+                    onClick={() => setPrompt(tpl.prompt)}
+                    disabled={generateLoading}
+                    className="btn-tap text-xs px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg/80 text-theme-fg-muted hover:text-theme-fg hover:border-theme-border-hover hover:bg-theme-bg-hover/80 transition-colors disabled:opacity-50"
+                  >
+                    {t(locale, tpl.labelKey)}
+                  </button>
+                ))}
+              </div>
+              {suggestScenesLoading && (
+                <p className="text-xs text-theme-fg-muted flex items-center gap-1.5 mb-1.5">
+                  <span className="w-3 h-3 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin" />
+                  {t(locale, 'productPictures.loadingScenes')}
+                </p>
+              )}
+              {!suggestScenesLoading && suggestedScenes.length > 0 && (
+                <>
+                  <p className="text-xs text-theme-fg-muted mb-1.5">{t(locale, 'productPictures.suggestedForProduct')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedScenes.map((scene, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setPrompt(scene)}
+                        disabled={generateLoading}
+                        className="btn-tap text-xs px-3 py-1.5 rounded-lg border border-theme-border bg-theme-fg/5 text-theme-fg-muted hover:text-theme-fg hover:border-theme-border-hover hover:bg-theme-fg/10 transition-colors disabled:opacity-50 max-w-[200px] truncate"
+                        title={scene}
+                      >
+                        {scene.length > 36 ? scene.slice(0, 35) + '…' : scene}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* Scene improve dialog */}
+            {sceneImproveDialogOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !sceneImproveLoading && setSceneImproveDialogOpen(false)}>
+                <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 w-full max-w-md shadow-xl text-left" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'productPictures.sceneImproveTitle')}</h3>
+                  {sceneImproveLoading ? (
+                    <div className="flex items-center gap-2 text-theme-fg-muted text-sm py-4">
+                      <span className="w-4 h-4 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin" />
+                      {t(locale, 'productPictures.improving')}
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setSceneImproveDialogOpen(false)} className="btn-tap px-3 py-2 rounded-xl border border-theme-border text-theme-fg text-sm">
+                        {t(locale, 'productPictures.cancel')}
+                      </button>
+                      <button type="button" onClick={handleImproveScene} className="btn-tap px-4 py-2 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium">
+                        {t(locale, 'productPictures.improve')}
+                      </button>
+                    </div>
+                  )}
+                  {error && !sceneImproveLoading && <p className="mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
+                </div>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleGenerate}

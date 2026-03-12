@@ -443,6 +443,35 @@ export async function createProductDescriptionImproveJob(params: { description: 
   return res.json();
 }
 
+export async function createProductSceneImproveJob(params: { scene_prompt: string; product_id?: string }): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/improve-scene`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ scene_prompt: params.scene_prompt, product_id: params.product_id || undefined }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed');
+  }
+  return res.json();
+}
+
+export async function createProductSuggestScenesJob(productId: string): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${productId}/suggest-scenes`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed');
+  }
+  return res.json();
+}
+
 export async function createProductScoreJob(productId: string): Promise<{ job_id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');

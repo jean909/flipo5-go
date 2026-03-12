@@ -1888,6 +1888,216 @@ func (h *Handlers) ProductDescriptionHandler(ctx context.Context, t *asynq.Task)
 	return nil
 }
 
+func (h *Handlers) ProductSceneImproveHandler(ctx context.Context, t *asynq.Task) error {
+	var p ProductSceneImprovePayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	scenePrompt, _ := jobInput["scene_prompt"].(string)
+	scenePrompt = strings.TrimSpace(scenePrompt)
+	if scenePrompt == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "scene_prompt required", 0, "")
+		return nil
+	}
+	productIDStr, _ := jobInput["product_id"].(string)
+	productName := ""
+	if productIDStr != "" {
+		if productID, err := uuid.Parse(productIDStr); err == nil {
+			if prod, err := h.DB.GetProduct(ctx, productID, job.UserID); err == nil && prod != nil {
+				productName = prod.Name
+				if prod.Category != "" {
+					productName += " (category: " + prod.Category + ")"
+				}
+			}
+		}
+	}
+	if h.Repl == nil || h.Cfg.ModelText == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "AI not configured", 0, "")
+		return nil
+	}
+	prompt := "Improve this scene description for product photography. Make it more specific and compelling for marketing images. Return only the improved scene description, no preamble.\n\n"
+	if productName != "" {
+		prompt = "Improve this scene description for product photography. Product: " + productName + ".\n\nCurrent scene: " + scenePrompt + "\n\nReturn only the improved scene description, no preamble or explanation.\n\n"
+	} else {
+		prompt += "Current scene: " + scenePrompt + "\n\n"
+	}
+	input := map[string]interface{}{
+		"prompt":        prompt,
+		"max_tokens":    500,
+		"system_prompt": "You are a product photography director. Output only the improved scene description.",
+	}
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	for i := 0; i < 30; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Scene improve failed", 0, pred.ID)
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			if outText == "" {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Empty result", 0, pred.ID)
+				return nil
+			}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", map[string]interface{}{"output": outText}, "", 0, pred.ID)
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"product_scene_improve"}`, p.JobID.String()))
+			}
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "timeout", 0, pred.ID)
+	return nil
+}
+
+// parseScenesArray extracts []string from AI output (JSON array of strings, may be wrapped in markdown).
+func parseScenesArray(s string) []string {
+	s = strings.TrimSpace(s)
+	if idx := strings.Index(s, "["); idx >= 0 {
+		s = s[idx:]
+	}
+	if idx := strings.LastIndex(s, "]"); idx >= 0 {
+		s = s[:idx+1]
+	}
+	var arr []string
+	if err := json.Unmarshal([]byte(s), &arr); err != nil {
+		return nil
+	}
+	for i := range arr {
+		arr[i] = strings.TrimSpace(arr[i])
+	}
+	return arr
+}
+
+func (h *Handlers) ProductSuggestScenesHandler(ctx context.Context, t *asynq.Task) error {
+	var p ProductSuggestScenesPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	productIDStr, _ := jobInput["product_id"].(string)
+	if productIDStr == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "product_id required", 0, "")
+		return nil
+	}
+	productID, err := uuid.Parse(productIDStr)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "invalid product_id", 0, "")
+		return nil
+	}
+	prod, err := h.DB.GetProduct(ctx, productID, job.UserID)
+	if err != nil || prod == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "product not found", 0, "")
+		return nil
+	}
+	if h.Repl == nil || h.Cfg.ModelText == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "AI not configured", 0, "")
+		return nil
+	}
+	productContext := "Product: " + prod.Name
+	if prod.Category != "" {
+		productContext += ", category: " + prod.Category
+	}
+	if prod.Description != "" {
+		productContext += ". Description: " + prod.Description
+	}
+	prompt := "For this product suggest exactly 10 specific scene descriptions for product photography. Each scene should be one short line, suitable for generating marketing images. " + productContext + ". Return ONLY a JSON array of exactly 10 strings, e.g. [\"scene 1\", \"scene 2\", ...]. No other text, no markdown."
+	input := map[string]interface{}{
+		"prompt":        prompt,
+		"max_tokens":    800,
+		"system_prompt": "You are a product photography director. Output only a JSON array of 10 scene description strings.",
+	}
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	for i := 0; i < 30; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Suggest scenes failed", 0, pred.ID)
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			scenes := parseScenesArray(outText)
+			if len(scenes) == 0 {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Could not parse scenes", 0, pred.ID)
+				return nil
+			}
+			if len(scenes) > 10 {
+				scenes = scenes[:10]
+			}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", map[string]interface{}{"scenes": scenes}, "", 0, pred.ID)
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"product_suggest_scenes"}`, p.JobID.String()))
+			}
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "timeout", 0, pred.ID)
+	return nil
+}
+
 // parseScoreArray extracts a slice of float64 from AI output (e.g. "[7, 6, 8]" or "```json\n[7,6,8]\n```").
 func parseScoreArray(s string) []float64 {
 	s = strings.TrimSpace(s)
@@ -1925,6 +2135,8 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeProductAnalyze, h.ProductAnalyzeHandler)
 	mux.HandleFunc(TypeProductScore, h.ProductScoreHandler)
 	mux.HandleFunc(TypeProductDescription, h.ProductDescriptionHandler)
+	mux.HandleFunc(TypeProductSceneImprove, h.ProductSceneImproveHandler)
+	mux.HandleFunc(TypeProductSuggestScenes, h.ProductSuggestScenesHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
 	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }

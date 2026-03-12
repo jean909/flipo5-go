@@ -73,6 +73,14 @@ function LogoIcon({ className }: { className?: string }) {
   );
 }
 
+function ProductIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className ?? 'w-4 h-4 shrink-0 text-theme-fg-muted'} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 01-1.125-1.125v-3.75zM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-8.25zM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-2.25z" />
+    </svg>
+  );
+}
+
 type ImageModalState = { displayUrls: string[]; downloadUrls: string[]; index: number } | null;
 
 export default function FilesPage() {
@@ -213,6 +221,12 @@ export default function FilesPage() {
     });
   }, [logoJobs, search]);
 
+  const filteredProducts = useMemo(() => {
+    if (!search.trim()) return products;
+    const q = search.trim().toLowerCase();
+    return products.filter((p) => p.name.toLowerCase().includes(q) || (p.category ?? '').toLowerCase().includes(q) || (p.brand ?? '').toLowerCase().includes(q));
+  }, [products, search]);
+
   const openFile = (file: UserFile) => {
     setViewingProjectItem(null);
     setViewingLogo(null);
@@ -293,9 +307,9 @@ export default function FilesPage() {
               className="w-full pl-9 pr-4 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg text-xs placeholder:text-theme-fg-subtle focus:outline-none focus:border-theme-border-hover" />
           </div>
           <div className="flex gap-1 flex-wrap">
-            {(['all', 'seo', 'text', 'translation', 'logo'] as const).map((type) => {
+            {(['all', 'seo', 'text', 'translation', 'logo', 'product'] as const).map((type) => {
               const translationCount = projects.length;
-              const label = type === 'all' ? `All (${files.length + translationCount + logoJobs.length})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : type === 'text' ? `Text (${files.filter(f => f.file_type === 'text').length})` : type === 'translation' ? `Translation (${translationCount})` : `Logo (${logoJobs.length})`;
+              const label = type === 'all' ? `All (${files.length + translationCount + logoJobs.length + products.length})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : type === 'text' ? `Text (${files.filter(f => f.file_type === 'text').length})` : type === 'translation' ? `Translation (${translationCount})` : type === 'logo' ? `Logo (${logoJobs.length})` : t(locale, 'files.products') + ` (${products.length})`;
               return (
                 <button key={type} type="button" onClick={() => setTypeFilter(type)}
                   className={`btn-tap px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${typeFilter === type ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
@@ -319,9 +333,9 @@ export default function FilesPage() {
               const items = (projectItems[project.id] ?? []).filter((it) => it.status === 'completed' && it.result_text);
               const loadingThis = loadingProjects === project.id;
               return (
-                <div key={project.id} className="rounded-xl border border-theme-border-subtle overflow-hidden mb-1.5">
+                <div key={project.id} className="rounded-xl border border-theme-border overflow-hidden mb-1.5 bg-theme-bg">
                   <button type="button" onClick={() => toggleProject(project.id)}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-t-xl hover:bg-theme-bg-subtle transition-colors">
+                    className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-t-xl hover:bg-theme-bg-hover/60 transition-colors">
                     <span className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
                       <svg className="w-3.5 h-3.5 text-theme-fg-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                     </span>
@@ -330,7 +344,7 @@ export default function FilesPage() {
                     {isExpanded && items.length > 0 && <span className="text-[10px] text-theme-fg-subtle">{items.length}</span>}
                   </button>
                   {isExpanded && (
-                    <div className="border-t border-theme-border-subtle bg-theme-bg-subtle/50">
+                    <div className="border-t border-theme-border bg-theme-bg">
                       {loadingThis && <p className="text-xs text-theme-fg-subtle px-3 py-2">{t(locale, 'common.loading')}</p>}
                       {!loadingThis && items.length === 0 && <p className="text-xs text-theme-fg-subtle px-3 py-2">No translated items yet.</p>}
                       {!loadingThis && items.map((item) => (
@@ -390,6 +404,84 @@ export default function FilesPage() {
           </div>
           )}
 
+          {/* Products (My productions) — visible for All and Product, expand to see photos + generated */}
+          {(typeFilter === 'all' || typeFilter === 'product') && (
+          <div className="mb-4">
+            <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider px-2 pb-1.5">{t(locale, 'files.products')}</p>
+            {filteredProducts.length === 0 ? (
+              <p className="text-xs text-theme-fg-subtle px-3 py-1">{t(locale, 'files.noProducts')}</p>
+            ) : (
+              filteredProducts.map((prod) => {
+                const isExpanded = expandedProductId === prod.id;
+                const detail = productDetail?.product.id === prod.id ? productDetail : null;
+                const loadingThis = loadingProductId === prod.id;
+                return (
+                  <div key={prod.id} className="rounded-xl border border-theme-border overflow-hidden mb-1.5 bg-theme-bg">
+                    <button type="button" onClick={() => toggleProduct(prod.id)}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-t-xl hover:bg-theme-bg-hover/60 transition-colors">
+                      <span className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                        <svg className="w-3.5 h-3.5 text-theme-fg-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                      </span>
+                      <ProductIcon className="w-4 h-4 shrink-0 text-theme-fg-muted" />
+                      <span className="flex-1 text-sm font-medium text-theme-fg truncate">{prod.name}</span>
+                      {(prod.category || prod.brand) && (
+                        <span className="text-[10px] text-theme-fg-subtle truncate max-w-[120px]">{(prod.category || prod.brand) || ''}</span>
+                      )}
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-theme-border bg-theme-bg px-3 py-2.5 space-y-3">
+                        {loadingThis && <p className="text-xs text-theme-fg-subtle">{t(locale, 'common.loading')}</p>}
+                        {!loadingThis && detail && (
+                          <>
+                            {detail.photos.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider mb-1.5">{t(locale, 'files.productPhotos')}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {detail.photos.map((ph) => {
+                                    const disp = mediaToken ? getMediaDisplayUrl(ph.image_url, mediaToken) || ph.image_url : ph.image_url;
+                                    return (
+                                      <button key={ph.id} type="button" onClick={() => setImageModal({ displayUrls: [disp], downloadUrls: [ph.image_url], index: 0 })}
+                                        className="rounded-lg border border-theme-border overflow-hidden shrink-0 hover:opacity-90">
+                                        <img src={disp} alt="" className="w-14 h-14 object-cover" />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                            {detail.generated_jobs.length > 0 && (
+                              <div>
+                                <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider mb-1.5">{t(locale, 'files.productGenerated')}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {detail.generated_jobs.map((job) => {
+                                    const urls = getOutputUrls(job.output);
+                                    return urls.map((url, i) => {
+                                      const disp = mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url;
+                                      return (
+                                        <button key={`${job.id}-${i}`} type="button" onClick={() => setImageModal({ displayUrls: urls.map((u) => mediaToken ? getMediaDisplayUrl(u, mediaToken) || u : u), downloadUrls: urls, index: i })}
+                                          className="rounded-lg border border-theme-border overflow-hidden shrink-0 hover:opacity-90">
+                                          <img src={disp} alt="" className="w-14 h-14 object-cover" />
+                                        </button>
+                                      );
+                                    });
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                            {detail.photos.length === 0 && detail.generated_jobs.length === 0 && (
+                              <p className="text-xs text-theme-fg-subtle">{t(locale, 'files.productEmpty')}</p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          )}
+
           {/* Standalone files — visible for All, SEO, Text */}
           {(typeFilter === 'all' || typeFilter === 'seo' || typeFilter === 'text') && (
           <div>
@@ -414,8 +506,12 @@ export default function FilesPage() {
                     />
                   </div>
                 ) : (
-                  <button type="button" onClick={() => openFile(file)}
-                    className={`w-full text-left flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors group border border-transparent ${viewingFile?.id === file.id ? 'bg-theme-bg-subtle border-theme-border-subtle' : 'hover:bg-theme-bg-subtle'}`}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openFile(file)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFile(file); } }}
+                    className={`w-full text-left flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors group border border-transparent cursor-pointer ${viewingFile?.id === file.id ? 'bg-theme-bg-subtle border-theme-border-subtle' : 'hover:bg-theme-bg-subtle'}`}>
                     <FileIcon type={file.file_type} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-theme-fg truncate">{file.name}</p>
@@ -426,7 +522,7 @@ export default function FilesPage() {
                       title={t(locale, 'files.rename')}>
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
                     </button>
-                  </button>
+                  </div>
                 )}
               </motion.div>
             ))}
