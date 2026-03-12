@@ -308,6 +308,28 @@ func (db *DB) ListStalePendingJobs(ctx context.Context, maxAgeMinutes int) ([]Jo
 	return list, rows.Err()
 }
 
+// ListJobsByProductID returns completed image jobs that have input.product_id = productID (generated for this product).
+func (db *DB) ListJobsByProductID(ctx context.Context, productID, userID uuid.UUID) ([]Job, error) {
+	pid := productID.String()
+	rows, err := db.Pool.Query(ctx,
+		`SELECT id, user_id, thread_id, type, status, name, input, output, error, cost_cents, replicate_id, rating, created_at::text, updated_at::text
+		 FROM jobs WHERE user_id = $1 AND type = 'image' AND status = 'completed' AND input::jsonb->>'product_id' = $2 ORDER BY created_at DESC`,
+		userID, pid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []Job
+	for rows.Next() {
+		var j Job
+		if err := rows.Scan(&j.ID, &j.UserID, &j.ThreadID, &j.Type, &j.Status, &j.Name, &j.Input, &j.Output, &j.Error, &j.CostCents, &j.ReplicateID, &j.Rating, &j.CreatedAt, &j.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, j)
+	}
+	return list, rows.Err()
+}
+
 // UpdateJobRating sets user feedback (like/dislike) for a job. Only the job owner can set it.
 func (db *DB) UpdateJobRating(ctx context.Context, jobID, userID uuid.UUID, rating string) error {
 	var err error

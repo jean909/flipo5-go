@@ -1468,6 +1468,32 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 	sourceAudio, _ := jobInput["source_audio"].(string)
 	sourceAudio = strings.TrimSpace(sourceAudio)
 
+	// Resolve storage keys (uploads/...) to public URLs so Replicate/Cloudflare can fetch them (same as chat images).
+	resolveMediaURL := func(u string) string {
+		if u == "" {
+			return u
+		}
+		if strings.HasPrefix(u, "uploads/") && h.Store != nil {
+			return h.Store.URL(u)
+		}
+		return u
+	}
+	for i := range sourceImages {
+		sourceImages[i] = resolveMediaURL(sourceImages[i])
+	}
+	sourceAudio = resolveMediaURL(sourceAudio)
+	// Replicate needs fetchable https URLs; if still a key, public URL is not configured.
+	for _, u := range sourceImages {
+		if u != "" && !strings.HasPrefix(u, "https://") {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Image URL not public: set S3_PUBLIC_URL or CLOUDFLARE_R2_PUBLIC_URL for uploads", 0, "")
+			return nil
+		}
+	}
+	if sourceAudio != "" && !strings.HasPrefix(sourceAudio, "https://") {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Audio URL not public: set S3_PUBLIC_URL or CLOUDFLARE_R2_PUBLIC_URL for uploads", 0, "")
+		return nil
+	}
+
 	textToTranslate := strings.TrimSpace(sourceText)
 	if sourceURL != "" && len(sourceImages) == 0 && sourceAudio == "" {
 		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -1590,6 +1616,221 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+func (h *Handlers) ProductAnalyzeHandler(ctx context.Context, t *asynq.Task) error {
+	var p queue.ProductAnalyzePayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	var imageURLs []string
+	if urls, ok := jobInput["image_urls"].([]interface{}); ok {
+		for _, v := range urls {
+			if s, ok := v.(string); ok && s != "" {
+				u := s
+				if strings.HasPrefix(u, "uploads/") && h.Store != nil {
+					u = h.Store.URL(u)
+				}
+				imageURLs = append(imageURLs, u)
+			}
+		}
+	}
+	if len(imageURLs) == 0 {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "At least one product image required", 0, "")
+		return nil
+	}
+	if h.Repl == nil || h.Cfg.ModelText == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "AI not configured", 0, "")
+		return nil
+	}
+	prompt := "Analyze these product photos. Are they sufficient for generating new product images (e.g. different backgrounds or scenes)? Reply in 1–2 sentences: either 'OK' or suggest what to add (e.g. more angles, better lighting, neutral background). Output only the analysis, no preamble."
+	input := map[string]interface{}{
+		"prompt":        prompt,
+		"images":        imageURLs,
+		"max_tokens":    500,
+		"system_prompt": "You are a product photography assistant. Be brief and practical.",
+	}
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	for i := 0; i < 30; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Analysis failed", 0, pred.ID)
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", map[string]interface{}{"output": outText}, "", 0, pred.ID)
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"product_analyze"}`, p.JobID.String()))
+			}
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "timeout", 0, pred.ID)
+	return nil
+}
+
+func (h *Handlers) ProductScoreHandler(ctx context.Context, t *asynq.Task) error {
+	var p queue.ProductScorePayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	productIDStr, _ := jobInput["product_id"].(string)
+	if productIDStr == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "product_id required", 0, "")
+		return nil
+	}
+	productID, err := uuid.Parse(productIDStr)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "invalid product_id", 0, "")
+		return nil
+	}
+	product, err := h.DB.GetProduct(ctx, productID, job.UserID)
+	if err != nil || product == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "product not found", 0, "")
+		return nil
+	}
+	photos, err := h.DB.ListProductPhotos(ctx, productID)
+	if err != nil || len(photos) == 0 {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "no photos to score", 0, "")
+		return nil
+	}
+	var imageURLs []string
+	for _, ph := range photos {
+		u := ph.ImageURL
+		if strings.HasPrefix(u, "uploads/") && h.Store != nil {
+			u = h.Store.URL(u)
+		}
+		imageURLs = append(imageURLs, u)
+	}
+	if h.Repl == nil || h.Cfg.ModelText == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "AI not configured", 0, "")
+		return nil
+	}
+	prompt := fmt.Sprintf("You have %d product photos. For each image rate 1-10: how clear and suitable is this product photo for generating new marketing images (visibility of product, lighting, framing). Reply with ONLY a JSON array of numbers, one per image in the same order, e.g. [7, 6, 8]. No other text.", len(imageURLs))
+	input := map[string]interface{}{
+		"prompt":        prompt,
+		"images":        imageURLs,
+		"max_tokens":    200,
+		"system_prompt": "You are a product photo quality rater. Output only a JSON array of numbers 1-10.",
+	}
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	for i := 0; i < 30; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Scoring failed", 0, pred.ID)
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			// Parse JSON array: [7, 6, 8] (may be wrapped in markdown code block)
+			scores := parseScoreArray(outText)
+			if len(scores) == 0 || len(scores) != len(photos) {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Could not parse scores (expected "+fmt.Sprint(len(photos))+" numbers)", 0, pred.ID)
+				return nil
+			}
+			if err := h.DB.UpdateProductPhotoScores(ctx, productID, scores); err != nil {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Failed to save scores", 0, pred.ID)
+				return nil
+			}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", map[string]interface{}{"scores": scores}, "", 0, pred.ID)
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"product_score"}`, p.JobID.String()))
+			}
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "timeout", 0, pred.ID)
+	return nil
+}
+
+// parseScoreArray extracts a slice of float64 from AI output (e.g. "[7, 6, 8]" or "```json\n[7,6,8]\n```").
+func parseScoreArray(s string) []float64 {
+	s = strings.TrimSpace(s)
+	// Remove markdown code block if present
+	if idx := strings.Index(s, "["); idx >= 0 {
+		s = s[idx:]
+	}
+	if idx := strings.LastIndex(s, "]"); idx >= 0 {
+		s = s[:idx+1]
+	}
+	var arr []float64
+	if err := json.Unmarshal([]byte(s), &arr); err != nil {
+		return nil
+	}
+	for i := range arr {
+		if arr[i] < 0 {
+			arr[i] = 0
+		}
+		if arr[i] > 10 {
+			arr[i] = 10
+		}
+	}
+	return arr
+}
+
 func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeChat, h.ChatHandler)
 	mux.HandleFunc(TypeImage, h.ImageHandler)
@@ -1599,6 +1840,8 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeOutline, h.OutlineHandler)
 	mux.HandleFunc(TypeTranslate, h.TranslateHandler)
 	mux.HandleFunc(TypeLogo, h.LogoHandler)
+	mux.HandleFunc(TypeProductAnalyze, h.ProductAnalyzeHandler)
+	mux.HandleFunc(TypeProductScore, h.ProductScoreHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
 	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }

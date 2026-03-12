@@ -17,6 +17,8 @@ const (
 	TypeOutline           = "outline"
 	TypeTranslate         = "translate"
 	TypeLogo              = "logo"
+	TypeProductAnalyze    = "product_analyze"
+	TypeProductScore      = "product_score"
 	TypeSummarizeThread   = "summarize_thread"
 	TypeCancelStaleJobs   = "cancel_stale_jobs"
 	JobTimeoutMinutes     = 5
@@ -120,6 +122,30 @@ func NewLogoTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeLogo, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
+}
+
+type ProductAnalyzePayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewProductAnalyzeTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(ProductAnalyzePayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeProductAnalyze, payload, asynq.Queue("default"), asynq.MaxRetry(2), asynq.Timeout(2*time.Minute)), nil
+}
+
+type ProductScorePayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewProductScoreTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(ProductScorePayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeProductScore, payload, asynq.Queue("default"), asynq.MaxRetry(2), asynq.Timeout(2*time.Minute)), nil
 }
 
 type SummarizeThreadPayload struct {

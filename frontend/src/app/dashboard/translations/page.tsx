@@ -13,6 +13,8 @@ import {
   addTranslationItem,
   deleteTranslationItem,
   uploadAttachments,
+  getToken,
+  getMediaDisplayUrl,
   type TranslationProject as TProject,
   type TranslationItem as TItem,
 } from '@/lib/api';
@@ -45,6 +47,7 @@ export default function TranslationsPage() {
   const [sourceImageUrls, setSourceImageUrls] = useState<string[]>([]);
   const [sourceAudioUrl, setSourceAudioUrl] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [sourceLang, setSourceLang] = useState('Auto-detect');
   const [targetLang, setTargetLang] = useState('German');
   const [loading, setLoading] = useState(false);
@@ -116,6 +119,10 @@ export default function TranslationsPage() {
     if (!jobId || !loading) return;
     return pollJob(jobId);
   }, [jobId, loading, pollJob]);
+
+  useEffect(() => {
+    getToken().then(setMediaToken);
+  }, []);
 
   const handleTranslate = async () => {
     const url = inputMode === 'url' ? sourceUrl.trim() : '';
@@ -467,14 +474,32 @@ export default function TranslationsPage() {
                     type="file"
                     accept="image/*"
                     multiple
+                    value=""
                     onChange={handleImageFiles}
                     disabled={loading || uploadingMedia}
                     className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 file:mr-3 file:py-1.5 file:rounded-lg file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-sm"
                   />
                   {sourceImageUrls.length > 0 && (
-                    <p className="mt-1.5 text-xs text-theme-fg-muted">
-                      {sourceImageUrls.length} image(s) — {t(locale, 'translate.sourceImagePlaceholder')}
-                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {sourceImageUrls.map((url, i) => (
+                        <div key={i} className="relative group">
+                          <img
+                            src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url}
+                            alt=""
+                            className="w-14 h-14 rounded-lg border border-theme-border object-cover bg-theme-bg-subtle"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setSourceImageUrls((prev) => prev.filter((_, j) => j !== i))}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-theme-fg text-theme-bg text-xs font-bold opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                            aria-label="Remove"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <span className="text-xs text-theme-fg-muted self-center">{sourceImageUrls.length} {t(locale, 'translate.inputModeImage')}(s)</span>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -483,12 +508,16 @@ export default function TranslationsPage() {
                   <input
                     type="file"
                     accept="audio/*"
+                    value=""
                     onChange={handleAudioFile}
                     disabled={loading || uploadingMedia}
                     className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 file:mr-3 file:py-1.5 file:rounded-lg file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-sm"
                   />
                   {sourceAudioUrl && (
-                    <p className="mt-1.5 text-xs text-theme-fg-muted">{t(locale, 'translate.sourceAudioPlaceholder')}</p>
+                    <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-theme-border bg-theme-bg-subtle px-3 py-2 text-sm text-theme-fg">
+                      <span className="text-theme-fg-muted">🎵</span>
+                      <span>{t(locale, 'translate.inputModeAudio')} {t(locale, 'translate.attached')}</span>
+                    </div>
                   )}
                 </div>
               )}
@@ -766,6 +795,7 @@ export default function TranslationsPage() {
                         type="file"
                         accept="image/*"
                         multiple
+                        value=""
                         onChange={handleAddItemImageFiles}
                         disabled={addingItemUpload}
                         className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 file:mr-2 file:py-1 file:rounded file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-xs"
@@ -777,6 +807,7 @@ export default function TranslationsPage() {
                       <input
                         type="file"
                         accept="audio/*"
+                        value=""
                         onChange={handleAddItemAudioFile}
                         disabled={addingItemUpload}
                         className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 file:mr-2 file:py-1 file:rounded file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-xs"

@@ -14,12 +14,16 @@ import {
   listContent,
   listTranslationProjects,
   getTranslationProject,
+  listProducts,
+  getProduct,
   downloadMediaUrl,
   getMediaDisplayUrl,
   type UserFile,
   type TranslationProject,
   type TranslationItem,
   type Job,
+  type Product,
+  type ProductPhoto,
 } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../components/ImageViewModal';
@@ -79,8 +83,12 @@ export default function FilesPage() {
   const [projectItems, setProjectItems] = useState<Record<string, TranslationItem[]>>({});
   const [logoJobs, setLogoJobs] = useState<Job[]>([]);
   const [logoLoading, setLogoLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productDetail, setProductDetail] = useState<{ product: Product; photos: ProductPhoto[]; generated_jobs: Job[] } | null>(null);
+  const [loadingProductId, setLoadingProductId] = useState<string | null>(null);
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState<UserFile | null>(null);
@@ -89,14 +97,18 @@ export default function FilesPage() {
   const [imageModal, setImageModal] = useState<ImageModalState>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text' | 'translation' | 'logo'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text' | 'translation' | 'logo' | 'product'>('all');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const hasViewerOpen = !!viewingFile || !!viewingProjectItem || !!viewingLogo;
+  const fetchProducts = useCallback(() => {
+    listProducts().then((r) => setProducts(r.products ?? [])).catch(() => setProducts([]));
+  }, []);
 
   useEffect(() => {
-    const t = searchParams.get('type');
-    if (t === 'logo') setTypeFilter('logo');
+    const type = searchParams.get('type');
+    if (type === 'logo') setTypeFilter('logo');
+    if (type === 'product') setTypeFilter('product');
   }, [searchParams]);
 
   const fetchFiles = useCallback(() => {
@@ -133,6 +145,27 @@ export default function FilesPage() {
   useEffect(() => {
     if (typeFilter === 'all' || typeFilter === 'logo') fetchLogos();
   }, [typeFilter, fetchLogos]);
+
+  useEffect(() => {
+    if (typeFilter === 'all' || typeFilter === 'product') fetchProducts();
+  }, [typeFilter, fetchProducts]);
+
+  const loadProductDetail = useCallback((productId: string) => {
+    setLoadingProductId(productId);
+    getProduct(productId)
+      .then((r) => setProductDetail({ product: r.product, photos: r.photos ?? [], generated_jobs: r.generated_jobs ?? [] }))
+      .catch(() => setProductDetail(null))
+      .finally(() => setLoadingProductId(null));
+  }, []);
+
+  const toggleProduct = useCallback((productId: string) => {
+    setExpandedProductId((prev) => {
+      const next = prev === productId ? null : productId;
+      if (next) loadProductDetail(next);
+      else setProductDetail(null);
+      return next;
+    });
+  }, [loadProductDetail]);
 
   const loadProjectItems = useCallback((projectId: string) => {
     if (projectItems[projectId]) return;

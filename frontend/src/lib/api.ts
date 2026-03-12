@@ -317,6 +317,7 @@ export interface CreateImageParams {
   size?: '2K' | '4K' | 'HD';
   aspectRatio?: string;
   imageInput?: string[];
+  productId?: string;
   maxImages?: number;
 }
 
@@ -333,6 +334,7 @@ export async function createImage(params: CreateImageParams | string, threadId?:
           size: params.size ?? '2K',
           aspect_ratio: params.aspectRatio ?? 'match_input_image',
           image_input: params.imageInput?.length ? params.imageInput : undefined,
+          product_id: params.productId || undefined,
           max_images: params.maxImages ?? 4,
           sequential_image_generation: 'auto',
         };
@@ -347,6 +349,117 @@ export async function createImage(params: CreateImageParams | string, threadId?:
     throw new Error((e as { error?: string }).error || 'Failed');
   }
   return res.json();
+}
+
+export async function createProductAnalyzeJob(params: { image_urls: string[] }): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/product-pictures/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Analysis failed');
+  }
+  return res.json();
+}
+
+export interface Product {
+  id: string;
+  user_id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  brand?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductPhoto {
+  id: string;
+  product_id: string;
+  image_url: string;
+  score?: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export async function listProducts(): Promise<{ products: Product[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Failed to list products');
+  return res.json();
+}
+
+export async function createProduct(params: { name: string; category?: string; description?: string; brand?: string }): Promise<{ id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed');
+  }
+  return res.json();
+}
+
+export async function getProduct(id: string): Promise<{ product: Product; photos: ProductPhoto[]; generated_jobs: Job[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Product not found');
+  return res.json();
+}
+
+export async function addProductPhotos(productId: string, image_urls: string[]): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${productId}/photos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ image_urls }),
+  });
+  if (!res.ok) throw new Error('Failed to add photos');
+}
+
+export async function createProductScoreJob(productId: string): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${productId}/score`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Score failed');
+  }
+  return res.json();
+}
+
+export async function deleteProductPhoto(productId: string, photoId: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${productId}/photos/${photoId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to delete photo');
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to delete product');
 }
 
 export interface CreateImageInpaintParams {
