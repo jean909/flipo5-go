@@ -51,7 +51,7 @@ if ($RepoUrl) {
 } else {
     $remoteCmd = "mkdir -p $RemotePath && cd $RemotePath && git pull && docker compose build api && docker compose up -d"
 }
-ssh $Server $remoteCmd
+ssh -t $Server $remoteCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "ATENTIE: SSH pe server a esuat (ex: Permission denied). Codul a fost push-uit, dar pe server NU s-a facut git pull / rebuild." -ForegroundColor Yellow
