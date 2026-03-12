@@ -52,8 +52,15 @@ if ($RepoUrl) {
     $remoteCmd = "mkdir -p $RemotePath && cd $RemotePath && git pull && docker compose build api && docker compose up -d"
 }
 ssh $Server $remoteCmd
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ATENTIE: SSH pe server a esuat (ex: Permission denied). Codul a fost push-uit, dar pe server NU s-a facut git pull / rebuild." -ForegroundColor Yellow
+    Write-Host "Conecteaza-te la server (ssh sau cum te conectezi de obicei) si ruleaza manual:" -ForegroundColor Yellow
+    Write-Host "  cd $RemotePath && git pull && docker compose build api && docker compose up -d" -ForegroundColor Cyan
+    exit 1
+}
 Write-Host ""
 Write-Host "Done. Verificare:"
 Write-Host "  ssh $Server 'cd $RemotePath && docker compose ps'"
 Write-Host "  ssh $Server 'cd $RemotePath && docker compose logs api --tail 30'"
-Write-Host "  (în logs caută 'migrate: ok' sau 'migrate FAILED' pentru migrări DB)"
+Write-Host "  (in logs cauta 'migrate: ok' sau 'migrate FAILED' pentru migrari DB)"

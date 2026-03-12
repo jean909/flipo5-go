@@ -55,6 +55,8 @@ Nu e nevoie să dai manual comenzi pe server pentru deploy ulterior – scriptul
 
 **Migrări DB:** La fiecare pornire a containerului, API-ul rulează automat `schema.sql` + `migrations/*.sql`. Tabele noi (ex. `translation_projects`) apar după ce rulezi scriptul și containerul pornește.
 
+**Dacă SSH dă „Permission denied”:** Codul este oricum push-uit. Conectează-te la server (cum faci de obicei) și rulează manual: `cd ~/backend/flipo5 && git pull && docker compose build api && docker compose up -d`. Path-ul pe server este `~/backend/flipo5` (implicit).
+
 ## Port 8080 deja folosit
 
 Dacă vezi `Bind for 0.0.0.0:8080 failed: port is already allocated`:
