@@ -103,7 +103,7 @@ func (db *DB) ListTranslationItems(ctx context.Context, projectID uuid.UUID) ([]
 
 func (db *DB) AddTranslationItem(ctx context.Context, projectID uuid.UUID, sourceType, sourceValue string, sortOrder int) (uuid.UUID, error) {
 	id := uuid.New()
-	if sourceType != "url" && sourceType != "text" {
+	if sourceType != "url" && sourceType != "text" && sourceType != "image" && sourceType != "audio" {
 		sourceType = "text"
 	}
 	_, err := db.Pool.Exec(ctx,

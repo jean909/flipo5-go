@@ -14,16 +14,19 @@ function isVideoUrl(u: string) {
 interface ImageViewModalProps {
   url: string;
   urls?: string[];
+  /** When URLs need a proxy to display, pass raw URLs here for download. Same order as urls. */
+  downloadUrls?: string[];
   onClose: () => void;
   locale?: Locale;
 }
 
-export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewModalProps) {
+export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en' }: ImageViewModalProps) {
   const router = useRouter();
   const list = urls && urls.length > 1 ? urls : [url];
   const [idx, setIdx] = useState(() => Math.max(0, list.indexOf(url)));
   const safeIdx = Math.max(0, Math.min(idx, list.length - 1));
   const currentUrl = list[safeIdx];
+  const downloadUrl = (downloadUrls && downloadUrls[safeIdx]) ?? currentUrl;
   const isVideo = isVideoUrl(currentUrl);
   const hasPrev = safeIdx > 0;
   const hasNext = safeIdx < list.length - 1;
@@ -66,13 +69,13 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
     try {
       let blob: Blob;
       try {
-        blob = await downloadMediaUrl(currentUrl);
+        blob = await downloadMediaUrl(downloadUrl);
       } catch {
-        const res = await fetch(currentUrl);
+        const res = await fetch(downloadUrl);
         if (!res.ok) throw new Error('Fetch failed');
         blob = await res.blob();
       }
-      const ext = getExt(blob, currentUrl);
+      const ext = getExt(blob, downloadUrl);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `flipo5-${Date.now()}.${ext}`;
@@ -84,7 +87,7 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
         URL.revokeObjectURL(a.href);
       }, 100);
     } catch (_) {}
-  }, [currentUrl]);
+  }, [downloadUrl]);
 
   const handleShare = useCallback(async () => {
     try {
@@ -106,13 +109,13 @@ export function ImageViewModal({ url, urls, onClose, locale = 'en' }: ImageViewM
     try {
       const uniqueName = `Edit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const { id } = await createProject(uniqueName);
-      await addProjectItem(id, isVideo ? 'video' : 'image', currentUrl);
+      await addProjectItem(id, isVideo ? 'video' : 'image', downloadUrl);
       onClose();
       router.push(`/dashboard/studio/${id}`);
     } catch (_) {
       setEditLoading(false);
     }
-  }, [currentUrl, isVideo, onClose, router, editLoading]);
+  }, [downloadUrl, isVideo, onClose, router, editLoading]);
 
   return (
     <div

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
@@ -21,6 +22,7 @@ import {
   type Job,
 } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
+import { ImageViewModal } from '../components/ImageViewModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -67,8 +69,11 @@ function LogoIcon({ className }: { className?: string }) {
   );
 }
 
+type ImageModalState = { displayUrls: string[]; downloadUrls: string[]; index: number } | null;
+
 export default function FilesPage() {
   const { locale } = useLocale();
+  const searchParams = useSearchParams();
   const [files, setFiles] = useState<UserFile[]>([]);
   const [projects, setProjects] = useState<TranslationProject[]>([]);
   const [projectItems, setProjectItems] = useState<Record<string, TranslationItem[]>>({});
@@ -81,12 +86,18 @@ export default function FilesPage() {
   const [viewingFile, setViewingFile] = useState<UserFile | null>(null);
   const [viewingProjectItem, setViewingProjectItem] = useState<ViewingProjectItem | null>(null);
   const [viewingLogo, setViewingLogo] = useState<Job | null>(null);
+  const [imageModal, setImageModal] = useState<ImageModalState>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text' | 'translation' | 'logo'>('all');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const hasViewerOpen = !!viewingFile || !!viewingProjectItem || !!viewingLogo;
+
+  useEffect(() => {
+    const t = searchParams.get('type');
+    if (t === 'logo') setTypeFilter('logo');
+  }, [searchParams]);
 
   const fetchFiles = useCallback(() => {
     setLoading(true);
@@ -391,8 +402,9 @@ export default function FilesPage() {
         </div>
       </div>
 
-      {/* Viewer */}
-      <AnimatePresence>
+      {/* Viewer - wrapper so panel gets flex space when open */}
+      <div className={hasViewerOpen ? 'flex-1 min-w-0 flex flex-col min-h-0' : 'hidden'}>
+      <AnimatePresence mode="wait">
         {viewingFile && (
           <motion.div key={`file-${viewingFile.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
             <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
@@ -485,28 +497,66 @@ export default function FilesPage() {
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {getOutputUrls(viewingLogo.output).map((url, i) => {
-                  const displayUrl = mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url;
-                  return (
-                    <div key={i} className="rounded-xl border border-theme-border bg-theme-bg overflow-hidden">
-                      <div className="aspect-square flex items-center justify-center p-2 bg-theme-bg-subtle">
-                        <img src={displayUrl} alt="" className="max-w-full max-h-full w-auto h-auto object-contain" />
-                      </div>
-                      <div className="p-2 flex gap-2 border-t border-theme-border">
-                        <button type="button" onClick={() => downloadMediaUrl(url).then((blob) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `logo-${i + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }).catch(() => window.open(url, '_blank'))}
-                          className="btn-tap px-2 py-1 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium">
-                          PNG
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {(() => {
+                const urls = getOutputUrls(viewingLogo.output ?? null);
+                if (urls.length === 0) {
+                  return <p className="text-sm text-theme-fg-muted py-4">{t(locale, 'files.noLogos')}</p>;
+                }
+                const displayUrls = urls.map((u) => mediaToken ? getMediaDisplayUrl(u, mediaToken) || u : u);
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {urls.map((url, i) => {
+                      const displayUrl = displayUrls[i];
+                      return (
+                        <div key={i} className="rounded-xl border border-theme-border bg-theme-bg overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setImageModal({ displayUrls, downloadUrls: urls, index: i })}
+                            className="w-full aspect-square flex items-center justify-center p-2 bg-theme-bg-subtle hover:bg-theme-bg-hover transition-colors cursor-pointer"
+                          >
+                            <img src={displayUrl} alt="" className="max-w-full max-h-full w-auto h-auto object-contain pointer-events-none" />
+                          </button>
+                          <div className="p-2 flex gap-2 border-t border-theme-border">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const blob = await downloadMediaUrl(url);
+                                  const a = document.createElement('a');
+                                  a.href = URL.createObjectURL(blob);
+                                  a.download = `logo-${i + 1}.png`;
+                                  a.click();
+                                  URL.revokeObjectURL(a.href);
+                                } catch {
+                                  window.open(url, '_blank');
+                                }
+                              }}
+                              className="btn-tap px-2 py-1 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium"
+                            >
+                              PNG
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
+
+      {imageModal && (
+        <ImageViewModal
+          url={imageModal.displayUrls[imageModal.index]}
+          urls={imageModal.displayUrls}
+          downloadUrls={imageModal.downloadUrls}
+          onClose={() => setImageModal(null)}
+          locale={locale}
+        />
+      )}
     </div>
   );
 }

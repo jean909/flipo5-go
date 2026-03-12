@@ -988,6 +988,8 @@ export async function createLogoJob(params: {
 export async function createTranslateJob(params: {
   source_url?: string;
   source_text?: string;
+  source_images?: string[];
+  source_audio?: string;
   source_lang?: string;
   target_lang: string;
   project_id?: string;
@@ -1020,7 +1022,7 @@ export interface TranslationProject {
 export interface TranslationItem {
   id: string;
   project_id: string;
-  source_type: 'url' | 'text';
+  source_type: 'url' | 'text' | 'image' | 'audio';
   source_value: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   result_text?: string | null;
@@ -1062,7 +1064,7 @@ export async function getTranslationProject(id: string): Promise<{ project: Tran
   return res.json();
 }
 
-export async function addTranslationItem(projectId: string, params: { source_type: 'url' | 'text'; source_value: string }): Promise<{ id: string }> {
+export async function addTranslationItem(projectId: string, params: { source_type: 'url' | 'text' | 'image' | 'audio'; source_value: string }): Promise<{ id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_URL}/api/translation-projects/${projectId}/items`, {

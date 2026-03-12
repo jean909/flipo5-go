@@ -12,6 +12,7 @@ import {
   getTranslationProject,
   addTranslationItem,
   deleteTranslationItem,
+  uploadAttachments,
   type TranslationProject as TProject,
   type TranslationItem as TItem,
 } from '@/lib/api';
@@ -38,9 +39,12 @@ export default function TranslationsPage() {
   const [mode, setMode] = useState<'single' | 'project'>('single');
 
   // Single mode state
-  const [inputMode, setInputMode] = useState<'url' | 'text'>('text');
+  const [inputMode, setInputMode] = useState<'url' | 'text' | 'image' | 'audio'>('text');
   const [sourceUrl, setSourceUrl] = useState('');
   const [sourceText, setSourceText] = useState('');
+  const [sourceImageUrls, setSourceImageUrls] = useState<string[]>([]);
+  const [sourceAudioUrl, setSourceAudioUrl] = useState('');
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [sourceLang, setSourceLang] = useState('Auto-detect');
   const [targetLang, setTargetLang] = useState('German');
   const [loading, setLoading] = useState(false);
@@ -57,9 +61,10 @@ export default function TranslationsPage() {
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectSourceLang, setNewProjectSourceLang] = useState('Auto-detect');
   const [newProjectTargetLang, setNewProjectTargetLang] = useState('German');
-  const [addItemType, setAddItemType] = useState<'url' | 'text'>('text');
+  const [addItemType, setAddItemType] = useState<'url' | 'text' | 'image' | 'audio'>('text');
   const [addItemValue, setAddItemValue] = useState('');
   const [addingItem, setAddingItem] = useState(false);
+  const [addingItemUpload, setAddingItemUpload] = useState(false);
   const [translatingItemId, setTranslatingItemId] = useState<string | null>(null);
   const [translatingAll, setTranslatingAll] = useState(false);
 
@@ -115,7 +120,9 @@ export default function TranslationsPage() {
   const handleTranslate = async () => {
     const url = inputMode === 'url' ? sourceUrl.trim() : '';
     const text = inputMode === 'text' ? sourceText.trim() : '';
-    if (!url && !text) return;
+    const images = inputMode === 'image' ? sourceImageUrls : [];
+    const audio = inputMode === 'audio' ? sourceAudioUrl.trim() : '';
+    if (!url && !text && images.length === 0 && !audio) return;
     setError('');
     setResult('');
     setLoading(true);
@@ -123,6 +130,8 @@ export default function TranslationsPage() {
       const { job_id } = await createTranslateJob({
         source_url: url || undefined,
         source_text: text || undefined,
+        source_images: images.length > 0 ? images : undefined,
+        source_audio: audio || undefined,
         source_lang: sourceLang === 'Auto-detect' ? undefined : sourceLang,
         target_lang: targetLang,
       });
@@ -130,6 +139,39 @@ export default function TranslationsPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : t(locale, 'translate.error'));
       setLoading(false);
+    }
+  };
+
+  const handleImageFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+    const allowed = files.slice(0, 10);
+    setUploadingMedia(true);
+    setError('');
+    try {
+      const urls = await uploadAttachments(allowed);
+      setSourceImageUrls((prev) => [...prev, ...urls].slice(0, 10));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingMedia(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingMedia(true);
+    setError('');
+    try {
+      const [url] = await uploadAttachments([file]);
+      if (url) setSourceAudioUrl(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingMedia(false);
+      e.target.value = '';
     }
   };
 
@@ -192,14 +234,71 @@ export default function TranslationsPage() {
     setAddingItem(false);
   };
 
+  const handleAddItemImageFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (!project || files.length === 0) return;
+    setAddingItemUpload(true);
+    setError('');
+    try {
+      const urls = await uploadAttachments(files.slice(0, 10));
+      if (urls.length > 0) {
+        await addTranslationItem(project.id, {
+          source_type: 'image',
+          source_value: JSON.stringify(urls),
+        });
+        fetchProjectDetail(project.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t(locale, 'translate.error'));
+    } finally {
+      setAddingItemUpload(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAddItemAudioFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!project || !file) return;
+    setAddingItemUpload(true);
+    setError('');
+    try {
+      const [url] = await uploadAttachments([file]);
+      if (url) {
+        await addTranslationItem(project.id, {
+          source_type: 'audio',
+          source_value: url,
+        });
+        fetchProjectDetail(project.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t(locale, 'translate.error'));
+    } finally {
+      setAddingItemUpload(false);
+      e.target.value = '';
+    }
+  };
+
   const handleTranslateItem = async (item: TItem) => {
     if (!project || item.status === 'running') return;
     setError('');
     setTranslatingItemId(item.id);
     try {
+      let source_images: string[] | undefined;
+      let source_audio: string | undefined;
+      if (item.source_type === 'image') {
+        try {
+          source_images = JSON.parse(item.source_value) as string[];
+        } catch {
+          source_images = [item.source_value];
+        }
+      } else if (item.source_type === 'audio') {
+        source_audio = item.source_value;
+      }
       const { job_id } = await createTranslateJob({
         source_url: item.source_type === 'url' ? item.source_value : undefined,
         source_text: item.source_type === 'text' ? item.source_value : undefined,
+        source_images,
+        source_audio,
         source_lang: project.source_lang === 'auto' ? undefined : project.source_lang,
         target_lang: project.target_lang,
         project_id: project.id,
@@ -223,9 +322,22 @@ export default function TranslationsPage() {
     setError('');
     try {
       for (const item of pending) {
+        let source_images: string[] | undefined;
+        let source_audio: string | undefined;
+        if (item.source_type === 'image') {
+          try {
+            source_images = JSON.parse(item.source_value) as string[];
+          } catch {
+            source_images = [item.source_value];
+          }
+        } else if (item.source_type === 'audio') {
+          source_audio = item.source_value;
+        }
         await createTranslateJob({
           source_url: item.source_type === 'url' ? item.source_value : undefined,
           source_text: item.source_type === 'text' ? item.source_value : undefined,
+          source_images,
+          source_audio,
           source_lang: project.source_lang === 'auto' ? undefined : project.source_lang,
           target_lang: project.target_lang,
           project_id: project.id,
@@ -257,8 +369,12 @@ export default function TranslationsPage() {
     } catch {}
   };
 
-  const hasInput = inputMode === 'url' ? !!sourceUrl.trim() : !!sourceText.trim();
-  const canSubmit = !loading && hasInput;
+  const hasInput =
+    inputMode === 'url' ? !!sourceUrl.trim() :
+    inputMode === 'text' ? !!sourceText.trim() :
+    inputMode === 'image' ? sourceImageUrls.length > 0 :
+    !!sourceAudioUrl.trim();
+  const canSubmit = !loading && !uploadingMedia && hasInput;
   const pendingCount = items.filter((i) => i.status === 'pending').length;
 
   return (
@@ -290,7 +406,7 @@ export default function TranslationsPage() {
         {mode === 'single' && (
           <>
             <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 mb-8 flex flex-col gap-4">
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
                   onClick={() => setInputMode('url')}
@@ -305,6 +421,20 @@ export default function TranslationsPage() {
                 >
                   {t(locale, 'translate.inputModeText')}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setInputMode('image')}
+                  className={`btn-tap inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${inputMode === 'image' ? 'bg-theme-bg-hover text-theme-fg border border-theme-border-hover' : 'text-theme-fg-muted hover:text-theme-fg border border-transparent'}`}
+                >
+                  {t(locale, 'translate.inputModeImage')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputMode('audio')}
+                  className={`btn-tap inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${inputMode === 'audio' ? 'bg-theme-bg-hover text-theme-fg border border-theme-border-hover' : 'text-theme-fg-muted hover:text-theme-fg border border-transparent'}`}
+                >
+                  {t(locale, 'translate.inputModeAudio')}
+                </button>
               </div>
               {inputMode === 'url' ? (
                 <div>
@@ -318,7 +448,7 @@ export default function TranslationsPage() {
                     disabled={loading}
                   />
                 </div>
-              ) : (
+              ) : inputMode === 'text' ? (
                 <div>
                   <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'translate.sourceText')}</label>
                   <textarea
@@ -329,6 +459,37 @@ export default function TranslationsPage() {
                     className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg placeholder:text-theme-fg-subtle text-sm px-4 py-2.5 focus:border-theme-border-strong focus:outline-none resize-none"
                     disabled={loading}
                   />
+                </div>
+              ) : inputMode === 'image' ? (
+                <div>
+                  <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'translate.sourceImage')}</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageFiles}
+                    disabled={loading || uploadingMedia}
+                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 file:mr-3 file:py-1.5 file:rounded-lg file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-sm"
+                  />
+                  {sourceImageUrls.length > 0 && (
+                    <p className="mt-1.5 text-xs text-theme-fg-muted">
+                      {sourceImageUrls.length} image(s) — {t(locale, 'translate.sourceImagePlaceholder')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'translate.sourceAudio')}</label>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleAudioFile}
+                    disabled={loading || uploadingMedia}
+                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 file:mr-3 file:py-1.5 file:rounded-lg file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-sm"
+                  />
+                  {sourceAudioUrl && (
+                    <p className="mt-1.5 text-xs text-theme-fg-muted">{t(locale, 'translate.sourceAudioPlaceholder')}</p>
+                  )}
                 </div>
               )}
               <div className="flex flex-wrap gap-4">
@@ -533,7 +694,7 @@ export default function TranslationsPage() {
 
                 <div className="rounded-xl border border-theme-border bg-theme-bg-subtle p-4 space-y-3">
                   <p className="text-xs font-medium text-theme-fg-muted">{t(locale, 'translate.addItem')}</p>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     <button
                       type="button"
                       onClick={() => setAddItemType('url')}
@@ -548,32 +709,81 @@ export default function TranslationsPage() {
                     >
                       {t(locale, 'translate.addItemText')}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddItemType('image')}
+                      className={`btn-tap px-3 py-1.5 rounded-lg text-xs font-medium ${addItemType === 'image' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}
+                    >
+                      {t(locale, 'translate.addItemImage')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddItemType('audio')}
+                      className={`btn-tap px-3 py-1.5 rounded-lg text-xs font-medium ${addItemType === 'audio' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}
+                    >
+                      {t(locale, 'translate.addItemAudio')}
+                    </button>
                   </div>
                   {addItemType === 'url' ? (
-                    <input
-                      type="url"
-                      value={addItemValue}
-                      onChange={(e) => setAddItemValue(e.target.value)}
-                      placeholder={t(locale, 'translate.sourceUrlPlaceholder')}
-                      className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 focus:outline-none"
-                    />
+                    <>
+                      <input
+                        type="url"
+                        value={addItemValue}
+                        onChange={(e) => setAddItemValue(e.target.value)}
+                        placeholder={t(locale, 'translate.sourceUrlPlaceholder')}
+                        className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddItem}
+                        disabled={addingItem || !addItemValue.trim()}
+                        className="btn-tap px-4 py-2 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium disabled:opacity-50"
+                      >
+                        {addingItem ? '…' : t(locale, 'translate.addItem')}
+                      </button>
+                    </>
+                  ) : addItemType === 'text' ? (
+                    <>
+                      <textarea
+                        value={addItemValue}
+                        onChange={(e) => setAddItemValue(e.target.value)}
+                        placeholder={t(locale, 'translate.sourceTextPlaceholder')}
+                        rows={2}
+                        className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 focus:outline-none resize-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddItem}
+                        disabled={addingItem || !addItemValue.trim()}
+                        className="btn-tap px-4 py-2 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium disabled:opacity-50"
+                      >
+                        {addingItem ? '…' : t(locale, 'translate.addItem')}
+                      </button>
+                    </>
+                  ) : addItemType === 'image' ? (
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleAddItemImageFiles}
+                        disabled={addingItemUpload}
+                        className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 file:mr-2 file:py-1 file:rounded file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-xs"
+                      />
+                      {addingItemUpload && <p className="mt-1 text-xs text-theme-fg-muted">Uploading…</p>}
+                    </div>
                   ) : (
-                    <textarea
-                      value={addItemValue}
-                      onChange={(e) => setAddItemValue(e.target.value)}
-                      placeholder={t(locale, 'translate.sourceTextPlaceholder')}
-                      rows={2}
-                      className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 focus:outline-none resize-none"
-                    />
+                    <div>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleAddItemAudioFile}
+                        disabled={addingItemUpload}
+                        className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 file:mr-2 file:py-1 file:rounded file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-xs"
+                      />
+                      {addingItemUpload && <p className="mt-1 text-xs text-theme-fg-muted">Uploading…</p>}
+                    </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={handleAddItem}
-                    disabled={addingItem || !addItemValue.trim()}
-                    className="btn-tap px-4 py-2 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium disabled:opacity-50"
-                  >
-                    {addingItem ? '…' : t(locale, 'translate.addItem')}
-                  </button>
                 </div>
 
                 {pendingCount > 0 && (
@@ -601,7 +811,7 @@ export default function TranslationsPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <p className="text-xs text-theme-fg-subtle mb-1">
-                            {item.source_type === 'url' ? truncate(item.source_value, 60) : truncate(item.source_value, 120)}
+                            {item.source_type === 'url' ? truncate(item.source_value, 60) : item.source_type === 'image' ? (() => { try { const n = (JSON.parse(item.source_value) as string[]).length; return `${t(locale, 'translate.inputModeImage')} (${n})`; } catch { return t(locale, 'translate.inputModeImage'); }})() : item.source_type === 'audio' ? t(locale, 'translate.inputModeAudio') : truncate(item.source_value, 120)}
                           </p>
                           <span
                             className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${

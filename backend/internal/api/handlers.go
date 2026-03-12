@@ -1531,12 +1531,14 @@ func (s *Server) createOutline(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SourceURL  string `json:"source_url"`
-		SourceText string `json:"source_text"`
-		SourceLang string `json:"source_lang"`
-		TargetLang string `json:"target_lang"`
-		ProjectID  string `json:"project_id"`
-		ItemID     string `json:"item_id"`
+		SourceURL   string   `json:"source_url"`
+		SourceText  string   `json:"source_text"`
+		SourceImages []string `json:"source_images"`
+		SourceAudio  string   `json:"source_audio"`
+		SourceLang  string   `json:"source_lang"`
+		TargetLang  string   `json:"target_lang"`
+		ProjectID   string   `json:"project_id"`
+		ItemID      string   `json:"item_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -1544,8 +1546,16 @@ func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
 	}
 	sourceURL := strings.TrimSpace(req.SourceURL)
 	sourceText := strings.TrimSpace(req.SourceText)
-	if sourceURL == "" && sourceText == "" {
-		http.Error(w, `{"error":"source_url or source_text required"}`, http.StatusBadRequest)
+	sourceAudio := strings.TrimSpace(req.SourceAudio)
+	var sourceImages []string
+	for _, u := range req.SourceImages {
+		if u := strings.TrimSpace(u); u != "" {
+			sourceImages = append(sourceImages, u)
+		}
+	}
+	hasSource := sourceURL != "" || sourceText != "" || len(sourceImages) > 0 || sourceAudio != ""
+	if !hasSource {
+		http.Error(w, `{"error":"source_url, source_text, source_images or source_audio required"}`, http.StatusBadRequest)
 		return
 	}
 	targetLang := strings.TrimSpace(req.TargetLang)
@@ -1555,10 +1565,16 @@ func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
 	input := map[string]interface{}{
-		"source_url":  sourceURL,
-		"source_text": sourceText,
-		"source_lang": strings.TrimSpace(req.SourceLang),
-		"target_lang": targetLang,
+		"source_url":   sourceURL,
+		"source_text":  sourceText,
+		"source_lang":  strings.TrimSpace(req.SourceLang),
+		"target_lang":  targetLang,
+	}
+	if len(sourceImages) > 0 {
+		input["source_images"] = sourceImages
+	}
+	if sourceAudio != "" {
+		input["source_audio"] = sourceAudio
 	}
 	if req.ProjectID != "" {
 		input["project_id"] = req.ProjectID
@@ -1678,7 +1694,7 @@ func (s *Server) addTranslationItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sourceType := strings.TrimSpace(req.SourceType)
-	if sourceType != "url" && sourceType != "text" {
+	if sourceType != "url" && sourceType != "text" && sourceType != "image" && sourceType != "audio" {
 		sourceType = "text"
 	}
 	sourceValue := strings.TrimSpace(req.SourceValue)

@@ -309,11 +309,8 @@ export default function LogoPage() {
 
   const loadLatestLogos = useCallback(() => {
     setLatestLoading(true);
-    listContent({ page: 1, limit: 20, type: 'image' })
-      .then((r) => {
-        const logoJobs = (r.jobs ?? []).filter((j) => j.type === 'logo').slice(0, 5);
-        setLatestLogos(logoJobs);
-      })
+    listContent({ page: 1, limit: 20, type: 'logo' })
+      .then((r) => setLatestLogos((r.jobs ?? []).slice(0, 5)))
       .catch(() => setLatestLogos([]))
       .finally(() => setLatestLoading(false));
   }, []);
@@ -584,8 +581,8 @@ export default function LogoPage() {
               })}
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <Link href="/dashboard/content" className="text-sm text-theme-fg-muted hover:text-theme-fg transition-colors">
-                → {t(locale, 'logo.seeInContent')}
+              <Link href="/dashboard/files?type=logo" className="text-sm text-theme-fg-muted hover:text-theme-fg transition-colors">
+                → {t(locale, 'logo.seeInMyFiles')}
               </Link>
             </div>
             <p className="text-xs text-theme-fg-subtle mt-3">{t(locale, 'logo.svgNote')}</p>
@@ -608,7 +605,7 @@ export default function LogoPage() {
                 return (
                   <li key={job.id}>
                     <Link
-                      href="/dashboard/content"
+                      href="/dashboard/files?type=logo"
                       className="block rounded-xl border border-theme-border overflow-hidden hover:border-theme-border-hover transition-colors bg-theme-bg-subtle"
                     >
                       {url ? (

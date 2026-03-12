@@ -1456,8 +1456,20 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 	if sourceLang == "" {
 		sourceLang = "auto"
 	}
+
+	var sourceImages []string
+	if si, ok := jobInput["source_images"].([]interface{}); ok {
+		for _, v := range si {
+			if s, _ := v.(string); s != "" {
+				sourceImages = append(sourceImages, s)
+			}
+		}
+	}
+	sourceAudio, _ := jobInput["source_audio"].(string)
+	sourceAudio = strings.TrimSpace(sourceAudio)
+
 	textToTranslate := strings.TrimSpace(sourceText)
-	if sourceURL != "" {
+	if sourceURL != "" && len(sourceImages) == 0 && sourceAudio == "" {
 		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		fetched, fetchErr := fetchPageText(fetchCtx, sourceURL)
 		cancel()
@@ -1467,20 +1479,46 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 		}
 		textToTranslate = fetched
 	}
-	if textToTranslate == "" {
-		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "No text to translate (provide source_url or source_text)", 0, "")
-		return nil
+
+	// Build model input: prompt required; optionally images, audio (Gemini-style).
+	var prompt string
+	var input map[string]interface{}
+
+	if len(sourceImages) > 0 {
+		prompt = fmt.Sprintf("Translate the text visible in these images from %s to %s. Output ONLY the translation, no explanations. Preserve structure (paragraphs, line breaks).", sourceLang, targetLang)
+		input = map[string]interface{}{
+			"prompt":     prompt,
+			"images":     sourceImages,
+			"max_tokens": 8000,
+		}
+		input["system_prompt"] = "You are a professional translator. Output only the translated text, nothing else."
+		input["system_instruction"] = input["system_prompt"]
+	} else if sourceAudio != "" {
+		prompt = fmt.Sprintf("Transcribe and translate this audio from %s to %s. Output ONLY the translation (or transcription if same language). No explanations.", sourceLang, targetLang)
+		input = map[string]interface{}{
+			"prompt":     prompt,
+			"audio":      sourceAudio,
+			"max_tokens": 8000,
+		}
+		input["system_prompt"] = "You are a professional translator. Output only the translated/transcribed text, nothing else."
+		input["system_instruction"] = input["system_prompt"]
+	} else {
+		if textToTranslate == "" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "No text to translate (provide source_url, source_text, source_images or source_audio)", 0, "")
+			return nil
+		}
+		if len(textToTranslate) > 50000 {
+			textToTranslate = textToTranslate[:50000] + "\n[... truncated]"
+		}
+		systemPrompt := "You are a professional translator. Translate the user's text accurately. Preserve paragraphs, line breaks, and structure. Output ONLY the translation, no explanations or notes. If the source language is 'auto', detect it. Do not add any preamble."
+		prompt = fmt.Sprintf("Translate from %s to %s:\n\n%s", sourceLang, targetLang, textToTranslate)
+		input = map[string]interface{}{
+			"system_prompt": systemPrompt,
+			"prompt":        prompt,
+			"max_tokens":    8000,
+		}
 	}
-	if len(textToTranslate) > 50000 {
-		textToTranslate = textToTranslate[:50000] + "\n[... truncated]"
-	}
-	systemPrompt := "You are a professional translator. Translate the user's text accurately. Preserve paragraphs, line breaks, and structure. Output ONLY the translation, no explanations or notes. If the source language is 'auto', detect it. Do not add any preamble."
-	prompt := fmt.Sprintf("Translate from %s to %s:\n\n%s", sourceLang, targetLang, textToTranslate)
-	input := map[string]interface{}{
-		"system_prompt": systemPrompt,
-		"prompt":        prompt,
-		"max_tokens":    8000,
-	}
+
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
