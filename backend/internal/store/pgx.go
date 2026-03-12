@@ -24,12 +24,12 @@ func NewDB(ctx context.Context, connString string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Increase pool for workers (8) + concurrent API polling (multiple users × multiple jobs)
-	if config.MaxConns < 20 {
-		config.MaxConns = 20
+	// Pool sized for workers + concurrent API (polling, parallel handlers)
+	if config.MaxConns < 24 {
+		config.MaxConns = 24
 	}
-	if config.MinConns < 2 {
-		config.MinConns = 2
+	if config.MinConns < 4 {
+		config.MinConns = 4
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

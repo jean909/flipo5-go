@@ -22,6 +22,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const LANGUAGES = ['Auto-detect', 'English', 'German', 'Romanian', 'French', 'Spanish', 'Italian', 'Portuguese', 'Dutch'];
 
+const MAX_SOURCE_TEXT = 100_000;
+const MAX_SOURCE_URL = 2048;
+const MAX_IMAGES = 10;
+
+function isValidUrl(s: string): boolean {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function truncate(s: string, max: number) {
   const t = s.trim();
   if (t.length <= max) return t;
@@ -127,10 +140,26 @@ export default function TranslationsPage() {
   const handleTranslate = async () => {
     const url = inputMode === 'url' ? sourceUrl.trim() : '';
     const text = inputMode === 'text' ? sourceText.trim() : '';
-    const images = inputMode === 'image' ? sourceImageUrls : [];
+    const images = inputMode === 'image' ? sourceImageUrls.slice(0, MAX_IMAGES) : [];
     const audio = inputMode === 'audio' ? sourceAudioUrl.trim() : '';
     if (!url && !text && images.length === 0 && !audio) return;
     setError('');
+    if (inputMode === 'url' && url && !isValidUrl(url)) {
+      setError('Please enter a valid URL (e.g. https://…).');
+      return;
+    }
+    if (text.length > MAX_SOURCE_TEXT) {
+      setError(`Text is too long (max ${(MAX_SOURCE_TEXT / 1000).toFixed(0)}k characters).`);
+      return;
+    }
+    if (url.length > MAX_SOURCE_URL || (audio && audio.length > MAX_SOURCE_URL)) {
+      setError('URL is too long.');
+      return;
+    }
+    if (audio && !isValidUrl(audio)) {
+      setError('Please enter a valid audio URL.');
+      return;
+    }
     setResult('');
     setLoading(true);
     try {

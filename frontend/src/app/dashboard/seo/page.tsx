@@ -193,6 +193,18 @@ function CopyBtn({ text, label }: { text: string; label?: string }) {
 
 const LANGUAGES = ['English', 'German', 'Romanian', 'French', 'Spanish', 'Italian', 'Portuguese'];
 
+const MAX_SOURCE_TEXT = 400_000;
+const MAX_SOURCE_URL = 2048;
+
+function isValidUrl(s: string): boolean {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function SEOPage() {
   const { locale } = useLocale();
@@ -259,7 +271,20 @@ export default function SEOPage() {
     const text = inputMode === 'text' ? sourceText.trim() : '';
     const url = inputMode === 'url' ? sourceUrl.trim() : '';
     if (!text && !url) return;
-    setError(''); setResult(null); setLoading(true); setActiveTab('article');
+    setError('');
+    if (inputMode === 'url' && url && !isValidUrl(url)) {
+      setError('Please enter a valid URL (e.g. https://…).');
+      return;
+    }
+    if (text.length > MAX_SOURCE_TEXT) {
+      setError(`Content is too long (max ${(MAX_SOURCE_TEXT / 1000).toFixed(0)}k characters).`);
+      return;
+    }
+    if (url.length > MAX_SOURCE_URL) {
+      setError('URL is too long.');
+      return;
+    }
+    setResult(null); setLoading(true); setActiveTab('article');
     setLoadingMsg(url ? 'Fetching page content…' : 'Preparing content…');
     try {
       const { job_id } = await createSEOJob({ source_text: text || undefined, source_url: url || undefined, title: titleInput.trim() || undefined, language, output_format: outputFormat });

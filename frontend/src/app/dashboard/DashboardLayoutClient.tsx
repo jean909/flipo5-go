@@ -33,6 +33,20 @@ export default function DashboardLayoutClient({
     return () => { cancelled = true; };
   }, [router]);
 
+  // Preconnect to API so first request is faster (DNS + TCP + TLS ready)
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    try {
+      const origin = new URL(url).origin;
+      if (document.querySelector(`link[rel="preconnect"][href="${origin}"]`)) return;
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origin;
+      link.crossOrigin = 'anonymous';
+      document.head.appendChild(link);
+    } catch {}
+  }, []);
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-theme-bg flex items-center justify-center" aria-busy="true" aria-label={t(locale, 'common.loading')}>

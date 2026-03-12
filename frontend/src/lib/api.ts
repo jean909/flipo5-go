@@ -12,18 +12,26 @@ export function getMediaDisplayUrl(url: string | null | undefined, token: string
 }
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000; // refresh if expires in < 1 min
+const TOKEN_CACHE_MS = 12_000; // reuse token 12s to reduce getSession() on rapid API calls
 let refreshPromise: Promise<string | null> | null = null;
+let tokenCache: { token: string; expiresAt: number } | null = null;
 
-/** Returns a valid access token. Refreshes if expired or about to expire. Keeps session alive during concurrent job polling. */
+/** Returns a valid access token. Refreshes if expired or about to expire. Caches briefly to avoid repeated getSession() on rapid API calls. */
 export async function getToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+  const now = Date.now();
+  if (tokenCache && now < tokenCache.expiresAt) return tokenCache.token;
+
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) return null;
+  if (!session?.access_token) {
+    tokenCache = null;
+    return null;
+  }
 
   try {
     const payload = JSON.parse(atob(session.access_token.split('.')[1]));
     const exp = (payload.exp ?? 0) * 1000;
-    if (Date.now() >= exp - TOKEN_REFRESH_BUFFER_MS) {
+    if (now >= exp - TOKEN_REFRESH_BUFFER_MS) {
       refreshPromise ??= supabase.auth.refreshSession()
         .then(({ data: { session: s } }) => {
           refreshPromise = null;
@@ -33,12 +41,17 @@ export async function getToken(): Promise<string | null> {
           refreshPromise = null;
           return null;
         });
-      return await refreshPromise;
+      const refreshed = await refreshPromise;
+      if (refreshed) tokenCache = { token: refreshed, expiresAt: now + TOKEN_CACHE_MS };
+      else tokenCache = null;
+      return refreshed;
     }
+    tokenCache = { token: session.access_token, expiresAt: now + TOKEN_CACHE_MS };
+    return session.access_token;
   } catch {
-    // invalid JWT, return as-is
+    tokenCache = null;
+    return session.access_token;
   }
-  return session.access_token;
 }
 
 /** Download media via backend proxy (avoids CORS, forces attachment). */
@@ -66,6 +79,20 @@ export interface AIConfiguration {
   user_details?: string;
 }
 
+/** Learning profile: job type counts, last used, preferred languages/categories (from backend user_profiles). */
+export interface UserProfileStats {
+  job_counts?: Record<string, number>;
+  last_used?: Record<string, string>;
+  translate_targets?: string[];
+  product_categories?: string[];
+}
+
+export interface UserProfile {
+  user_id: string;
+  stats: UserProfileStats;
+  updated_at?: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -79,6 +106,8 @@ export interface User {
   is_admin?: boolean;
   created_at: string;
   updated_at?: string;
+  /** Aggregated behavior for suggestions (tools used most, languages, categories). */
+  profile?: UserProfile | null;
 }
 
 /** Admin access only for this account (id or email). Sidebar and /admin use this. */
@@ -351,21 +380,6 @@ export async function createImage(params: CreateImageParams | string, threadId?:
   return res.json();
 }
 
-export async function createProductAnalyzeJob(params: { image_urls: string[] }): Promise<{ job_id: string }> {
-  const token = await getToken();
-  if (!token) throw new Error('Not logged in');
-  const res = await fetch(`${API_URL}/api/product-pictures/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error((e as { error?: string }).error || 'Analysis failed');
-  }
-  return res.json();
-}
-
 export interface Product {
   id: string;
   user_id: string;
@@ -409,7 +423,7 @@ export async function createProduct(params: { name: string; category?: string; d
   return res.json();
 }
 
-export async function getProduct(id: string): Promise<{ product: Product; photos: ProductPhoto[]; generated_jobs: Job[] }> {
+export async function getProduct(id: string): Promise<{ product: Product; photos: ProductPhoto[]; generated_jobs: Job[]; suggested_scenes?: string[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_URL}/api/products/${id}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -450,20 +464,6 @@ export async function createProductSceneImproveJob(params: { scene_prompt: strin
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ scene_prompt: params.scene_prompt, product_id: params.product_id || undefined }),
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error((e as { error?: string }).error || 'Failed');
-  }
-  return res.json();
-}
-
-export async function createProductSuggestScenesJob(productId: string): Promise<{ job_id: string }> {
-  const token = await getToken();
-  if (!token) throw new Error('Not logged in');
-  const res = await fetch(`${API_URL}/api/products/${productId}/suggest-scenes`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
@@ -1058,7 +1058,8 @@ export async function createSEOJob(params: {
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { error?: string }).error || 'SEO failed');
+    const msg = (e as { error?: string }).error || (res.status === 429 ? 'Too many requests. Try again in a minute.' : 'SEO failed');
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -1161,7 +1162,8 @@ export async function createTranslateJob(params: {
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { error?: string }).error || 'Translation failed');
+    const msg = (e as { error?: string }).error || (res.status === 429 ? 'Too many requests. Try again in a minute.' : 'Translation failed');
+    throw new Error(msg);
   }
   return res.json();
 }

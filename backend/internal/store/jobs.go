@@ -330,6 +330,36 @@ func (db *DB) ListJobsByProductID(ctx context.Context, productID, userID uuid.UU
 	return list, rows.Err()
 }
 
+// GetLatestProductScoreScenes returns the "scenes" array from the latest completed product_score job for this product (saved with score).
+func (db *DB) GetLatestProductScoreScenes(ctx context.Context, productID, userID uuid.UUID) ([]string, error) {
+	pid := productID.String()
+	var output json.RawMessage
+	err := db.Pool.QueryRow(ctx,
+		`SELECT output FROM jobs WHERE user_id = $1 AND type = 'product_score' AND status = 'completed' AND input::jsonb->>'product_id' = $2 ORDER BY updated_at DESC LIMIT 1`,
+		userID, pid).Scan(&output)
+	if err == pgx.ErrNoRows || len(output) == 0 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(output, &out); err != nil {
+		return nil, nil
+	}
+	sc, ok := out["scenes"].([]interface{})
+	if !ok {
+		return nil, nil
+	}
+	var scenes []string
+	for _, v := range sc {
+		if s, ok := v.(string); ok {
+			scenes = append(scenes, s)
+		}
+	}
+	return scenes, nil
+}
+
 // UpdateJobRating sets user feedback (like/dislike) for a job. Only the job owner can set it.
 func (db *DB) UpdateJobRating(ctx context.Context, jobID, userID uuid.UUID, rating string) error {
 	var err error

@@ -9,13 +9,16 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/hibiken/asynq"
@@ -56,20 +59,29 @@ func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSu
 	}
 }
 
+// recordUserProfile updates the user learning profile in the background (job type counts, last used, languages/categories).
+func (s *Server) recordUserProfile(userID uuid.UUID, jobType string, extra map[string]interface{}) {
+	go func() {
+		_ = s.DB.UpsertUserProfileStats(context.Background(), userID, jobType, extra)
+	}()
+}
+
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
+	r.Use(chimw.Compress(5)) // gzip JSON/text responses for speed
 	r.Get("/health", s.health)
 	r.Get("/health/ready", s.healthReady)
 
 	// Public, rate-limited by IP (no auth = no UserID)
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RateLimitByIP(30))
+		r.Use(middleware.RateLimitByIP(120)) // Permissive for launch; lower later (e.g. 30)
 		r.Get("/api/check-email", s.checkEmail)
 	})
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SupabaseAuth(s.supabaseJWTSecret, s.jwks, s.DB))
-		r.Use(middleware.RateLimit(300)) // SSE + listJobs + N×getJob (2 jobs × polling) — avoid 429
+		r.Use(middleware.RateLimit(2000)) // Permissive for launch; lower later (e.g. 300)
+		r.Use(middleware.RateLimitJobCreation(120, "/api/seo", "/api/translate")) // Permissive for launch; lower later (e.g. 20)
 		r.Get("/me", s.me)
 		r.Patch("/me", s.patchMe)
 		r.Post("/chat", s.createChat)
@@ -94,7 +106,6 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/outline", s.createOutline)
 		r.Post("/translate", s.createTranslate)
 		r.Post("/logo", s.createLogo)
-		r.Post("/product-pictures/analyze", s.createProductAnalyze)
 		r.Route("/products", func(r chi.Router) {
 			r.Get("/", s.listProducts)
 			r.Post("/", s.createProduct)
@@ -103,7 +114,6 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/{id}", s.getProduct)
 			r.Post("/{id}/photos", s.addProductPhotos)
 			r.Post("/{id}/score", s.createProductScore)
-			r.Post("/{id}/suggest-scenes", s.createProductSuggestScenes)
 			r.Delete("/{id}/photos/{photoId}", s.deleteProductPhoto)
 			r.Delete("/{id}", s.deleteProduct)
 		})
@@ -220,8 +230,16 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
+	profile, _ := s.DB.GetUserProfile(r.Context(), userID)
+	out := map[string]interface{}{
+		"id": user.ID, "email": user.Email, "full_name": user.FullName, "where_heard": user.WhereHeard,
+		"use_case": user.UseCase, "plan": user.Plan, "data_retention_accepted": user.DataRetentionAccepted,
+		"ai_configuration": user.AIConfiguration, "ai_config_updated_at": user.AIConfigUpdatedAt,
+		"is_admin": user.IsAdmin, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
+		"profile": profile,
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) checkEmail(w http.ResponseWriter, r *http.Request) {
@@ -430,6 +448,7 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "chat", nil)
 	task, _ := queue.NewChatTask(jobID, req.Prompt)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -784,6 +803,7 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "image", nil)
 	task, _ := queue.NewImageTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -842,6 +862,7 @@ func (s *Server) createLogo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "logo", nil)
 	task, _ := queue.NewLogoTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -907,6 +928,7 @@ func (s *Server) createImageInpaint(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "image", nil)
 	task, _ := queue.NewImageTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -981,6 +1003,7 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "video", nil)
 	task, _ := queue.NewVideoTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -1055,9 +1078,9 @@ func (s *Server) createUpscale(w http.ResponseWriter, r *http.Request) {
 	jobID, err := s.DB.CreateJob(ctx, userID, "upscale", input, nil)
 	if err != nil {
 		log.Printf("[createUpscale] CreateJob failed: %v", err)
-		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "upscale", nil)
 	task, _ := queue.NewUpscaleTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -1185,15 +1208,32 @@ func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	thread, err := s.DB.GetThreadForUser(ctx, id, userID)
-	if err != nil || thread == nil {
+	var thread *store.Thread
+	var jobs []store.Job
+	var threadErr, jobsErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		t, e := s.DB.GetThreadForUser(ctx, id, userID)
+		thread, threadErr = t, e
+	}()
+	go func() {
+		defer wg.Done()
+		j, e := s.DB.ListJobsByThread(ctx, id, userID)
+		jobs, jobsErr = j, e
+	}()
+	wg.Wait()
+	if threadErr != nil || thread == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	jobs, err := s.DB.ListJobsByThread(ctx, id, userID)
-	if err != nil {
+	if jobsErr != nil {
 		http.Error(w, `{"error":"list jobs"}`, http.StatusInternalServerError)
 		return
+	}
+	if jobs == nil {
+		jobs = []store.Job{}
 	}
 	out := map[string]interface{}{"thread": thread, "jobs": jobs}
 	if s.Cache != nil {
@@ -1430,6 +1470,7 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, job.Type, nil)
 	var task *asynq.Task
 	switch job.Type {
 	case "chat":
@@ -1462,7 +1503,19 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"job_id": newJobID.String()})
 }
 
+const (
+	maxSEOBodyBytes     = 1 << 20  // 1MB
+	maxSEOSourceTextLen = 400_000  // ~400KB text
+	maxSEOSourceURLLen  = 2048
+	maxTranslateBodyBytes    = 2 << 20  // 2MB (allow images list)
+	maxTranslateSourceTextLen = 100_000 // ~100KB per job
+	maxTranslateSourceURLLen  = 2048
+	maxTranslateImages        = 10
+)
+
 func (s *Server) createSEO(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxSEOBodyBytes)
+	defer r.Body.Close()
 	var req struct {
 		SourceText string `json:"source_text"`
 		SourceURL  string `json:"source_url"`
@@ -1473,35 +1526,59 @@ func (s *Server) createSEO(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.SourceText) == "" && strings.TrimSpace(req.SourceURL) == "" {
+	sourceText := strings.TrimSpace(req.SourceText)
+	sourceURL := strings.TrimSpace(req.SourceURL)
+	if sourceText == "" && sourceURL == "" {
 		http.Error(w, `{"error":"source_text or source_url required"}`, http.StatusBadRequest)
 		return
+	}
+	if len(sourceText) > maxSEOSourceTextLen {
+		http.Error(w, `{"error":"source_text too long"}`, http.StatusBadRequest)
+		return
+	}
+	if sourceURL != "" {
+		if len(sourceURL) > maxSEOSourceURLLen {
+			http.Error(w, `{"error":"source_url too long"}`, http.StatusBadRequest)
+			return
+		}
+		if _, err := url.ParseRequestURI(sourceURL); err != nil {
+			http.Error(w, `{"error":"invalid source_url"}`, http.StatusBadRequest)
+			return
+		}
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
 	title := strings.TrimSpace(req.Title)
+	if len(title) > 500 {
+		title = title[:500]
+	}
 	if title == "" {
-		if req.SourceURL != "" {
-			title = "SEO – " + req.SourceURL
+		if sourceURL != "" {
+			title = "SEO – " + sourceURL
 		} else {
-			words := strings.Fields(req.SourceText)
+			words := strings.Fields(sourceText)
 			if len(words) > 5 {
 				words = words[:5]
 			}
 			title = "SEO – " + strings.Join(words, " ")
 		}
 	}
+	lang := strings.TrimSpace(req.Language)
+	if len(lang) > 50 {
+		lang = lang[:50]
+	}
 	input := map[string]interface{}{
 		"source_text": req.SourceText,
-		"source_url":  req.SourceURL,
+		"source_url":  sourceURL,
 		"title":       title,
-		"language":    req.Language,
+		"language":    lang,
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "seo", input, nil)
 	if err != nil {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "seo", nil)
 	task, _ := queue.NewSEOTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -1536,46 +1613,8 @@ func (s *Server) createOutline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "outline", nil)
 	task, _ := queue.NewOutlineTask(jobID)
-	if _, err := s.Asynq.Enqueue(task); err != nil {
-		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
-}
-
-func (s *Server) createProductAnalyze(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ImageURLs []string `json:"image_urls"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
-		return
-	}
-	var urls []string
-	for _, u := range req.ImageURLs {
-		if u := strings.TrimSpace(u); u != "" {
-			urls = append(urls, u)
-		}
-	}
-	if len(urls) == 0 {
-		http.Error(w, `{"error":"image_urls required (at least one)"}`, http.StatusBadRequest)
-		return
-	}
-	if len(urls) > 10 {
-		urls = urls[:10]
-	}
-	userID, _ := middleware.UserID(r.Context())
-	ctx := r.Context()
-	input := map[string]interface{}{"image_urls": urls}
-	jobID, err := s.DB.CreateJob(ctx, userID, "product_analyze", input, nil)
-	if err != nil {
-		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
-		return
-	}
-	task, _ := queue.NewProductAnalyzeTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
 		return
@@ -1625,6 +1664,12 @@ func (s *Server) createProduct(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, msg), http.StatusInternalServerError)
 		return
+	}
+	cat := strings.TrimSpace(req.Category)
+	if cat != "" {
+		s.recordUserProfile(userID, "product", map[string]interface{}{"category": cat})
+	} else {
+		s.recordUserProfile(userID, "product", nil)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1691,36 +1736,8 @@ func (s *Server) createProductSceneImprove(w http.ResponseWriter, r *http.Reques
 		http.Error(w, `{"error":"create job failed"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "product_scene_improve", nil)
 	task, _ := queue.NewProductSceneImproveTask(jobID)
-	if _, err := s.Asynq.Enqueue(task); err != nil {
-		http.Error(w, `{"error":"enqueue failed"}`, http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
-}
-
-func (s *Server) createProductSuggestScenes(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	productID, err := uuid.Parse(idStr)
-	if err != nil {
-		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
-		return
-	}
-	userID, _ := middleware.UserID(r.Context())
-	if _, err := s.DB.GetProduct(r.Context(), productID, userID); err != nil {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
-		return
-	}
-	ctx := r.Context()
-	input := map[string]interface{}{"product_id": productID.String()}
-	jobID, err := s.DB.CreateJob(ctx, userID, "product_suggest_scenes", input, nil)
-	if err != nil {
-		http.Error(w, `{"error":"create job failed"}`, http.StatusInternalServerError)
-		return
-	}
-	task, _ := queue.NewProductSuggestScenesTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue failed"}`, http.StatusInternalServerError)
 		return
@@ -1738,24 +1755,54 @@ func (s *Server) getProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID, _ := middleware.UserID(r.Context())
-	product, err := s.DB.GetProduct(r.Context(), productID, userID)
+	ctx := r.Context()
+	product, err := s.DB.GetProduct(ctx, productID, userID)
 	if err != nil || product == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	photos, _ := s.DB.ListProductPhotos(r.Context(), productID)
+	var photos []store.ProductPhoto
+	var generatedJobs []store.Job
+	var suggestedScenes []string
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		p, _ := s.DB.ListProductPhotos(ctx, productID)
+		if p != nil {
+			photos = p
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		j, _ := s.DB.ListJobsByProductID(ctx, productID, userID)
+		if j != nil {
+			generatedJobs = j
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		sc, _ := s.DB.GetLatestProductScoreScenes(ctx, productID, userID)
+		if sc != nil {
+			suggestedScenes = sc
+		}
+	}()
+	wg.Wait()
 	if photos == nil {
 		photos = []store.ProductPhoto{}
 	}
-	generatedJobs, _ := s.DB.ListJobsByProductID(r.Context(), productID, userID)
 	if generatedJobs == nil {
 		generatedJobs = []store.Job{}
 	}
+	if suggestedScenes == nil {
+		suggestedScenes = []string{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"product":         product,
-		"photos":          photos,
-		"generated_jobs":  generatedJobs,
+		"product":          product,
+		"photos":           photos,
+		"generated_jobs":   generatedJobs,
+		"suggested_scenes": suggestedScenes,
 	})
 }
 
@@ -1819,6 +1866,7 @@ func (s *Server) createProductScore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
+	s.recordUserProfile(userID, "product_score", nil)
 	task, _ := queue.NewProductScoreTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
@@ -1860,15 +1908,17 @@ func (s *Server) deleteProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxTranslateBodyBytes)
+	defer r.Body.Close()
 	var req struct {
-		SourceURL   string   `json:"source_url"`
-		SourceText  string   `json:"source_text"`
+		SourceURL    string   `json:"source_url"`
+		SourceText   string   `json:"source_text"`
 		SourceImages []string `json:"source_images"`
 		SourceAudio  string   `json:"source_audio"`
-		SourceLang  string   `json:"source_lang"`
-		TargetLang  string   `json:"target_lang"`
-		ProjectID   string   `json:"project_id"`
-		ItemID      string   `json:"item_id"`
+		SourceLang   string   `json:"source_lang"`
+		TargetLang   string   `json:"target_lang"`
+		ProjectID    string   `json:"project_id"`
+		ItemID       string   `json:"item_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -1883,14 +1933,44 @@ func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
 			sourceImages = append(sourceImages, u)
 		}
 	}
+	if len(sourceImages) > maxTranslateImages {
+		sourceImages = sourceImages[:maxTranslateImages]
+	}
 	hasSource := sourceURL != "" || sourceText != "" || len(sourceImages) > 0 || sourceAudio != ""
 	if !hasSource {
 		http.Error(w, `{"error":"source_url, source_text, source_images or source_audio required"}`, http.StatusBadRequest)
 		return
 	}
+	if len(sourceText) > maxTranslateSourceTextLen {
+		http.Error(w, `{"error":"source_text too long"}`, http.StatusBadRequest)
+		return
+	}
+	if sourceURL != "" {
+		if len(sourceURL) > maxTranslateSourceURLLen {
+			http.Error(w, `{"error":"source_url too long"}`, http.StatusBadRequest)
+			return
+		}
+		if _, err := url.ParseRequestURI(sourceURL); err != nil {
+			http.Error(w, `{"error":"invalid source_url"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if sourceAudio != "" {
+		if len(sourceAudio) > maxTranslateSourceURLLen {
+			http.Error(w, `{"error":"source_audio url too long"}`, http.StatusBadRequest)
+			return
+		}
+		if _, err := url.ParseRequestURI(sourceAudio); err != nil {
+			http.Error(w, `{"error":"invalid source_audio url"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	targetLang := strings.TrimSpace(req.TargetLang)
 	if targetLang == "" {
 		targetLang = "English"
+	}
+	if len(targetLang) > 50 {
+		targetLang = targetLang[:50]
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
@@ -1964,7 +2044,8 @@ func (s *Server) createTranslationProject(w http.ResponseWriter, r *http.Request
 	}
 	userID, _ := middleware.UserID(r.Context())
 	// Translation projects (translation_projects table) — separate from Edit Studio projects (projects table).
-	id, err := s.DB.CreateTranslationProject(r.Context(), userID, name, strings.TrimSpace(req.SourceLang), strings.TrimSpace(req.TargetLang))
+	targetLang := strings.TrimSpace(req.TargetLang)
+	id, err := s.DB.CreateTranslationProject(r.Context(), userID, name, strings.TrimSpace(req.SourceLang), targetLang)
 	if err != nil {
 		log.Printf("[createTranslationProject] %v", err)
 		msg := "create failed"
@@ -1975,6 +2056,11 @@ func (s *Server) createTranslationProject(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": msg})
 		return
+	}
+	if targetLang != "" {
+		s.recordUserProfile(userID, "translation_project", map[string]interface{}{"target_lang": targetLang})
+	} else {
+		s.recordUserProfile(userID, "translation_project", nil)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1989,12 +2075,27 @@ func (s *Server) getTranslationProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID, _ := middleware.UserID(r.Context())
-	project, err := s.DB.GetTranslationProject(r.Context(), projectID, userID)
-	if err != nil || project == nil {
+	ctx := r.Context()
+	var project *store.TranslationProject
+	var items []store.TranslationItem
+	var projectErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		p, e := s.DB.GetTranslationProject(ctx, projectID, userID)
+		project, projectErr = p, e
+	}()
+	go func() {
+		defer wg.Done()
+		it, _ := s.DB.ListTranslationItems(ctx, projectID)
+		items = it
+	}()
+	wg.Wait()
+	if projectErr != nil || project == nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	items, _ := s.DB.ListTranslationItems(r.Context(), projectID)
 	if items == nil {
 		items = []store.TranslationItem{}
 	}

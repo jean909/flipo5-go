@@ -9,6 +9,10 @@ const nextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  experimental: {
+    optimizePackageImports: ['framer-motion', 'react-markdown'],
+  },
+  compress: true,
   async rewrites() {
     return [{ source: '/favicon.ico', destination: '/favicon.svg' }];
   },

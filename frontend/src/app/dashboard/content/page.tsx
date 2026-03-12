@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -13,6 +13,7 @@ import { ImageViewModal } from '../components/ImageViewModal';
 type ContentJob = Job & { outputUrls: string[] };
 
 const PAGE_SIZE = 20;
+const CONTENT_CACHE_MS = 30_000; // 30s stale-while-revalidate for list
 
 function extractOutputUrls(job: Job): string[] {
   if (job.status !== 'completed' || !job.output) return [];
@@ -44,7 +45,31 @@ export default function ContentPage() {
   const typeFilter = (searchParams.get('type') || '') as 'image' | 'video' | '';
   const searchQ = searchParams.get('q') || '';
 
+  const contentCacheRef = useRef<{ key: string; items: ContentJob[]; total: number; at: number } | null>(null);
+
   const fetchContent = useCallback(() => {
+    const cacheKey = `${page}:${typeFilter}:${searchQ}`;
+    const cached = contentCacheRef.current;
+    const isFresh = cached && cached.key === cacheKey && Date.now() - cached.at < CONTENT_CACHE_MS;
+    if (isFresh && cached) {
+      setItems(cached.items);
+      setTotal(cached.total);
+      setListError(null);
+      listContent({
+        page,
+        limit: PAGE_SIZE,
+        type: typeFilter === 'image' || typeFilter === 'video' ? typeFilter : '',
+        q: searchQ || undefined,
+      })
+        .then((r) => {
+          const jobs = (r.jobs ?? []).map((j) => ({ ...j, outputUrls: extractOutputUrls(j) }));
+          contentCacheRef.current = { key: cacheKey, items: jobs, total: r.total ?? 0, at: Date.now() };
+          setItems(jobs);
+          setTotal(r.total ?? 0);
+        })
+        .catch(() => {});
+      return () => {};
+    }
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -57,6 +82,7 @@ export default function ContentPage() {
       .then((r) => {
         if (cancelled) return;
         const jobs = (r.jobs ?? []).map((j) => ({ ...j, outputUrls: extractOutputUrls(j) }));
+        contentCacheRef.current = { key: cacheKey, items: jobs, total: r.total ?? 0, at: Date.now() };
         setItems(jobs);
         setTotal(r.total ?? 0);
       })
