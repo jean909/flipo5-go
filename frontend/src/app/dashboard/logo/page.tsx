@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
-import { createLogoJob, getJob, getToken, getMediaDisplayUrl, downloadMediaUrl } from '@/lib/api';
+import { createLogoJob, getJob, getToken, getMediaDisplayUrl, downloadMediaUrl, listContent, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -286,6 +286,7 @@ function SvgExportDialog({
 export default function LogoPage() {
   const { locale } = useLocale();
   const [prompt, setPrompt] = useState('');
+  const [logoText, setLogoText] = useState('');
   const [logoType, setLogoType] = useState('');
   const [style, setStyle] = useState('');
   const [primaryColor, setPrimaryColor] = useState('');
@@ -299,10 +300,31 @@ export default function LogoPage() {
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [pickerDialog, setPickerDialog] = useState<PickerDialog>(null);
   const [svgExportDialog, setSvgExportDialog] = useState<SvgExportDialog>(null);
+  const [latestLogos, setLatestLogos] = useState<Job[]>([]);
+  const [latestLoading, setLatestLoading] = useState(false);
 
   useEffect(() => {
     getToken().then(setMediaToken);
   }, []);
+
+  const loadLatestLogos = useCallback(() => {
+    setLatestLoading(true);
+    listContent({ page: 1, limit: 20, type: 'image' })
+      .then((r) => {
+        const logoJobs = (r.jobs ?? []).filter((j) => j.type === 'logo').slice(0, 5);
+        setLatestLogos(logoJobs);
+      })
+      .catch(() => setLatestLogos([]))
+      .finally(() => setLatestLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadLatestLogos();
+  }, [loadLatestLogos]);
+
+  useEffect(() => {
+    if (jobId && resultUrls.length > 0) loadLatestLogos();
+  }, [jobId, resultUrls.length, loadLatestLogos]);
 
   const pollJob = useCallback((id: string) => {
     let cancelled = false;
@@ -342,6 +364,7 @@ export default function LogoPage() {
     try {
       const { job_id } = await createLogoJob({
         prompt: p,
+        logo_text: logoText.trim() || undefined,
         logo_type: logoType || undefined,
         style: style || undefined,
         primary_color: primaryColor || undefined,
@@ -382,10 +405,12 @@ export default function LogoPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6">
+    <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle flex flex-col items-center px-4 py-8">
+      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-[1fr,240px] gap-8">
+        <div>
+          <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'logo.title')}</h1>
       <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
-        <h1 className="text-xl font-semibold text-theme-fg">{t(locale, 'logo.title')}</h1>
-        <p className="text-sm text-theme-fg-muted mt-1">{t(locale, 'logo.sub')}</p>
+        <p className="text-sm text-theme-fg-muted mt-0 mb-4">{t(locale, 'logo.sub')}</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
@@ -396,6 +421,17 @@ export default function LogoPage() {
               placeholder={t(locale, 'logo.promptPlaceholder')}
               rows={2}
               className="w-full px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg text-theme-fg placeholder:text-theme-fg-subtle text-sm focus:outline-none focus:border-theme-border-hover resize-none"
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-theme-fg-muted mb-1.5">{t(locale, 'logo.logoText')}</label>
+            <input
+              type="text"
+              value={logoText}
+              onChange={(e) => setLogoText(e.target.value)}
+              placeholder={t(locale, 'logo.logoTextPlaceholder')}
+              className="w-full px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg text-theme-fg placeholder:text-theme-fg-subtle text-sm focus:outline-none focus:border-theme-border-hover"
               disabled={loading}
             />
           </div>
@@ -556,6 +592,38 @@ export default function LogoPage() {
           </motion.div>
         )}
       </AnimatePresence>
+        </div>
+
+        <div className="lg:pt-10">
+          <h2 className="text-sm font-semibold text-theme-fg-muted uppercase tracking-wider mb-3">{t(locale, 'logo.latestLogos')}</h2>
+          {latestLoading ? (
+            <p className="text-sm text-theme-fg-subtle animate-pulse-subtle">{t(locale, 'common.loading')}</p>
+          ) : latestLogos.length === 0 ? (
+            <p className="text-sm text-theme-fg-subtle">{t(locale, 'logo.noLogosYet')}</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {latestLogos.map((job) => {
+                const urls = getOutputUrls(job.output);
+                const url = urls[0];
+                return (
+                  <li key={job.id}>
+                    <Link
+                      href="/dashboard/content"
+                      className="block rounded-xl border border-theme-border overflow-hidden hover:border-theme-border-hover transition-colors bg-theme-bg-subtle"
+                    >
+                      {url ? (
+                        <img src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url} alt="" className="w-full aspect-square object-cover" loading="lazy" decoding="async" />
+                      ) : (
+                        <div className="w-full aspect-square bg-theme-bg-elevated flex items-center justify-center text-theme-fg-subtle text-xs">—</div>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
 
       <OptionDialog
         open={pickerDialog === 'logoType'}

@@ -209,13 +209,17 @@ func (db *DB) ListContentJobs(ctx context.Context, userID uuid.UUID, offset, lim
 	if offset < 0 {
 		offset = 0
 	}
-	base := `FROM jobs WHERE user_id = $1 AND type IN ('image','video','upscale','logo') AND status = 'completed' AND output IS NOT NULL`
+	base := `FROM jobs WHERE user_id = $1 AND status = 'completed' AND output IS NOT NULL`
 	args := []interface{}{userID}
 	n := 1
-	if typeFilter == "image" {
-		base += ` AND type IN ('image','upscale','logo')`
+	if typeFilter == "logo" {
+		base += ` AND type = 'logo'`
+	} else if typeFilter == "image" {
+		base += ` AND type IN ('image','upscale')`
 	} else if typeFilter == "video" {
 		base += ` AND type = 'video'`
+	} else {
+		base += ` AND type IN ('image','video','upscale')`
 	}
 	if search != "" {
 		n++

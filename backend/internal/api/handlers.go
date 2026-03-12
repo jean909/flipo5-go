@@ -786,6 +786,7 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createLogo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Prompt         string `json:"prompt"`
+		LogoText       string `json:"logo_text,omitempty"`
 		LogoType       string `json:"logo_type,omitempty"`
 		Style          string `json:"style,omitempty"`
 		PrimaryColor   string `json:"primary_color,omitempty"`
@@ -811,6 +812,7 @@ func (s *Server) createLogo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	input := map[string]interface{}{
 		"prompt":          strings.TrimSpace(req.Prompt),
+		"logo_text":       strings.TrimSpace(req.LogoText),
 		"logo_type":       strings.TrimSpace(req.LogoType),
 		"style":           strings.TrimSpace(req.Style),
 		"primary_color":   strings.TrimSpace(req.PrimaryColor),
@@ -1212,7 +1214,7 @@ func (s *Server) listContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	typeFilter := strings.TrimSpace(r.URL.Query().Get("type"))
-	if typeFilter != "" && typeFilter != "image" && typeFilter != "video" {
+	if typeFilter != "" && typeFilter != "image" && typeFilter != "video" && typeFilter != "logo" {
 		typeFilter = ""
 	}
 	search := strings.TrimSpace(r.URL.Query().Get("q"))

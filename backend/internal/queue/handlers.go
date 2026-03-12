@@ -690,9 +690,16 @@ func (h *Handlers) LogoHandler(ctx context.Context, t *asynq.Task) error {
 	style, _ := jobInput["style"].(string)
 	primaryColor, _ := jobInput["primary_color"].(string)
 	secondaryColor, _ := jobInput["secondary_color"].(string)
+	logoText, _ := jobInput["logo_text"].(string)
+	logoText = strings.TrimSpace(logoText)
 
 	// Build logo brief: we add context that it's a logo; never expose model name to user.
 	logoBrief := "Professional logo design, high quality. "
+	if logoText != "" {
+		logoBrief += "Text to include in logo: " + logoText + ". "
+	} else {
+		logoBrief += "No text in the logo (symbol/icon only). "
+	}
 	if logoType != "" {
 		logoBrief += "Logo type: " + logoType + ". "
 	}

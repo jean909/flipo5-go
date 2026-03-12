@@ -590,7 +590,7 @@ export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {
 export interface ListContentParams {
   page?: number;
   limit?: number;
-  type?: 'image' | 'video' | '';
+  type?: 'image' | 'video' | 'logo' | '';
   q?: string;
 }
 
@@ -954,6 +954,7 @@ export async function createOutlineJob(params: {
 
 export async function createLogoJob(params: {
   prompt: string;
+  logo_text?: string;
   logo_type?: string;
   style?: string;
   primary_color?: string;
@@ -968,6 +969,7 @@ export async function createLogoJob(params: {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       prompt: params.prompt.trim(),
+      logo_text: params.logo_text?.trim() || '',
       logo_type: params.logo_type?.trim() || '',
       style: params.style?.trim() || '',
       primary_color: params.primary_color?.trim() || '',

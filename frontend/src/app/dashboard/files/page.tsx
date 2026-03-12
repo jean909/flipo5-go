@@ -10,12 +10,17 @@ import {
   deleteFile,
   renameFile,
   getToken,
+  listContent,
   listTranslationProjects,
   getTranslationProject,
+  downloadMediaUrl,
+  getMediaDisplayUrl,
   type UserFile,
   type TranslationProject,
   type TranslationItem,
+  type Job,
 } from '@/lib/api';
+import { getOutputUrls } from '@/lib/jobOutput';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -54,22 +59,34 @@ function TranslateIcon({ className }: { className?: string }) {
 
 type ViewingProjectItem = { project: TranslationProject; item: TranslationItem };
 
+function LogoIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className ?? 'w-4 h-4 shrink-0 text-theme-fg-muted'} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.38 3.39a15.995 15.995 0 004.769-2.95M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
 export default function FilesPage() {
   const { locale } = useLocale();
   const [files, setFiles] = useState<UserFile[]>([]);
   const [projects, setProjects] = useState<TranslationProject[]>([]);
   const [projectItems, setProjectItems] = useState<Record<string, TranslationItem[]>>({});
+  const [logoJobs, setLogoJobs] = useState<Job[]>([]);
+  const [logoLoading, setLogoLoading] = useState(false);
+  const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState<UserFile | null>(null);
   const [viewingProjectItem, setViewingProjectItem] = useState<ViewingProjectItem | null>(null);
+  const [viewingLogo, setViewingLogo] = useState<Job | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text' | 'translation'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text' | 'translation' | 'logo'>('all');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const hasViewerOpen = !!viewingFile || !!viewingProjectItem;
+  const hasViewerOpen = !!viewingFile || !!viewingProjectItem || !!viewingLogo;
 
   const fetchFiles = useCallback(() => {
     setLoading(true);
@@ -85,10 +102,26 @@ export default function FilesPage() {
       .catch(() => setProjects([]));
   }, []);
 
+  const fetchLogos = useCallback(() => {
+    setLogoLoading(true);
+    listContent({ type: 'logo', limit: 50 })
+      .then((r) => setLogoJobs(r.jobs ?? []))
+      .catch(() => setLogoJobs([]))
+      .finally(() => setLogoLoading(false));
+  }, []);
+
+  useEffect(() => {
+    getToken().then(setMediaToken);
+  }, []);
+
   useEffect(() => {
     fetchFiles();
     fetchProjects();
   }, [fetchFiles, fetchProjects]);
+
+  useEffect(() => {
+    if (typeFilter === 'all' || typeFilter === 'logo') fetchLogos();
+  }, [typeFilter, fetchLogos]);
 
   const loadProjectItems = useCallback((projectId: string) => {
     if (projectItems[projectId]) return;
@@ -126,15 +159,33 @@ export default function FilesPage() {
     );
   }, [projects, projectItems, search]);
 
+  const filteredLogos = useMemo(() => {
+    if (!search.trim()) return logoJobs;
+    const q = search.trim().toLowerCase();
+    return logoJobs.filter((job) => {
+      const input = job.input as Record<string, unknown> | null;
+      const prompt = (input?.prompt as string) ?? '';
+      return typeof prompt === 'string' && prompt.toLowerCase().includes(q);
+    });
+  }, [logoJobs, search]);
+
   const openFile = (file: UserFile) => {
     setViewingProjectItem(null);
+    setViewingLogo(null);
     setViewingFile((prev) => (prev?.id === file.id ? null : file));
   };
 
   const openProjectItem = (project: TranslationProject, item: TranslationItem) => {
     if (!item.result_text) return;
     setViewingFile(null);
+    setViewingLogo(null);
     setViewingProjectItem((prev) => (prev?.item.id === item.id ? null : { project, item }));
+  };
+
+  const openLogo = (job: Job) => {
+    setViewingFile(null);
+    setViewingProjectItem(null);
+    setViewingLogo((prev) => (prev?.id === job.id ? null : job));
   };
 
   const handleDelete = async (file: UserFile) => {
@@ -198,9 +249,9 @@ export default function FilesPage() {
               className="w-full pl-9 pr-4 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg text-xs placeholder:text-theme-fg-subtle focus:outline-none focus:border-theme-border-hover" />
           </div>
           <div className="flex gap-1 flex-wrap">
-            {(['all', 'seo', 'text', 'translation'] as const).map((type) => {
+            {(['all', 'seo', 'text', 'translation', 'logo'] as const).map((type) => {
               const translationCount = projects.length;
-              const label = type === 'all' ? `All (${files.length + translationCount})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : type === 'text' ? `Text (${files.filter(f => f.file_type === 'text').length})` : `Translation (${translationCount})`;
+              const label = type === 'all' ? `All (${files.length + translationCount + logoJobs.length})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : type === 'text' ? `Text (${files.filter(f => f.file_type === 'text').length})` : type === 'translation' ? `Translation (${translationCount})` : `Logo (${logoJobs.length})`;
               return (
                 <button key={type} type="button" onClick={() => setTypeFilter(type)}
                   className={`btn-tap px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${typeFilter === type ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
@@ -253,6 +304,45 @@ export default function FilesPage() {
                 </div>
               );
             })}
+          </div>
+          )}
+
+          {/* Logos — visible for All and Logo */}
+          {(typeFilter === 'all' || typeFilter === 'logo') && (
+          <div className="mb-4">
+            <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider px-2 pb-1.5">{t(locale, 'files.logos')}</p>
+            {logoLoading ? (
+              <p className="text-xs text-theme-fg-subtle px-3 py-2 animate-pulse-subtle">{t(locale, 'common.loading')}</p>
+            ) : filteredLogos.length === 0 ? (
+              <p className="text-xs text-theme-fg-subtle px-3 py-1">{t(locale, 'files.noLogos')}</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {filteredLogos.map((job) => {
+                  const urls = getOutputUrls(job.output);
+                  const thumbUrl = urls[0];
+                  const prompt = (job.input as Record<string, unknown>)?.prompt as string;
+                  const displayUrl = mediaToken && thumbUrl ? getMediaDisplayUrl(thumbUrl, mediaToken) || thumbUrl : thumbUrl;
+                  return (
+                    <li key={job.id}>
+                      <button type="button" onClick={() => openLogo(job)}
+                        className={`w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-xl transition-colors border border-transparent ${viewingLogo?.id === job.id ? 'bg-theme-bg-subtle border-theme-border-subtle' : 'hover:bg-theme-bg-subtle'}`}>
+                        {displayUrl ? (
+                          <img src={displayUrl} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-theme-bg-elevated flex items-center justify-center shrink-0">
+                            <LogoIcon className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-theme-fg truncate">{truncate(prompt || 'Logo', 24)}</p>
+                          <p className="text-[10px] text-theme-fg-subtle">{formatDate(job.created_at)}</p>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
           )}
 
@@ -374,6 +464,44 @@ export default function FilesPage() {
             <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
               <div className="file-content-markdown text-sm text-theme-fg leading-relaxed break-words whitespace-pre-wrap">
                 {viewingProjectItem.item.result_text ?? ''}
+              </div>
+            </div>
+          </motion.div>
+        )}
+        {viewingLogo && (
+          <motion.div key={`logo-${viewingLogo.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
+            <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-theme-fg truncate">{truncate((viewingLogo.input as Record<string, unknown>)?.prompt as string || 'Logo', 50)}</p>
+                <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(viewingLogo.created_at)}</p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Link href="/dashboard/logo" className="btn-tap inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium">
+                  {t(locale, 'logo.title')}
+                </Link>
+                <button type="button" onClick={() => setViewingLogo(null)} className="p-1.5 text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {getOutputUrls(viewingLogo.output).map((url, i) => {
+                  const displayUrl = mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url;
+                  return (
+                    <div key={i} className="rounded-xl border border-theme-border bg-theme-bg overflow-hidden">
+                      <div className="aspect-square flex items-center justify-center p-2 bg-theme-bg-subtle">
+                        <img src={displayUrl} alt="" className="max-w-full max-h-full w-auto h-auto object-contain" />
+                      </div>
+                      <div className="p-2 flex gap-2 border-t border-theme-border">
+                        <button type="button" onClick={() => downloadMediaUrl(url).then((blob) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `logo-${i + 1}.png`; a.click(); URL.revokeObjectURL(a.href); }).catch(() => window.open(url, '_blank'))}
+                          className="btn-tap px-2 py-1 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium">
+                          PNG
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </motion.div>
