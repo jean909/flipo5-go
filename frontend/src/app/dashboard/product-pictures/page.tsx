@@ -389,9 +389,9 @@ export default function ProductPicturesPage() {
                       <button
                         type="button"
                         onClick={handleOpenImproveDialog}
-                        className="absolute right-2 bottom-2 text-xs font-medium text-theme-fg-muted hover:text-theme-fg border border-theme-border hover:border-theme-border-hover rounded-lg px-2 py-1 bg-theme-bg-subtle/80"
+                        className="absolute right-2 bottom-2 text-xs font-medium text-theme-fg-muted hover:text-theme-fg rounded-md px-2 py-1 bg-theme-fg/5 hover:bg-theme-fg/10 transition-colors"
                       >
-                        {t(locale, 'productPictures.improveWithAI')}
+                        {t(locale, 'productPictures.improve')}
                       </button>
                     )}
                   </div>
