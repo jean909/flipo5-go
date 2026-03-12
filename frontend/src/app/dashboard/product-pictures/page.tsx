@@ -12,6 +12,7 @@ import {
   getProduct,
   addProductPhotos,
   createProductScoreJob,
+  createProductDescriptionImproveJob,
   createImage,
   getJob,
   type Product,
@@ -21,6 +22,7 @@ import {
 import { getOutputUrls } from '@/lib/jobOutput';
 
 const MIN_AVG_SCORE = 5;
+const MIN_DESCRIPTION_LENGTH_FOR_IMPROVE = 15;
 
 const CATEGORY_OPTIONS = [
   { value: '', labelKey: 'productPictures.categoryNone' as const },
@@ -61,6 +63,10 @@ export default function ProductPicturesPage() {
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generatedUrls, setGeneratedUrls] = useState<string[]>([]);
   const [error, setError] = useState('');
+  const [improveDialogOpen, setImproveDialogOpen] = useState(false);
+  const [improveProductUrl, setImproveProductUrl] = useState('');
+  const [improveJobId, setImproveJobId] = useState<string | null>(null);
+  const [improveLoading, setImproveLoading] = useState(false);
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -125,6 +131,60 @@ export default function ProductPicturesPage() {
     setProductId(id);
     setStep(2);
   };
+
+  const canShowImproveHint = productDescription.trim().length >= MIN_DESCRIPTION_LENGTH_FOR_IMPROVE;
+
+  const handleOpenImproveDialog = () => {
+    setImproveProductUrl('');
+    setError('');
+    setImproveDialogOpen(true);
+  };
+
+  const handleImproveDescription = async () => {
+    const desc = productDescription.trim();
+    if (!desc) return;
+    setError('');
+    try {
+      const { job_id } = await createProductDescriptionImproveJob({
+        description: desc,
+        product_url: improveProductUrl.trim() || undefined,
+      });
+      setImproveJobId(job_id);
+      setImproveLoading(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+      setImproveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!improveJobId || !improveLoading) return;
+    let cancelled = false;
+    function poll() {
+      getJob(improveJobId).then((j) => {
+        if (cancelled) return;
+        if (j?.status === 'completed') {
+          const out = j.output && typeof j.output === 'object' && 'output' in j.output
+            ? String((j.output as { output?: string }).output ?? '')
+            : '';
+          if (out) setProductDescription(out);
+          setImproveDialogOpen(false);
+          setImproveJobId(null);
+          setImproveLoading(false);
+          return;
+        }
+        if (j?.status === 'failed') {
+          setError(j.error ?? 'Improve failed');
+          setImproveJobId(null);
+          setImproveLoading(false);
+          return;
+        }
+        setTimeout(poll, 2000);
+      });
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [improveJobId, improveLoading]);
 
   const handleImageFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -289,7 +349,7 @@ export default function ProductPicturesPage() {
             )}
             <div className={products.length > 0 ? 'pt-4 border-t border-theme-border' : ''}>
               <p className="text-xs font-medium text-theme-fg-muted mb-3">{products.length > 0 ? t(locale, 'productPictures.orCreateNew') : t(locale, 'productPictures.productName')}</p>
-              <div className="space-y-3">
+              <div className={`space-y-3 ${improveLoading ? 'pointer-events-none opacity-70' : ''}`}>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.productName')}</label>
                   <input
@@ -297,7 +357,8 @@ export default function ProductPicturesPage() {
                     value={productName}
                     onChange={(e) => setProductName(e.target.value)}
                     placeholder={t(locale, 'productPictures.productNamePlaceholder')}
-                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
+                    disabled={improveLoading}
+                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
                   />
                 </div>
                 <div>
@@ -305,7 +366,8 @@ export default function ProductPicturesPage() {
                   <select
                     value={productCategory}
                     onChange={(e) => setProductCategory(e.target.value)}
-                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
+                    disabled={improveLoading}
+                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
                   >
                     {CATEGORY_OPTIONS.map((opt) => (
                       <option key={opt.value || 'none'} value={opt.value}>{t(locale, opt.labelKey)}</option>
@@ -314,13 +376,25 @@ export default function ProductPicturesPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.description')}</label>
-                  <textarea
-                    value={productDescription}
-                    onChange={(e) => setProductDescription(e.target.value)}
-                    placeholder={t(locale, 'productPictures.descriptionPlaceholder')}
-                    rows={2}
-                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none resize-none"
-                  />
+                  <div className="relative">
+                    <textarea
+                      value={productDescription}
+                      onChange={(e) => setProductDescription(e.target.value)}
+                      placeholder={t(locale, 'productPictures.descriptionPlaceholder')}
+                      rows={2}
+                      disabled={improveLoading}
+                      className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none resize-none disabled:opacity-70 disabled:pointer-events-none"
+                    />
+                    {canShowImproveHint && !improveLoading && (
+                      <button
+                        type="button"
+                        onClick={handleOpenImproveDialog}
+                        className="absolute right-2 bottom-2 text-xs font-medium text-theme-fg-muted hover:text-theme-fg border border-theme-border hover:border-theme-border-hover rounded-lg px-2 py-1 bg-theme-bg-subtle/80"
+                      >
+                        {t(locale, 'productPictures.improveWithAI')}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.brand')}</label>
@@ -329,18 +403,64 @@ export default function ProductPicturesPage() {
                     value={productBrand}
                     onChange={(e) => setProductBrand(e.target.value)}
                     placeholder={t(locale, 'productPictures.brandPlaceholder')}
-                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
+                    disabled={improveLoading}
+                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleCreateProduct}
-                  disabled={!productName.trim()}
+                  disabled={!productName.trim() || improveLoading}
                   className="btn-tap w-full sm:w-auto px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium disabled:opacity-50"
                 >
                   {t(locale, 'productPictures.createProduct')}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Improve description dialog */}
+        {improveDialogOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !improveLoading && setImproveDialogOpen(false)}>
+            <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 w-full max-w-md shadow-xl text-left" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'productPictures.improveDescriptionTitle')}</h3>
+              {improveLoading ? (
+                <div className="flex items-center gap-2 text-theme-fg-muted text-sm py-4">
+                  <span className="w-4 h-4 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin" />
+                  {t(locale, 'productPictures.improving')}
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.productLinkOptional')}</label>
+                    <input
+                      type="url"
+                      value={improveProductUrl}
+                      onChange={(e) => setImproveProductUrl(e.target.value)}
+                      placeholder={t(locale, 'productPictures.productLinkPlaceholder')}
+                      className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setImproveDialogOpen(false)}
+                      className="btn-tap px-3 py-2 rounded-xl border border-theme-border text-theme-fg text-sm"
+                    >
+                      {t(locale, 'productPictures.cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleImproveDescription}
+                      className="btn-tap px-4 py-2 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium"
+                    >
+                      {t(locale, 'productPictures.improve')}
+                    </button>
+                  </div>
+                </>
+              )}
+              {error && !improveLoading && <p className="mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>}
             </div>
           </div>
         )}

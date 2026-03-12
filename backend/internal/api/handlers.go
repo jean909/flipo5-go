@@ -98,6 +98,7 @@ func (s *Server) Routes() http.Handler {
 		r.Route("/products", func(r chi.Router) {
 			r.Get("/", s.listProducts)
 			r.Post("/", s.createProduct)
+			r.Post("/improve-description", s.createProductDescriptionImprove)
 			r.Get("/{id}", s.getProduct)
 			r.Post("/{id}/photos", s.addProductPhotos)
 			r.Post("/{id}/score", s.createProductScore)
@@ -1621,6 +1622,41 @@ func (s *Server) createProduct(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": id.String()})
+}
+
+func (s *Server) createProductDescriptionImprove(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Description string `json:"description"`
+		ProductURL  string `json:"product_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	description := strings.TrimSpace(req.Description)
+	if description == "" {
+		http.Error(w, `{"error":"description required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	input := map[string]interface{}{"description": description}
+	if u := strings.TrimSpace(req.ProductURL); u != "" {
+		input["product_url"] = u
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "product_description", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job failed"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewProductDescriptionTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
 }
 
 func (s *Server) getProduct(w http.ResponseWriter, r *http.Request) {

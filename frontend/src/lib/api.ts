@@ -428,6 +428,21 @@ export async function addProductPhotos(productId: string, image_urls: string[]):
   if (!res.ok) throw new Error('Failed to add photos');
 }
 
+export async function createProductDescriptionImproveJob(params: { description: string; product_url?: string }): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/improve-description`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ description: params.description, product_url: params.product_url || undefined }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed');
+  }
+  return res.json();
+}
+
 export async function createProductScoreJob(productId: string): Promise<{ job_id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');

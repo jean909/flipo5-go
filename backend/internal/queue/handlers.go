@@ -1806,6 +1806,88 @@ func (h *Handlers) ProductScoreHandler(ctx context.Context, t *asynq.Task) error
 	return nil
 }
 
+func (h *Handlers) ProductDescriptionHandler(ctx context.Context, t *asynq.Task) error {
+	var p ProductDescriptionPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	description, _ := jobInput["description"].(string)
+	description = strings.TrimSpace(description)
+	if description == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "description required", 0, "")
+		return nil
+	}
+	productURL, _ := jobInput["product_url"].(string)
+	productURL = strings.TrimSpace(productURL)
+	if h.Repl == nil || h.Cfg.ModelText == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "AI not configured", 0, "")
+		return nil
+	}
+	prompt := "Improve the following product description for marketing. Make it clear, compelling and professional. Return only the improved description text, no preamble or explanation.\n\nCurrent description:\n" + description
+	if productURL != "" {
+		prompt = "Using the product URL for context if helpful, improve the following product description for marketing. Make it clear, compelling and professional. Return only the improved description text, no preamble or explanation.\n\nProduct URL: " + productURL + "\n\nCurrent description:\n" + description
+	}
+	input := map[string]interface{}{
+		"prompt":        prompt,
+		"max_tokens":    1000,
+		"system_prompt": "You are a product copywriter. Output only the improved description, nothing else.",
+	}
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	for i := 0; i < 30; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Description improve failed", 0, pred.ID)
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			if outText == "" {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Empty result", 0, pred.ID)
+				return nil
+			}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", map[string]interface{}{"output": outText}, "", 0, pred.ID)
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"product_description"}`, p.JobID.String()))
+			}
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "timeout", 0, pred.ID)
+	return nil
+}
+
 // parseScoreArray extracts a slice of float64 from AI output (e.g. "[7, 6, 8]" or "```json\n[7,6,8]\n```").
 func parseScoreArray(s string) []float64 {
 	s = strings.TrimSpace(s)
@@ -1842,6 +1924,7 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeLogo, h.LogoHandler)
 	mux.HandleFunc(TypeProductAnalyze, h.ProductAnalyzeHandler)
 	mux.HandleFunc(TypeProductScore, h.ProductScoreHandler)
+	mux.HandleFunc(TypeProductDescription, h.ProductDescriptionHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
 	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }
