@@ -1617,7 +1617,7 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 }
 
 func (h *Handlers) ProductAnalyzeHandler(ctx context.Context, t *asynq.Task) error {
-	var p queue.ProductAnalyzePayload
+	var p ProductAnalyzePayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return err
 	}
@@ -1701,7 +1701,7 @@ func (h *Handlers) ProductAnalyzeHandler(ctx context.Context, t *asynq.Task) err
 }
 
 func (h *Handlers) ProductScoreHandler(ctx context.Context, t *asynq.Task) error {
-	var p queue.ProductScorePayload
+	var p ProductScorePayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return err
 	}
