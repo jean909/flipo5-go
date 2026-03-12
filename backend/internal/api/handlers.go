@@ -1616,7 +1616,12 @@ func (s *Server) createProduct(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	id, err := s.DB.CreateProduct(r.Context(), userID, name, strings.TrimSpace(req.Category), strings.TrimSpace(req.Description), strings.TrimSpace(req.Brand))
 	if err != nil {
-		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
+		log.Printf("[createProduct] CreateProduct failed: %v", err)
+		msg := "create failed"
+		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "column") {
+			msg = "create failed: database schema outdated (run migrations)"
+		}
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, msg), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
