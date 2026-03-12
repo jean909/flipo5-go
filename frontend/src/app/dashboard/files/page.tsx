@@ -5,13 +5,28 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
-import { listFiles, deleteFile, renameFile, getToken, type UserFile } from '@/lib/api';
+import {
+  listFiles,
+  deleteFile,
+  renameFile,
+  getToken,
+  listTranslationProjects,
+  getTranslationProject,
+  type UserFile,
+  type TranslationProject,
+  type TranslationItem,
+} from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 function formatDate(iso: string) {
   try { return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; }
+}
+
+function truncate(str: string, len: number) {
+  if (!str) return '';
+  return str.length <= len ? str : str.slice(0, len) + '…';
 }
 
 function FileIcon({ type }: { type: string }) {
@@ -29,16 +44,32 @@ function FileIcon({ type }: { type: string }) {
   );
 }
 
+function TranslateIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className ?? 'w-4 h-4 shrink-0 text-theme-fg-muted'} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
+    </svg>
+  );
+}
+
+type ViewingProjectItem = { project: TranslationProject; item: TranslationItem };
+
 export default function FilesPage() {
   const { locale } = useLocale();
   const [files, setFiles] = useState<UserFile[]>([]);
+  const [projects, setProjects] = useState<TranslationProject[]>([]);
+  const [projectItems, setProjectItems] = useState<Record<string, TranslationItem[]>>({});
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [loadingProjects, setLoadingProjects] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState<UserFile | null>(null);
+  const [viewingProjectItem, setViewingProjectItem] = useState<ViewingProjectItem | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'seo' | 'text' | 'translation'>('all');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const hasViewerOpen = !!viewingFile || !!viewingProjectItem;
 
   const fetchFiles = useCallback(() => {
     setLoading(true);
@@ -47,7 +78,34 @@ export default function FilesPage() {
       .catch(() => setFiles([]))
       .finally(() => setLoading(false));
   }, []);
-  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+
+  const fetchProjects = useCallback(() => {
+    listTranslationProjects()
+      .then((r) => setProjects(r.projects ?? []))
+      .catch(() => setProjects([]));
+  }, []);
+
+  useEffect(() => {
+    fetchFiles();
+    fetchProjects();
+  }, [fetchFiles, fetchProjects]);
+
+  const loadProjectItems = useCallback((projectId: string) => {
+    if (projectItems[projectId]) return;
+    setLoadingProjects((prev) => prev || projectId);
+    getTranslationProject(projectId)
+      .then((r) => setProjectItems((prev) => ({ ...prev, [projectId]: r.items ?? [] })))
+      .catch(() => setProjectItems((prev) => ({ ...prev, [projectId]: [] })))
+      .finally(() => setLoadingProjects(null));
+  }, [projectItems]);
+
+  const toggleProject = useCallback((projectId: string) => {
+    setExpandedProjectId((prev) => {
+      const next = prev === projectId ? null : projectId;
+      if (next) loadProjectItems(next);
+      return next;
+    });
+  }, [loadProjectItems]);
 
   const filtered = useMemo(() => {
     let list = files;
@@ -58,6 +116,26 @@ export default function FilesPage() {
     }
     return list;
   }, [files, typeFilter, search]);
+
+  const filteredProjects = useMemo(() => {
+    if (!search.trim()) return projects;
+    const q = search.trim().toLowerCase();
+    return projects.filter(
+      (p) => p.name.toLowerCase().includes(q)
+        || (projectItems[p.id] ?? []).some((it) => (it.source_value || '').toLowerCase().includes(q) || (it.result_text || '').toLowerCase().includes(q))
+    );
+  }, [projects, projectItems, search]);
+
+  const openFile = (file: UserFile) => {
+    setViewingProjectItem(null);
+    setViewingFile((prev) => (prev?.id === file.id ? null : file));
+  };
+
+  const openProjectItem = (project: TranslationProject, item: TranslationItem) => {
+    if (!item.result_text) return;
+    setViewingFile(null);
+    setViewingProjectItem((prev) => (prev?.item.id === item.id ? null : { project, item }));
+  };
 
   const handleDelete = async (file: UserFile) => {
     if (!confirm(`Delete "${file.name}"?`)) return;
@@ -102,7 +180,7 @@ export default function FilesPage() {
   return (
     <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* Files list */}
-      <div className={`flex flex-col min-h-0 border-r border-theme-border-subtle transition-all ${viewingFile ? 'w-72 shrink-0' : 'flex-1'}`}>
+      <div className={`flex flex-col min-h-0 border-r border-theme-border-subtle transition-all ${hasViewerOpen ? 'w-72 shrink-0' : 'flex-1'}`}>
         {/* Toolbar */}
         <div className="shrink-0 flex flex-col gap-2 px-4 pt-4 pb-3 border-b border-theme-border-subtle">
           <div className="flex items-center justify-between">
@@ -119,62 +197,114 @@ export default function FilesPage() {
               placeholder={t(locale, 'files.search')}
               className="w-full pl-9 pr-4 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg text-xs placeholder:text-theme-fg-subtle focus:outline-none focus:border-theme-border-hover" />
           </div>
-          <div className="flex gap-1">
-            {(['all', 'seo', 'text'] as const).map((type) => (
-              <button key={type} type="button" onClick={() => setTypeFilter(type)}
-                className={`btn-tap px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${typeFilter === type ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
-                {type === 'all' ? `All (${files.length})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : `Text (${files.filter(f => f.file_type === 'text').length})`}
-              </button>
-            ))}
+          <div className="flex gap-1 flex-wrap">
+            {(['all', 'seo', 'text', 'translation'] as const).map((type) => {
+              const translationCount = projects.length;
+              const label = type === 'all' ? `All (${files.length + translationCount})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : type === 'text' ? `Text (${files.filter(f => f.file_type === 'text').length})` : `Translation (${translationCount})`;
+              return (
+                <button key={type} type="button" onClick={() => setTypeFilter(type)}
+                  className={`btn-tap px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${typeFilter === type ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle p-2">
           {loading && <p className="text-sm text-theme-fg-subtle animate-pulse-subtle px-3 py-4">{t(locale, 'common.loading')}</p>}
-          {!loading && filtered.length === 0 && (
-            <div className="flex flex-col items-center gap-3 py-10 text-center px-4">
-              <p className="text-sm text-theme-fg-muted">{search ? 'No results.' : t(locale, 'files.empty')}</p>
-              {!search && <Link href="/dashboard/seo" className="btn-tap inline-flex px-4 py-2 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-xs font-medium">SEO Tool</Link>}
-            </div>
+
+          {/* Translation projects — visible for All and Translation */}
+          {(typeFilter === 'all' || typeFilter === 'translation') && (
+          <div className="mb-4">
+            <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider px-2 pb-1.5">{t(locale, 'files.projects')}</p>
+            {projects.length === 0 && !loading && <p className="text-xs text-theme-fg-subtle px-3 py-1">{t(locale, 'files.noProjects')}</p>}
+            {filteredProjects.map((project) => {
+              const isExpanded = expandedProjectId === project.id;
+              const items = (projectItems[project.id] ?? []).filter((it) => it.status === 'completed' && it.result_text);
+              const loadingThis = loadingProjects === project.id;
+              return (
+                <div key={project.id} className="rounded-xl border border-theme-border-subtle overflow-hidden mb-1.5">
+                  <button type="button" onClick={() => toggleProject(project.id)}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-t-xl hover:bg-theme-bg-subtle transition-colors">
+                    <span className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                      <svg className="w-3.5 h-3.5 text-theme-fg-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </span>
+                    <TranslateIcon className="w-4 h-4 shrink-0 text-theme-fg-muted" />
+                    <span className="flex-1 text-sm font-medium text-theme-fg truncate">{project.name}</span>
+                    {isExpanded && items.length > 0 && <span className="text-[10px] text-theme-fg-subtle">{items.length}</span>}
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-theme-border-subtle bg-theme-bg-subtle/50">
+                      {loadingThis && <p className="text-xs text-theme-fg-subtle px-3 py-2">{t(locale, 'common.loading')}</p>}
+                      {!loadingThis && items.length === 0 && <p className="text-xs text-theme-fg-subtle px-3 py-2">No translated items yet.</p>}
+                      {!loadingThis && items.map((item) => (
+                        <button key={item.id} type="button" onClick={() => openProjectItem(project, item)}
+                          className={`w-full text-left flex items-start gap-2 px-3 py-2 rounded-lg mx-1 mb-1 transition-colors group ${viewingProjectItem?.item.id === item.id ? 'bg-theme-bg-subtle border border-theme-border-subtle' : 'hover:bg-theme-bg-subtle border border-transparent'}`}>
+                          <TranslateIcon className="w-3.5 h-3.5 shrink-0 mt-0.5 text-theme-fg-muted" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-theme-fg truncate">{truncate(item.source_value || 'Translation', 40)}</p>
+                            <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(item.updated_at)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
           )}
 
-          {filtered.map((file, i) => (
-            <motion.div key={file.id} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.13, delay: Math.min(i * 0.02, 0.08) }}>
-              {renamingId === file.id ? (
-                <div className="px-3 py-2 flex items-center gap-2">
-                  <input
-                    autoFocus
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') commitRename(file); if (e.key === 'Escape') setRenamingId(null); }}
-                    onBlur={() => commitRename(file)}
-                    className="flex-1 min-w-0 text-sm text-theme-fg bg-theme-bg border border-theme-border-hover rounded-lg px-3 py-1.5 focus:outline-none"
-                  />
-                </div>
-              ) : (
-                <button type="button" onClick={() => setViewingFile(viewingFile?.id === file.id ? null : file)}
-                  className={`w-full text-left flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors group ${viewingFile?.id === file.id ? 'bg-theme-bg-hover' : 'hover:bg-theme-bg-subtle'}`}>
-                  <FileIcon type={file.file_type} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-theme-fg truncate">{file.name}</p>
-                    <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(file.created_at)}</p>
+          {/* Standalone files — visible for All, SEO, Text */}
+          {(typeFilter === 'all' || typeFilter === 'seo' || typeFilter === 'text') && (
+          <div>
+            <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider px-2 pb-1.5">{t(locale, 'files.standalone')}</p>
+            {!loading && filtered.length === 0 && (
+              <div className="flex flex-col items-center gap-3 py-6 text-center px-4">
+                <p className="text-sm text-theme-fg-muted">{search ? 'No results.' : t(locale, 'files.empty')}</p>
+                {!search && <Link href="/dashboard/seo" className="btn-tap inline-flex px-4 py-2 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-xs font-medium">SEO Tool</Link>}
+              </div>
+            )}
+            {filtered.map((file, i) => (
+              <motion.div key={file.id} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.13, delay: Math.min(i * 0.02, 0.08) }}>
+                {renamingId === file.id ? (
+                  <div className="px-3 py-2 flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitRename(file); if (e.key === 'Escape') setRenamingId(null); }}
+                      onBlur={() => commitRename(file)}
+                      className="flex-1 min-w-0 text-sm text-theme-fg bg-theme-bg border border-theme-border-hover rounded-lg px-3 py-1.5 focus:outline-none"
+                    />
                   </div>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); startRename(file); }}
-                    className="shrink-0 p-1.5 rounded-md text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity"
-                    title={t(locale, 'files.rename')}>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+                ) : (
+                  <button type="button" onClick={() => openFile(file)}
+                    className={`w-full text-left flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors group border border-transparent ${viewingFile?.id === file.id ? 'bg-theme-bg-subtle border-theme-border-subtle' : 'hover:bg-theme-bg-subtle'}`}>
+                    <FileIcon type={file.file_type} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-theme-fg truncate">{file.name}</p>
+                      <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(file.created_at)}</p>
+                    </div>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); startRename(file); }}
+                      className="shrink-0 p-1.5 rounded-md text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={t(locale, 'files.rename')}>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+                    </button>
                   </button>
-                </button>
-              )}
-            </motion.div>
-          ))}
+                )}
+              </motion.div>
+            ))}
+          </div>
+          )}
         </div>
       </div>
 
       {/* Viewer */}
       <AnimatePresence>
         {viewingFile && (
-          <motion.div key={viewingFile.id} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
+          <motion.div key={`file-${viewingFile.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
             <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
               <div className="min-w-0">
                 {renamingId === viewingFile.id ? (
@@ -221,6 +351,29 @@ export default function FilesPage() {
                 >
                   {viewingFile.content || ''}
                 </ReactMarkdown>
+              </div>
+            </div>
+          </motion.div>
+        )}
+        {viewingProjectItem && (
+          <motion.div key={`project-${viewingProjectItem.project.id}-${viewingProjectItem.item.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
+            <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-theme-fg truncate">{viewingProjectItem.project.name}</p>
+                <p className="text-[10px] text-theme-fg-subtle mt-0.5 truncate" title={viewingProjectItem.item.source_value}>{truncate(viewingProjectItem.item.source_value || 'Translation', 60)}</p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Link href="/dashboard/translations" className="btn-tap inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium">
+                  {t(locale, 'files.manageInTranslations')}
+                </Link>
+                <button type="button" onClick={() => setViewingProjectItem(null)} className="p-1.5 text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
+              <div className="file-content-markdown text-sm text-theme-fg leading-relaxed break-words whitespace-pre-wrap">
+                {viewingProjectItem.item.result_text ?? ''}
               </div>
             </div>
           </motion.div>

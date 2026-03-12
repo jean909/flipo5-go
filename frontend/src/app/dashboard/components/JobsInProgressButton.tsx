@@ -219,7 +219,7 @@ export function JobsInProgressButton() {
           allCompleted.forEach((j) => removeOptimisticJob(j.id));
           if (allCompleted.length > 0 && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             allCompleted.forEach((j) => {
-              const bodyKey = j.type === 'image' ? 'jobsInProgress.imageReady' : j.type === 'video' ? 'jobsInProgress.videoReady' : j.type === 'chat' ? 'jobsInProgress.chatReady' : j.type === 'translate' ? 'jobsInProgress.translateReady' : 'jobsInProgress.upscaleReady';
+              const bodyKey = j.type === 'image' ? 'jobsInProgress.imageReady' : j.type === 'video' ? 'jobsInProgress.videoReady' : j.type === 'chat' ? 'jobsInProgress.chatReady' : j.type === 'translate' ? 'jobsInProgress.translateReady' : j.type === 'logo' ? 'jobsInProgress.logoReady' : 'jobsInProgress.upscaleReady';
               new Notification(t(locale, 'jobsInProgress.ready'), { body: t(locale, bodyKey) });
             });
             playCompletionSound();
@@ -402,6 +402,7 @@ export function JobsInProgressButton() {
     if (type === 'seo') return t(locale, 'jobs.type.seo');
     if (type === 'outline') return t(locale, 'jobs.type.outline');
     if (type === 'translate') return t(locale, 'jobs.type.translate');
+    if (type === 'logo') return t(locale, 'jobs.type.logo');
     return type;
   };
 

@@ -952,6 +952,37 @@ export async function createOutlineJob(params: {
   return res.json();
 }
 
+export async function createLogoJob(params: {
+  prompt: string;
+  logo_type?: string;
+  style?: string;
+  primary_color?: string;
+  secondary_color?: string;
+  aspect_ratio?: string;
+  output_format?: 'png' | 'jpg';
+}): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/logo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      prompt: params.prompt.trim(),
+      logo_type: params.logo_type?.trim() || '',
+      style: params.style?.trim() || '',
+      primary_color: params.primary_color?.trim() || '',
+      secondary_color: params.secondary_color?.trim() || '',
+      aspect_ratio: params.aspect_ratio || '1:1',
+      output_format: params.output_format || 'png',
+    }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Logo creation failed');
+  }
+  return res.json();
+}
+
 export async function createTranslateJob(params: {
   source_url?: string;
   source_text?: string;

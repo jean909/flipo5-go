@@ -16,6 +16,7 @@ const (
 	TypeSEO               = "seo"
 	TypeOutline           = "outline"
 	TypeTranslate         = "translate"
+	TypeLogo              = "logo"
 	TypeSummarizeThread   = "summarize_thread"
 	TypeCancelStaleJobs   = "cancel_stale_jobs"
 	JobTimeoutMinutes     = 5
@@ -107,6 +108,18 @@ func NewTranslateTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeTranslate, payload, asynq.Queue("default"), asynq.MaxRetry(2), taskTimeout), nil
+}
+
+type LogoPayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewLogoTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(LogoPayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeLogo, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
 }
 
 type SummarizeThreadPayload struct {

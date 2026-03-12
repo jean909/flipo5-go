@@ -93,6 +93,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/seo", s.createSEO)
 		r.Post("/outline", s.createOutline)
 		r.Post("/translate", s.createTranslate)
+		r.Post("/logo", s.createLogo)
 		r.Route("/translation-projects", func(r chi.Router) {
 			r.Get("/", s.listTranslationProjects)
 			r.Post("/", s.createTranslationProject)
@@ -780,6 +781,57 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) createLogo(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt         string `json:"prompt"`
+		LogoType       string `json:"logo_type,omitempty"`
+		Style          string `json:"style,omitempty"`
+		PrimaryColor   string `json:"primary_color,omitempty"`
+		SecondaryColor string `json:"secondary_color,omitempty"`
+		AspectRatio    string `json:"aspect_ratio,omitempty"`
+		OutputFormat   string `json:"output_format,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
+		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.AspectRatio == "" {
+		req.AspectRatio = "1:1"
+	}
+	if req.OutputFormat != "jpg" && req.OutputFormat != "jpeg" && req.OutputFormat != "png" {
+		req.OutputFormat = "png"
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"prompt":          strings.TrimSpace(req.Prompt),
+		"logo_type":       strings.TrimSpace(req.LogoType),
+		"style":           strings.TrimSpace(req.Style),
+		"primary_color":   strings.TrimSpace(req.PrimaryColor),
+		"secondary_color": strings.TrimSpace(req.SecondaryColor),
+		"aspect_ratio":    req.AspectRatio,
+		"output_format":   req.OutputFormat,
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "logo", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	task, _ := queue.NewLogoTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
 }
 
 func (s *Server) createImageInpaint(w http.ResponseWriter, r *http.Request) {
