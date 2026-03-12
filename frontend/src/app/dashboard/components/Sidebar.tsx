@@ -247,6 +247,7 @@ export function Sidebar() {
             {[
               { href: '/dashboard/seo', labelKey: 'nav.seo', icon: SEOIcon },
               { href: '/dashboard/outline', labelKey: 'nav.outline', icon: OutlineIcon },
+              { href: '/dashboard/translations', labelKey: 'nav.translations', icon: TranslateIcon },
               { href: '/dashboard/files', labelKey: 'nav.files', icon: FilesIcon },
             ].map(({ href, labelKey, icon: Icon }) => {
               const isActive = pathname.startsWith(href);
@@ -272,6 +273,9 @@ export function Sidebar() {
             </Link>
             <Link href="/dashboard/outline" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/outline') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.outline')}>
               <OutlineIcon className="w-5 h-5 shrink-0" />
+            </Link>
+            <Link href="/dashboard/translations" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/translations') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.translations')}>
+              <TranslateIcon className="w-5 h-5 shrink-0" />
             </Link>
             <Link href="/dashboard/files" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/files') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.files')}>
               <FilesIcon className="w-5 h-5 shrink-0" />
@@ -484,6 +488,14 @@ function OutlineIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+    </svg>
+  );
+}
+
+function TranslateIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
     </svg>
   );
 }

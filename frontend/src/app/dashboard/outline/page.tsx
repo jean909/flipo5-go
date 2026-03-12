@@ -89,8 +89,9 @@ export default function OutlinePage() {
       const job = await getJob(id).catch(() => null);
       if (!job) { if (!cancelled) { setError(t(locale, 'outline.error')); setLoading(false); } return; }
       if (job.status === 'completed') {
-        const out = (job.output as { output?: string } | null)?.output ?? '';
-        const parsed = parseOutline(out);
+        const raw = job.output;
+        const out = typeof raw === 'string' ? raw : (raw && typeof (raw as Record<string, unknown>).output === 'string' ? (raw as { output: string }).output : '');
+        const parsed = parseOutline(out || '');
         setOutline(parsed);
         setExpanded(new Set(parsed.sections?.map((_, i) => i) ?? []));
         setLoading(false);
@@ -191,16 +192,27 @@ export default function OutlinePage() {
           {error && <p className="text-sm text-theme-danger">{error}</p>}
         </div>
 
+        {/* Generating preview */}
+        {loading && jobId && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6 flex items-center gap-4">
+            <span className="w-8 h-8 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-theme-fg">{t(locale, 'outline.generating')}</p>
+              <p className="text-xs text-theme-fg-muted mt-0.5">{t(locale, 'outline.topic')}: {topic}</p>
+            </div>
+          </motion.div>
+        )}
+
         {/* Results */}
         <AnimatePresence>
-          {outline && (
+          {outline && (Object.keys(outline).length > 0 || (outline.sections?.length ?? 0) > 0) && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="flex flex-col gap-5">
 
               {/* Title + stats */}
               <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
-                    <h2 className="text-lg font-semibold text-theme-fg">{outline.title}</h2>
+                    <h2 className="text-lg font-semibold text-theme-fg">{outline.title || t(locale, 'outline.title')}</h2>
                     {outline.hook && <p className="text-sm text-theme-fg-muted mt-1 italic">"{outline.hook}"</p>}
                   </div>
                   <CopyBtn text={outlineToMarkdown(outline)} />

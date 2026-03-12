@@ -1310,6 +1310,131 @@ Tone: Authoritative yet engaging.`
 	return nil
 }
 
+func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
+	var p TranslatePayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	if h.Repl == nil || h.Cfg.ModelText == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "AI not configured", 0, "")
+		return nil
+	}
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	sourceURL, _ := jobInput["source_url"].(string)
+	sourceText, _ := jobInput["source_text"].(string)
+	sourceLang, _ := jobInput["source_lang"].(string)
+	targetLang, _ := jobInput["target_lang"].(string)
+	if targetLang == "" {
+		targetLang = "English"
+	}
+	if sourceLang == "" {
+		sourceLang = "auto"
+	}
+	textToTranslate := strings.TrimSpace(sourceText)
+	if sourceURL != "" {
+		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		fetched, fetchErr := fetchPageText(fetchCtx, sourceURL)
+		cancel()
+		if fetchErr != nil {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Failed to fetch URL: "+fetchErr.Error(), 0, "")
+			return nil
+		}
+		textToTranslate = fetched
+	}
+	if textToTranslate == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "No text to translate (provide source_url or source_text)", 0, "")
+		return nil
+	}
+	if len(textToTranslate) > 50000 {
+		textToTranslate = textToTranslate[:50000] + "\n[... truncated]"
+	}
+	systemPrompt := "You are a professional translator. Translate the user's text accurately. Preserve paragraphs, line breaks, and structure. Output ONLY the translation, no explanations or notes. If the source language is 'auto', detect it. Do not add any preamble."
+	prompt := fmt.Sprintf("Translate from %s to %s:\n\n%s", sourceLang, targetLang, textToTranslate)
+	input := map[string]interface{}{
+		"system_prompt": systemPrompt,
+		"prompt":        prompt,
+		"max_tokens":    8000,
+	}
+	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
+	if err != nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+		return nil
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, pred.ID)
+	for i := 0; i < 50; i++ {
+		select {
+		case <-ctx.Done():
+			_ = h.Repl.CancelPrediction(context.Background(), pred.ID)
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, ErrMsgServerUnavailable, 0, pred.ID)
+			return nil
+		default:
+		}
+		state, err := h.Repl.GetPrediction(ctx, pred.ID)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if state.Status == "failed" || state.Status == "canceled" {
+			errMsg := "Prediction failed"
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, errMsg, 0, pred.ID)
+			itemIDStr, _ := jobInput["item_id"].(string)
+			if itemIDStr != "" {
+				if itemID, err := uuid.Parse(itemIDStr); err == nil {
+					_ = h.DB.UpdateTranslationItemAfterJob(ctx, itemID, p.JobID, "failed", nil, &errMsg)
+				}
+			}
+			return nil
+		}
+		if state.Status == "succeeded" {
+			out := normalizeChatOutput(state.Output)
+			outText := ""
+			if m, ok := out.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			final := map[string]interface{}{"output": outText}
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
+			itemIDStr, _ := jobInput["item_id"].(string)
+			if itemIDStr != "" {
+				if itemID, err := uuid.Parse(itemIDStr); err == nil {
+					_ = h.DB.UpdateTranslationItemAfterJob(ctx, itemID, p.JobID, "completed", &outText, nil)
+				}
+			}
+			if outText != "" && itemIDStr == "" {
+				name := "Translation – " + targetLang
+				if len(name) > 80 {
+					name = name[:80]
+				}
+				_, _ = h.DB.CreateUserFile(ctx, job.UserID, name, outText, "text")
+			}
+			if h.Stream != nil {
+				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+				_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"translate"}`, p.JobID.String()))
+			}
+			return nil
+		}
+		time.Sleep(3 * time.Second)
+	}
+	errMsg := "timeout"
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, errMsg, 0, pred.ID)
+	itemIDStr, _ := jobInput["item_id"].(string)
+	if itemIDStr != "" {
+		if itemID, err := uuid.Parse(itemIDStr); err == nil {
+			_ = h.DB.UpdateTranslationItemAfterJob(ctx, itemID, p.JobID, "failed", nil, &errMsg)
+		}
+	}
+	return nil
+}
+
 func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeChat, h.ChatHandler)
 	mux.HandleFunc(TypeImage, h.ImageHandler)
@@ -1317,6 +1442,7 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeUpscale, h.UpscaleHandler)
 	mux.HandleFunc(TypeSEO, h.SEOHandler)
 	mux.HandleFunc(TypeOutline, h.OutlineHandler)
+	mux.HandleFunc(TypeTranslate, h.TranslateHandler)
 	mux.HandleFunc(TypeSummarizeThread, h.SummarizeThreadHandler)
 	mux.HandleFunc(TypeCancelStaleJobs, h.CancelStaleJobsHandler)
 }

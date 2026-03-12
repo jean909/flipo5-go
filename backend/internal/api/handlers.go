@@ -92,6 +92,14 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Post("/seo", s.createSEO)
 		r.Post("/outline", s.createOutline)
+		r.Post("/translate", s.createTranslate)
+		r.Route("/translation-projects", func(r chi.Router) {
+			r.Get("/", s.listTranslationProjects)
+			r.Post("/", s.createTranslationProject)
+			r.Get("/{id}", s.getTranslationProject)
+			r.Post("/{id}/items", s.addTranslationItem)
+			r.Delete("/items/{itemId}", s.deleteTranslationItem)
+		})
 		r.Get("/files", s.listFiles)
 		r.Get("/files/{id}", s.getFile)
 		r.Patch("/files/{id}", s.renameFile)
@@ -1465,6 +1473,183 @@ func (s *Server) createOutline(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SourceURL  string `json:"source_url"`
+		SourceText string `json:"source_text"`
+		SourceLang string `json:"source_lang"`
+		TargetLang string `json:"target_lang"`
+		ProjectID  string `json:"project_id"`
+		ItemID     string `json:"item_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	sourceURL := strings.TrimSpace(req.SourceURL)
+	sourceText := strings.TrimSpace(req.SourceText)
+	if sourceURL == "" && sourceText == "" {
+		http.Error(w, `{"error":"source_url or source_text required"}`, http.StatusBadRequest)
+		return
+	}
+	targetLang := strings.TrimSpace(req.TargetLang)
+	if targetLang == "" {
+		targetLang = "English"
+	}
+	userID, _ := middleware.UserID(r.Context())
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"source_url":  sourceURL,
+		"source_text": sourceText,
+		"source_lang": strings.TrimSpace(req.SourceLang),
+		"target_lang": targetLang,
+	}
+	if req.ProjectID != "" {
+		input["project_id"] = req.ProjectID
+	}
+	if req.ItemID != "" {
+		input["item_id"] = req.ItemID
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "translate", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	itemIDStr := strings.TrimSpace(req.ItemID)
+	if itemIDStr != "" {
+		if itemUUID, err := uuid.Parse(itemIDStr); err == nil {
+			_ = s.DB.SetTranslationItemRunning(ctx, itemUUID, jobID)
+		}
+	}
+	task, _ := queue.NewTranslateTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
+func (s *Server) listTranslationProjects(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	list, err := s.DB.ListTranslationProjects(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"list failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if list == nil {
+		list = []store.TranslationProject{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"projects": list})
+}
+
+func (s *Server) createTranslationProject(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name       string `json:"name"`
+		SourceLang string `json:"source_lang"`
+		TargetLang string `json:"target_lang"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	id, err := s.DB.CreateTranslationProject(r.Context(), userID, name, strings.TrimSpace(req.SourceLang), strings.TrimSpace(req.TargetLang))
+	if err != nil {
+		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"id": id.String()})
+}
+
+func (s *Server) getTranslationProject(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	project, err := s.DB.GetTranslationProject(r.Context(), projectID, userID)
+	if err != nil || project == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	items, _ := s.DB.ListTranslationItems(r.Context(), projectID)
+	if items == nil {
+		items = []store.TranslationItem{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"project": project, "items": items})
+}
+
+func (s *Server) addTranslationItem(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	projectID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	project, err := s.DB.GetTranslationProject(r.Context(), projectID, userID)
+	if err != nil || project == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	var req struct {
+		SourceType  string `json:"source_type"`
+		SourceValue string `json:"source_value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	sourceType := strings.TrimSpace(req.SourceType)
+	if sourceType != "url" && sourceType != "text" {
+		sourceType = "text"
+	}
+	sourceValue := strings.TrimSpace(req.SourceValue)
+	if sourceValue == "" {
+		http.Error(w, `{"error":"source_value required"}`, http.StatusBadRequest)
+		return
+	}
+	items, _ := s.DB.ListTranslationItems(r.Context(), projectID)
+	sortOrder := len(items)
+	itemID, err := s.DB.AddTranslationItem(r.Context(), projectID, sourceType, sourceValue, sortOrder)
+	if err != nil {
+		http.Error(w, `{"error":"add failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"id": itemID.String()})
+}
+
+func (s *Server) deleteTranslationItem(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if err := s.DB.DeleteTranslationItem(r.Context(), itemID, userID); err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 }
 
 func (s *Server) renameFile(w http.ResponseWriter, r *http.Request) {

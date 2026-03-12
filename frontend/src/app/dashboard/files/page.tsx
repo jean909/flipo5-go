@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { listFiles, deleteFile, renameFile, getToken, type UserFile } from '@/lib/api';
@@ -109,6 +110,7 @@ export default function FilesPage() {
             <div className="flex items-center gap-1.5">
               <Link href="/dashboard/seo" className="text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2 py-1 rounded hover:bg-theme-bg-hover">SEO</Link>
               <Link href="/dashboard/outline" className="text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2 py-1 rounded hover:bg-theme-bg-hover">Outline</Link>
+              <Link href="/dashboard/translations" className="text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2 py-1 rounded hover:bg-theme-bg-hover">Translations</Link>
             </div>
           </div>
           <div className="relative">
@@ -203,7 +205,23 @@ export default function FilesPage() {
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
-              <pre className="text-sm text-theme-fg-muted font-mono whitespace-pre-wrap leading-relaxed break-words">{viewingFile.content}</pre>
+              <div className="file-content-markdown text-sm text-theme-fg leading-relaxed break-words">
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => <h1 className="text-lg font-semibold text-theme-fg mt-4 mb-2 first:mt-0">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-base font-semibold text-theme-fg mt-4 mb-1.5">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-semibold text-theme-fg mt-3 mb-1">{children}</h3>,
+                    p: ({ children }) => <p className="text-theme-fg-muted mb-2">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5 text-theme-fg-muted">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5 text-theme-fg-muted">{children}</ol>,
+                    li: ({ children }) => <li className="text-theme-fg-muted">{children}</li>,
+                    code: ({ children }) => <code className="px-1 py-0.5 rounded bg-theme-bg-hover text-theme-fg text-xs">{children}</code>,
+                    pre: ({ children }) => <pre className="p-3 rounded-lg bg-theme-bg-subtle text-theme-fg-muted text-xs overflow-x-auto mb-2">{children}</pre>,
+                  }}
+                >
+                  {viewingFile.content || ''}
+                </ReactMarkdown>
+              </div>
             </div>
           </motion.div>
         )}

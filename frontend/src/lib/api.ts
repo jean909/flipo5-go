@@ -952,6 +952,105 @@ export async function createOutlineJob(params: {
   return res.json();
 }
 
+export async function createTranslateJob(params: {
+  source_url?: string;
+  source_text?: string;
+  source_lang?: string;
+  target_lang: string;
+  project_id?: string;
+  item_id?: string;
+}): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Translation failed');
+  }
+  return res.json();
+}
+
+export interface TranslationProject {
+  id: string;
+  user_id: string;
+  name: string;
+  source_lang: string;
+  target_lang: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TranslationItem {
+  id: string;
+  project_id: string;
+  source_type: 'url' | 'text';
+  source_value: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  result_text?: string | null;
+  error_message?: string | null;
+  job_id?: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listTranslationProjects(): Promise<{ projects: TranslationProject[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/translation-projects`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Failed to list projects');
+  return res.json();
+}
+
+export async function createTranslationProject(params: { name: string; source_lang?: string; target_lang?: string }): Promise<{ id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/translation-projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed to create project');
+  }
+  return res.json();
+}
+
+export async function getTranslationProject(id: string): Promise<{ project: TranslationProject; items: TranslationItem[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/translation-projects/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Project not found');
+  return res.json();
+}
+
+export async function addTranslationItem(projectId: string, params: { source_type: 'url' | 'text'; source_value: string }): Promise<{ id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/translation-projects/${projectId}/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed to add item');
+  }
+  return res.json();
+}
+
+export async function deleteTranslationItem(itemId: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/translation-projects/items/${itemId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Failed to delete item');
+}
+
 export async function deleteFile(id: string): Promise<void> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');

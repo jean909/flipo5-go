@@ -15,6 +15,7 @@ const (
 	TypeUpscale           = "upscale"
 	TypeSEO               = "seo"
 	TypeOutline           = "outline"
+	TypeTranslate         = "translate"
 	TypeSummarizeThread   = "summarize_thread"
 	TypeCancelStaleJobs   = "cancel_stale_jobs"
 	JobTimeoutMinutes     = 5
@@ -94,6 +95,18 @@ func NewOutlineTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeOutline, payload, asynq.Queue("default"), asynq.MaxRetry(2), taskTimeout), nil
+}
+
+type TranslatePayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewTranslateTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(TranslatePayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeTranslate, payload, asynq.Queue("default"), asynq.MaxRetry(2), taskTimeout), nil
 }
 
 type SummarizeThreadPayload struct {
