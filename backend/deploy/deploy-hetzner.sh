@@ -1,6 +1,7 @@
 #!/bin/bash
 # Deploy Flipo5 backend (Docker) to Hetzner
-# Rulează din repo root. Pe server creează folderul dacă nu există (ex: ~/backend/flipo5).
+# Rulează din repo root. Pe server: folder creat dacă nu există; clone la prima rulare, altfel pull; build + up.
+# Migrările DB rulează automat la pornirea containerului (schema.sql + migrations/*.sql).
 # Usage: ./backend/deploy/deploy-hetzner.sh [user@SERVER_IP] ["commit message"]
 # Or: DEPLOY_SERVER=root@IP DEPLOY_PATH=~/backend/flipo5 ./backend/deploy/deploy-hetzner.sh
 
@@ -29,7 +30,7 @@ if [ -z "$SERVER" ]; then
   exit 1
 fi
 
-echo "=== Git add & commit (backend + deploy, fara zip) ==="
+echo "=== Git add & commit (backend, deploy, docker-compose, frontend) ==="
 git reset HEAD -- '*.zip' 2>/dev/null || true
 for f in $(git ls-files '*.zip' 2>/dev/null); do git rm --cached "$f" 2>/dev/null || true; done
 git add backend/
@@ -37,6 +38,7 @@ git add deploy/
 git add .gitignore
 git add docker-compose.yml
 git add frontend/
+[ -f .env.example ] && git add .env.example
 if git diff --staged --quiet; then
   echo "Nothing to commit."
 else
@@ -46,10 +48,16 @@ fi
 echo "=== Pushing to git ==="
 git push
 
-# Pe server: creeaza folderul daca nu exista (ex: ~/backend/flipo5 pentru mai multe aplicatii)
 REMOTE_PATH="${DEPLOY_PATH:-~/backend/flipo5}"
+REPO_URL="$(git remote get-url origin 2>/dev/null || true)"
 echo "=== Deploying to $SERVER (path: $REMOTE_PATH) ==="
-# mkdir -p creaza tot path-ul; apoi cd si git pull + docker
-ssh "$SERVER" "mkdir -p $REMOTE_PATH && cd $REMOTE_PATH && git pull && docker compose build api && docker compose up -d"
-echo "Done. Check: ssh $SERVER 'cd $REMOTE_PATH && docker compose ps'"
-echo "Logs: ssh $SERVER 'cd $REMOTE_PATH && docker compose logs api --tail 20'"
+if [ -n "$REPO_URL" ]; then
+  ssh "$SERVER" "mkdir -p $REMOTE_PATH && cd $REMOTE_PATH && if [ ! -d .git ]; then git clone $REPO_URL . ; else git pull; fi && docker compose build api && docker compose up -d"
+else
+  ssh "$SERVER" "mkdir -p $REMOTE_PATH && cd $REMOTE_PATH && git pull && docker compose build api && docker compose up -d"
+fi
+echo ""
+echo "Done. Verificare:"
+echo "  ssh $SERVER 'cd $REMOTE_PATH && docker compose ps'"
+echo "  ssh $SERVER 'cd $REMOTE_PATH && docker compose logs api --tail 30'"
+echo "  (în logs caută 'migrate: ok' sau 'migrate FAILED' pentru migrări DB)"

@@ -1563,9 +1563,17 @@ func (s *Server) createTranslationProject(w http.ResponseWriter, r *http.Request
 		return
 	}
 	userID, _ := middleware.UserID(r.Context())
+	// Translation projects (translation_projects table) — separate from Edit Studio projects (projects table).
 	id, err := s.DB.CreateTranslationProject(r.Context(), userID, name, strings.TrimSpace(req.SourceLang), strings.TrimSpace(req.TargetLang))
 	if err != nil {
-		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
+		log.Printf("[createTranslationProject] %v", err)
+		msg := "create failed"
+		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "relation") {
+			msg = "create failed: translation tables missing. Restart backend to run migrations."
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": msg})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

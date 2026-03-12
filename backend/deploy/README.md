@@ -46,10 +46,14 @@ export DEPLOY_SERVER=root@IP_SERVER
 ./backend/deploy/deploy-hetzner.sh
 ```
 
-## Ce face scriptul
+## Ce face scriptul (tot ce trebuie – rulezi doar scriptul)
 
-1. Git add/commit (backend, deploy, docker-compose, frontend), push.
-2. Pe server: `mkdir -p $DEPLOY_PATH` → `cd $DEPLOY_PATH` → `git pull` → `docker compose build api` → `docker compose up -d`.
+1. **Local:** Git add (backend/, deploy/, docker-compose.yml, frontend/, .env.example dacă există), commit, push.
+2. **Pe server:** `mkdir -p` path → dacă nu e clone git, `git clone`; altfel `git pull` → `docker compose build api` → `docker compose up -d`.
+
+Nu e nevoie să dai manual comenzi pe server pentru deploy ulterior – scriptul face tot. La final îți afișează comenzile de verificare (ps, logs); în logs poți verifica dacă migrările au mers ok (`migrate: ok` sau `migrate FAILED`).
+
+**Migrări DB:** La fiecare pornire a containerului, API-ul rulează automat `schema.sql` + `migrations/*.sql`. Tabele noi (ex. `translation_projects`) apar după ce rulezi scriptul și containerul pornește.
 
 ## Port 8080 deja folosit
 
