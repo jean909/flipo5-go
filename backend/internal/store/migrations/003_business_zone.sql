@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS user_files (
 CREATE INDEX IF NOT EXISTS idx_user_files_user_id ON user_files(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_files_created_at ON user_files(created_at DESC);
 
--- Allow 'seo', 'outline', 'translate' job types (include translate so existing rows never violate)
+-- Allow 'seo', 'outline', 'translate' job types. Fix any rows with invalid type first, then add constraint.
+UPDATE jobs SET type = 'chat' WHERE type IS NULL OR type NOT IN ('chat', 'image', 'video', 'upscale', 'seo', 'outline', 'translate');
 ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_type_check;
 ALTER TABLE jobs ADD CONSTRAINT jobs_type_check CHECK (type IN ('chat', 'image', 'video', 'upscale', 'seo', 'outline', 'translate'));
 
