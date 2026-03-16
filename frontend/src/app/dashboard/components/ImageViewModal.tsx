@@ -145,7 +145,7 @@ export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en'
               type="button"
               onClick={handleEditInStudio}
               disabled={editLoading}
-              className="px-4 py-2 rounded-lg bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-60"
+              className="px-4 py-2.5 min-h-[44px] rounded-lg bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-60 touch-manipulation"
             >
               <EditIcon className="w-4 h-4" />
               {editLoading ? '...' : t(locale, 'image.editInStudio')}
@@ -153,7 +153,7 @@ export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en'
             <button
               type="button"
               onClick={handleSave}
-              className="px-4 py-2 rounded-lg bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger text-theme-fg text-sm font-medium transition-colors flex items-center gap-2"
+              className="px-4 py-2.5 min-h-[44px] rounded-lg bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger text-theme-fg text-sm font-medium transition-colors flex items-center gap-2 touch-manipulation"
             >
               <DownloadIcon className="w-4 h-4" />
               {t(locale, 'image.save')}
@@ -161,7 +161,7 @@ export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en'
             <button
               type="button"
               onClick={handleShare}
-              className="px-4 py-2 rounded-lg bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger text-theme-fg text-sm font-medium transition-colors flex items-center gap-2"
+              className="px-4 py-2.5 min-h-[44px] rounded-lg bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger text-theme-fg text-sm font-medium transition-colors flex items-center gap-2 touch-manipulation"
             >
               <ShareIcon className="w-4 h-4" />
               {t(locale, 'image.share')}

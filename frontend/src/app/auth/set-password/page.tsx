@@ -87,7 +87,7 @@ export default function SetPasswordPage() {
             </div>
             {error && <p className="text-sm text-theme-danger">{error}</p>}
             <button type="submit" disabled={loading} className="w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 disabled:opacity-50 transition-colors">
-              {loading ? '...' : t(locale, 'auth.setNewPassword')}
+              {loading ? t(locale, 'common.loading') : t(locale, 'auth.setNewPassword')}
             </button>
           </form>
         )}

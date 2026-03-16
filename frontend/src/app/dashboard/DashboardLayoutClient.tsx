@@ -22,6 +22,20 @@ export default function DashboardLayoutClient({
   const { locale } = useLocale();
   const { incognito, setIncognito } = useIncognito();
   const [ready, setReady] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const m = window.matchMedia('(max-width: 768px)');
+    setIsMobile(m.matches);
+    const onMatch = () => setIsMobile(m.matches);
+    m.addEventListener('change', onMatch);
+    return () => m.removeEventListener('change', onMatch);
+  }, []);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,20 +46,6 @@ export default function DashboardLayoutClient({
     });
     return () => { cancelled = true; };
   }, [router]);
-
-  // Preconnect to API so first request is faster (DNS + TCP + TLS ready)
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-    try {
-      const origin = new URL(url).origin;
-      if (document.querySelector(`link[rel="preconnect"][href="${origin}"]`)) return;
-      const link = document.createElement('link');
-      link.rel = 'preconnect';
-      link.href = origin;
-      link.crossOrigin = 'anonymous';
-      document.head.appendChild(link);
-    } catch {}
-  }, []);
 
   if (!ready) {
     return (
@@ -61,10 +61,26 @@ export default function DashboardLayoutClient({
   return (
     <JobsInProgressProvider>
     <div className="h-screen bg-theme-bg text-theme-fg flex overflow-hidden">
-      <Sidebar />
+      {isMobile ? (
+        <Sidebar overlay open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      ) : (
+        <Sidebar />
+      )}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 relative">
         {!pathname.startsWith('/dashboard/studio') && (
-        <div className="fixed z-10 flex items-center gap-2 right-4 top-4 [top:max(1rem,env(safe-area-inset-top))] [right:max(1rem,env(safe-area-inset-right))]">
+        <div className="fixed z-10 flex items-center gap-2 right-4 top-4 left-4 md:left-auto [top:max(1rem,env(safe-area-inset-top))] [right:max(1rem,env(safe-area-inset-right))] [left:max(1rem,env(safe-area-inset-left))]">
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-theme-bg-hover text-theme-fg border border-theme-border hover:bg-theme-bg-hover-strong touch-manipulation md:hidden"
+              aria-label={t(locale, 'nav.menu')}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -98,9 +114,9 @@ export default function DashboardLayoutClient({
           <JobsInProgressButton />
         </div>
         )}
-        <div className={!pathname.startsWith('/dashboard/studio') ? 'pt-[max(3.5rem,calc(2rem+env(safe-area-inset-top)))] pr-[max(5rem,calc(4rem+env(safe-area-inset-right)))] sm:pr-24 flex-1 flex flex-col min-h-0 min-w-0' : 'flex-1 flex flex-col min-h-0 min-w-0'}>
+        <div className={!pathname.startsWith('/dashboard/studio') ? 'pt-[max(3.5rem,calc(2rem+env(safe-area-inset-top)))] pr-4 sm:pr-24 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pb-0 flex-1 flex flex-col min-h-0 min-w-0' : 'flex-1 flex flex-col min-h-0 min-w-0'}>
           {!pathname.startsWith('/dashboard/studio') && pathname === '/dashboard' && (
-            <div className="shrink-0 px-4 sm:px-6 pt-1 pb-2">
+            <div className="shrink-0 px-4 sm:px-6 pt-4 pb-2">
               <Link
                 href="/dashboard?inspire=1"
                 className="btn-tap inline-flex items-center gap-2 text-sm text-theme-fg-muted hover:text-theme-fg transition-colors py-1.5 px-3 rounded-lg bg-theme-bg-subtle border border-theme-border hover:bg-theme-bg-hover hover:border-theme-border-hover"

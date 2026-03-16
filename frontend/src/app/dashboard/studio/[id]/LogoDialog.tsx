@@ -123,7 +123,7 @@ export function LogoDialog({
               htmlFor="elements-upload-input"
               className={`mb-2 inline-block px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-sm font-medium cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : 'hover:bg-theme-bg-hover-strong'}`}
             >
-              {uploading ? 'Uploading…' : t(locale, 'studio.uploadLogo')}
+              {uploading ? t(locale, 'common.uploading') : t(locale, 'studio.uploadLogo')}
             </label>
             <div className="flex flex-wrap gap-2">
               {savedLogos.map((logo) => (

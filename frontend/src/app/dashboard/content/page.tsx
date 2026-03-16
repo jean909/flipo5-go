@@ -106,10 +106,10 @@ export default function ContentPage() {
   const hasNext = page < totalPages;
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
-      <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'content.title')}</h1>
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
+      <h1 className="text-xl font-semibold text-theme-fg mb-4 md:mb-6">{t(locale, 'content.title')}</h1>
 
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-4 md:mb-6">
         <form
           className="flex-1 relative"
           onSubmit={(e) => {
@@ -139,7 +139,7 @@ export default function ContentPage() {
                 ...(searchQ && { q: searchQ }),
                 ...(typeVal && { type: typeVal }),
               }).toString()}`}
-              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-colors min-h-[44px] flex items-center touch-manipulation ${
                 typeFilter === typeVal
                   ? 'bg-theme-bg-hover-strong text-theme-fg border border-theme-border-hover'
                   : 'bg-theme-bg-subtle text-theme-fg-muted border border-theme-border-subtle hover:bg-theme-bg-hover hover:text-theme-fg'

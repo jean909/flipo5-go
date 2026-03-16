@@ -51,7 +51,7 @@ export default function JobDetailPage() {
     return () => { cancelled = true; };
   }, [id, router]);
 
-  if (!job) return <div className="flex-1 flex items-center justify-center p-6"><p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p></div>;
+  if (!job) return <div className="flex-1 flex items-center justify-center p-4 md:p-6"><p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p></div>;
 
   const statusLabel =
     job.status === 'pending'
@@ -70,11 +70,11 @@ export default function JobDetailPage() {
   const outputText = outputStr && !outputStr.startsWith('http') ? outputStr : '';
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-subtle">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 scrollbar-subtle">
       <Link href="/dashboard/jobs" className="text-sm text-theme-fg-muted hover:text-theme-fg">
         ← {t(locale, 'nav.jobs')}
       </Link>
-      <div className="border border-theme-border rounded-lg p-6 bg-theme-bg-subtle">
+      <div className="border border-theme-border rounded-lg p-4 md:p-6 bg-theme-bg-subtle">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-theme-fg-muted">{job.type} · {statusLabel}</p>
           <div className="flex items-center gap-2">

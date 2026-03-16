@@ -373,31 +373,31 @@ export default function FilesContent() {
 
   return (
     <div className="flex-1 min-h-0 flex overflow-hidden">
-      {/* Files list */}
-      <div className={`flex flex-col min-h-0 border-r border-theme-border-subtle transition-all ${hasViewerOpen ? 'w-72 shrink-0' : 'flex-1'}`}>
+      {/* Files list — on mobile hide when viewer is open */}
+      <div className={`flex flex-col min-h-0 border-r border-theme-border-subtle transition-all ${hasViewerOpen ? 'hidden md:flex md:w-72 md:shrink-0' : 'flex-1 min-w-0'}`}>
         {/* Toolbar */}
-        <div className="shrink-0 flex flex-col gap-2 px-4 pt-4 pb-3 border-b border-theme-border-subtle">
-          <div className="flex items-center justify-between">
-            <h1 className="text-base font-semibold text-theme-fg">{t(locale, 'files.title')}</h1>
-            <div className="flex items-center gap-1.5">
-              <Link href="/dashboard/seo" className="text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2 py-1 rounded hover:bg-theme-bg-hover">SEO</Link>
-              <Link href="/dashboard/outline" className="text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2 py-1 rounded hover:bg-theme-bg-hover">Outline</Link>
-              <Link href="/dashboard/translations" className="text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2 py-1 rounded hover:bg-theme-bg-hover">Translations</Link>
+        <div className="shrink-0 flex flex-col gap-2 px-3 pt-3 pb-2 md:px-4 md:pt-4 md:pb-3 border-b border-theme-border-subtle">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-base font-semibold text-theme-fg truncate min-w-0">{t(locale, 'files.title')}</h1>
+            <div className="flex items-center gap-1 shrink-0 overflow-x-auto scrollbar-none">
+              <Link href="/dashboard/seo" className="btn-tap text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2.5 py-2 rounded-lg hover:bg-theme-bg-hover min-h-[44px] flex items-center touch-manipulation">SEO</Link>
+              <Link href="/dashboard/outline" className="btn-tap text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2.5 py-2 rounded-lg hover:bg-theme-bg-hover min-h-[44px] flex items-center touch-manipulation">Outline</Link>
+              <Link href="/dashboard/translations" className="btn-tap text-xs text-theme-fg-muted hover:text-theme-fg transition-colors px-2.5 py-2 rounded-lg hover:bg-theme-bg-hover min-h-[44px] flex items-center touch-manipulation">Translations</Link>
             </div>
           </div>
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-theme-fg-subtle pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
             <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder={t(locale, 'files.search')}
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg text-xs placeholder:text-theme-fg-subtle focus:outline-none focus:border-theme-border-hover" />
+              className="w-full pl-9 pr-4 py-2.5 md:py-2 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg text-sm md:text-xs placeholder:text-theme-fg-subtle focus:outline-none focus:border-theme-border-hover touch-manipulation" />
           </div>
-          <div className="flex gap-1 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap">
             {(['all', 'seo', 'text', 'translation', 'logo', 'product'] as const).map((type) => {
               const translationCount = projects.length;
               const label = type === 'all' ? `All (${files.length + translationCount + logoJobs.length + products.length})` : type === 'seo' ? `SEO (${files.filter(f => f.file_type === 'seo').length})` : type === 'text' ? `Text (${files.filter(f => f.file_type === 'text').length})` : type === 'translation' ? `Translation (${translationCount})` : type === 'logo' ? `Logo (${logoJobs.length})` : t(locale, 'files.products') + ` (${products.length})`;
               return (
                 <button key={type} type="button" onClick={() => setTypeFilter(type)}
-                  className={`btn-tap px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${typeFilter === type ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
+                  className={`btn-tap px-3 py-2 rounded-lg text-xs font-medium transition-colors capitalize min-h-[44px] flex items-center touch-manipulation ${typeFilter === type ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
                   {label}
                 </button>
               );
@@ -573,7 +573,7 @@ export default function FilesContent() {
             <p className="text-[10px] font-medium text-theme-fg-muted uppercase tracking-wider px-2 pb-1.5">{t(locale, 'files.standalone')}</p>
             {!loading && filtered.length === 0 && (
               <div className="flex flex-col items-center gap-3 py-6 text-center px-4">
-                <p className="text-sm text-theme-fg-muted">{search ? 'No results.' : t(locale, 'files.empty')}</p>
+                <p className="text-sm text-theme-fg-muted">{search ? t(locale, 'files.noResults') : t(locale, 'files.empty')}</p>
                 {!search && <Link href="/dashboard/seo" className="btn-tap inline-flex px-4 py-2 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-xs font-medium">SEO Tool</Link>}
               </div>
             )}
@@ -616,41 +616,46 @@ export default function FilesContent() {
         </div>
       </div>
 
-      {/* Viewer - wrapper so panel gets flex space when open */}
+      {/* Viewer — full width on mobile when open */}
       <div className={hasViewerOpen ? 'flex-1 min-w-0 flex flex-col min-h-0' : 'hidden'}>
       <AnimatePresence mode="wait">
         {viewingFile && (
           <motion.div key={`file-${viewingFile.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
-            <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
-              <div className="min-w-0">
-                {renamingId === viewingFile.id ? (
-                  <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') commitRename(viewingFile); if (e.key === 'Escape') setRenamingId(null); }}
-                    onBlur={() => commitRename(viewingFile)}
-                    className="text-sm font-semibold text-theme-fg bg-theme-bg border border-theme-border-hover rounded-lg px-3 py-1 focus:outline-none w-full max-w-sm" />
-                ) : (
-                  <button type="button" onClick={() => startRename(viewingFile)} className="text-left group flex items-center gap-2">
-                    <p className="text-sm font-semibold text-theme-fg truncate">{viewingFile.name}</p>
-                    <svg className="w-3.5 h-3.5 text-theme-fg-subtle opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
-                  </button>
-                )}
-                <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(viewingFile.created_at)}</p>
+            <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-3 md:px-5 md:py-3.5 border-b border-theme-border-subtle">
+              <div className="min-w-0 flex items-center gap-2">
+                <button type="button" onClick={() => setViewingFile(null)} className="md:hidden flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" aria-label={t(locale, 'common.close')}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7m5 7l-7-7 7-7" /></svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                  {renamingId === viewingFile.id ? (
+                    <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitRename(viewingFile); if (e.key === 'Escape') setRenamingId(null); }}
+                      onBlur={() => commitRename(viewingFile)}
+                      className="text-sm font-semibold text-theme-fg bg-theme-bg border border-theme-border-hover rounded-lg px-3 py-2 md:py-1 focus:outline-none w-full max-w-sm touch-manipulation" />
+                  ) : (
+                    <button type="button" onClick={() => startRename(viewingFile)} className="text-left group flex items-center gap-2">
+                      <p className="text-sm font-semibold text-theme-fg truncate">{viewingFile.name}</p>
+                      <svg className="w-3.5 h-3.5 text-theme-fg-subtle opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+                    </button>
+                  )}
+                  <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(viewingFile.created_at)}</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button type="button" onClick={() => handleDownload(viewingFile)}
-                  className="btn-tap inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium">
+                  className="btn-tap inline-flex items-center gap-1 px-3 py-2.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium min-h-[44px] touch-manipulation">
                   ↓ {t(locale, 'files.download')}
                 </button>
                 <button type="button" onClick={() => handleDelete(viewingFile)} disabled={deleting === viewingFile.id}
-                  className="btn-tap inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-danger hover:bg-theme-bg-hover text-xs font-medium disabled:opacity-50">
+                  className="btn-tap inline-flex items-center gap-1 px-2.5 py-2.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-danger hover:bg-theme-bg-hover text-xs font-medium disabled:opacity-50 min-h-[44px] touch-manipulation">
                   {t(locale, 'files.delete')}
                 </button>
-                <button type="button" onClick={() => setViewingFile(null)} className="p-1.5 text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover">
+                <button type="button" onClick={() => setViewingFile(null)} className="hidden md:flex p-2 min-h-[44px] min-w-[44px] items-center justify-center text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover touch-manipulation" aria-label={t(locale, 'common.close')}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-3 py-3 md:px-5 md:py-4">
               <div className="file-content-markdown text-sm text-theme-fg leading-relaxed break-words">
                 <ReactMarkdown
                   components={{
@@ -673,21 +678,26 @@ export default function FilesContent() {
         )}
         {viewingProjectItem && (
           <motion.div key={`project-${viewingProjectItem.project.id}-${viewingProjectItem.item.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
-            <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-theme-fg truncate">{viewingProjectItem.project.name}</p>
-                <p className="text-[10px] text-theme-fg-subtle mt-0.5 truncate" title={viewingProjectItem.item.source_value}>{truncate(viewingProjectItem.item.source_value || 'Translation', 60)}</p>
+            <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-3 md:px-5 md:py-3.5 border-b border-theme-border-subtle">
+              <div className="min-w-0 flex items-center gap-2">
+                <button type="button" onClick={() => setViewingProjectItem(null)} className="md:hidden flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" aria-label={t(locale, 'common.close')}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7m5 7l-7-7 7-7" /></svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-theme-fg truncate">{viewingProjectItem.project.name}</p>
+                  <p className="text-[10px] text-theme-fg-subtle mt-0.5 truncate" title={viewingProjectItem.item.source_value}>{truncate(viewingProjectItem.item.source_value || 'Translation', 60)}</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Link href="/dashboard/translations" className="btn-tap inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium">
+              <div className="flex items-center gap-2">
+                <Link href="/dashboard/translations" className="btn-tap inline-flex items-center gap-1 px-3 py-2.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium min-h-[44px] touch-manipulation">
                   {t(locale, 'files.manageInTranslations')}
                 </Link>
-                <button type="button" onClick={() => setViewingProjectItem(null)} className="p-1.5 text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover">
+                <button type="button" onClick={() => setViewingProjectItem(null)} className="hidden md:flex p-2 min-h-[44px] min-w-[44px] items-center justify-center text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover touch-manipulation" aria-label={t(locale, 'common.close')}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-3 py-3 md:px-5 md:py-4">
               <div className="file-content-markdown text-sm text-theme-fg leading-relaxed break-words whitespace-pre-wrap">
                 {viewingProjectItem.item.result_text ?? ''}
               </div>
@@ -696,21 +706,26 @@ export default function FilesContent() {
         )}
         {viewingLogo && (
           <motion.div key={`logo-${viewingLogo.id}`} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={{ duration: 0.16 }} className="flex-1 min-w-0 flex flex-col min-h-0">
-            <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-theme-border-subtle">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-theme-fg truncate">{truncate((viewingLogo.input as Record<string, unknown>)?.prompt as string || 'Logo', 50)}</p>
-                <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(viewingLogo.created_at)}</p>
+            <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-3 md:px-5 md:py-3.5 border-b border-theme-border-subtle">
+              <div className="min-w-0 flex items-center gap-2">
+                <button type="button" onClick={() => setViewingLogo(null)} className="md:hidden flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" aria-label={t(locale, 'common.close')}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7m5 7l-7-7 7-7" /></svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-theme-fg truncate">{truncate((viewingLogo.input as Record<string, unknown>)?.prompt as string || 'Logo', 50)}</p>
+                  <p className="text-[10px] text-theme-fg-subtle mt-0.5">{formatDate(viewingLogo.created_at)}</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Link href="/dashboard/logo" className="btn-tap inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium">
+              <div className="flex items-center gap-2">
+                <Link href="/dashboard/logo" className="btn-tap inline-flex items-center gap-1 px-3 py-2.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover text-xs font-medium min-h-[44px] touch-manipulation">
                   {t(locale, 'logo.title')}
                 </Link>
-                <button type="button" onClick={() => setViewingLogo(null)} className="p-1.5 text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover">
+                <button type="button" onClick={() => setViewingLogo(null)} className="hidden md:flex p-2 min-h-[44px] min-w-[44px] items-center justify-center text-theme-fg-subtle hover:text-theme-fg rounded-lg hover:bg-theme-bg-hover touch-manipulation" aria-label={t(locale, 'common.close')}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-5 py-4">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-3 py-3 md:px-5 md:py-4">
               {(() => {
                 const urls = getOutputUrls(viewingLogo.output ?? null);
                 if (urls.length === 0) {

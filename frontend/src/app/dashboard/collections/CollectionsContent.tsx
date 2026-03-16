@@ -67,7 +67,7 @@ export default function CollectionsContent() {
       </div>
 
       {/* Masonry gallery — scrollable */}
-      <div ref={galleryRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle">
+      <div ref={galleryRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle p-2 md:p-4">
         {loading && (
           <div className="flex items-center justify-center h-full">
             <div className="w-6 h-6 rounded-full border-2 border-theme-border border-t-theme-fg-subtle animate-spin" />
@@ -75,7 +75,7 @@ export default function CollectionsContent() {
         )}
 
         {!loading && items.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-4 md:px-6">
             <p className="text-theme-fg-muted">{t(locale, 'content.empty')}</p>
             <Link
               href="/dashboard"

@@ -3,7 +3,7 @@
 /** Lightweight loading skeleton for lazy-loaded dashboard pages. Keeps layout stable and avoids CLS. */
 export function DashboardPageSkeleton() {
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
       <div className="max-w-2xl mx-auto space-y-4">
         <div className="h-7 w-48 rounded-lg bg-theme-fg/10" />
         <div className="h-4 w-full max-w-md rounded bg-theme-fg/5" />

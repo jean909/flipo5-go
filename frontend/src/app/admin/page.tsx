@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { getAdminStats } from '@/lib/api';
+import { useLocale } from '@/app/components/LocaleContext';
+import { t } from '@/lib/i18n';
 
 export default function AdminDashboardPage() {
+  const { locale } = useLocale();
   const [stats, setStats] = useState<Awaited<ReturnType<typeof getAdminStats>> | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -21,7 +24,7 @@ export default function AdminDashboardPage() {
     );
   }
   if (!stats) {
-    return <p className="text-theme-fg-muted">Loading…</p>;
+    return <p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p>;
   }
 
   const cards = [
@@ -60,7 +63,7 @@ export default function AdminDashboardPage() {
             </span>
           ))}
           {Object.keys(stats.jobs_by_status).length === 0 && (
-            <p className="text-theme-fg-muted text-sm">No data</p>
+            <p className="text-theme-fg-muted text-sm">{t(locale, 'admin.noData')}</p>
           )}
         </div>
       </div>

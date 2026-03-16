@@ -414,7 +414,7 @@ export default function TranslationsPage() {
   const pendingCount = items.filter((i) => i.status === 'pending').length;
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
       <div className="max-w-3xl mx-auto">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -521,7 +521,7 @@ export default function TranslationsPage() {
                             type="button"
                             onClick={() => setSourceImageUrls((prev) => prev.filter((_, j) => j !== i))}
                             className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-theme-fg text-theme-bg text-xs font-bold opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                            aria-label="Remove"
+                            aria-label={t(locale, 'common.remove')}
                           >
                             ×
                           </button>
@@ -607,7 +607,7 @@ export default function TranslationsPage() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6 flex items-center gap-4"
+                className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6 flex items-center gap-4"
               >
                 <span className="w-8 h-8 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin shrink-0" />
                 <div>
@@ -648,7 +648,7 @@ export default function TranslationsPage() {
                 <button
                   type="button"
                   onClick={() => setProjectView('new')}
-                  className="btn-tap w-full rounded-2xl border border-dashed border-theme-border-hover bg-theme-bg-subtle p-6 text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover hover:border-theme-border transition-colors flex items-center justify-center gap-2"
+                  className="btn-tap w-full rounded-2xl border border-dashed border-theme-border-hover bg-theme-bg-subtle p-4 md:p-6 text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover hover:border-theme-border transition-colors flex items-center justify-center gap-2 min-h-[44px] touch-manipulation"
                 >
                   <span className="text-2xl">+</span>
                   {t(locale, 'translate.newProject')}
@@ -829,7 +829,7 @@ export default function TranslationsPage() {
                         disabled={addingItemUpload}
                         className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 file:mr-2 file:py-1 file:rounded file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-xs"
                       />
-                      {addingItemUpload && <p className="mt-1 text-xs text-theme-fg-muted">Uploading…</p>}
+                      {addingItemUpload && <p className="mt-1 text-xs text-theme-fg-muted">{t(locale, 'common.uploading')}</p>}
                     </div>
                   ) : (
                     <div>
@@ -841,7 +841,7 @@ export default function TranslationsPage() {
                         disabled={addingItemUpload}
                         className="w-full rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2 file:mr-2 file:py-1 file:rounded file:border file:border-theme-border file:bg-theme-bg-hover file:text-theme-fg file:text-xs"
                       />
-                      {addingItemUpload && <p className="mt-1 text-xs text-theme-fg-muted">Uploading…</p>}
+                      {addingItemUpload && <p className="mt-1 text-xs text-theme-fg-muted">{t(locale, 'common.uploading')}</p>}
                     </div>
                   )}
                 </div>

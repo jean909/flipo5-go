@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,7 +53,7 @@ function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
   );
 }
 
-export function JobCard({
+export const JobCard = React.memo(function JobCard({
   jobId,
   locale,
   dark,
@@ -128,11 +128,18 @@ export function JobCard({
     setStreamStatus(null);
     setRetryCount(0);
     streamBufferRef.current = '';
+    const retryDelays = [0, 150, 400]; // retry on null (job just created, DB race)
+    let attempt = 0;
     function poll() {
       getJob(jobId)
         .then((j) => {
           if (cancelled) return;
           if (j === null) {
+            if (attempt < retryDelays.length - 1) {
+              attempt++;
+              setTimeout(poll, retryDelays[attempt]);
+              return;
+            }
             setNotFound(true);
             onNotFound?.();
             return;
@@ -165,7 +172,7 @@ export function JobCard({
     };
   }, [job?.id, job?.output, job?.status, job?.type, jobId, retryCount]);
 
-  // Buffer flush: SSE → state every 50ms (ChatGPT-style, fewer re-renders). Only when streaming.
+  // Buffer flush: SSE → state every 40ms for snappier chat streaming
   const isStreaming = variant === 'chat' && job && (job.status === 'pending' || job.status === 'running');
   useEffect(() => {
     if (!isStreaming) return;
@@ -174,11 +181,11 @@ export function JobCard({
         const buf = streamBufferRef.current;
         return prev !== buf ? buf : prev;
       });
-    }, 50);
+    }, 40);
     return () => clearInterval(id);
   }, [isStreaming]);
 
-  // Typing animation: displayLen catches up (smooth, fluid character reveal)
+  // Typing animation: displayLen catches up (faster step for snappier feel)
   useEffect(() => {
     if (streamOutput.length === 0) {
       setDisplayLen(0);
@@ -188,10 +195,10 @@ export function JobCard({
       setDisplayLen((prev) => {
         const target = streamOutput.length;
         if (prev >= target) return prev;
-        const step = Math.min(5, Math.ceil((target - prev) / 4));
+        const step = Math.min(10, Math.ceil((target - prev) / 3));
         return Math.min(prev + step, target);
       });
-    }, 40);
+    }, 30);
     return () => clearInterval(id);
   }, [streamOutput]);
 
@@ -693,7 +700,7 @@ export function JobCard({
       )}
     </div>
   );
-}
+});
 function PlayIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24">

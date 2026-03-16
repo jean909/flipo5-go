@@ -405,8 +405,8 @@ export default function LogoContent() {
     <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle flex flex-col items-center px-4 py-8">
       <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-[1fr,240px] gap-8">
         <div>
-          <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'logo.title')}</h1>
-      <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
+          <h1 className="text-xl font-semibold text-theme-fg mb-4 md:mb-6">{t(locale, 'logo.title')}</h1>
+      <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6">
         <p className="text-sm text-theme-fg-muted mt-0 mb-4">{t(locale, 'logo.sub')}</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -542,7 +542,7 @@ export default function LogoContent() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6"
+            className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6"
           >
             <p className="text-sm font-medium text-theme-fg mb-4">{t(locale, 'logo.variants')}</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

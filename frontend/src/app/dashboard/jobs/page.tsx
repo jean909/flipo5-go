@@ -14,16 +14,17 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMe().then((user) => {
-      if (!user || !isAdminUser(user)) {
-        router.replace('/dashboard');
-        return;
-      }
-      listJobs()
-        .then((r) => setJobs(r.jobs ?? []))
-        .catch(() => setJobs([]))
-        .finally(() => setLoading(false));
-    });
+    getMe()
+      .then((user) => {
+        if (!user || !isAdminUser(user)) {
+          router.replace('/dashboard');
+          return;
+        }
+        return listJobs()
+          .then((r) => setJobs(r.jobs ?? []))
+          .catch(() => setJobs([]));
+      })
+      .finally(() => setLoading(false));
   }, [router]);
 
   const statusT = (status: string) => {
@@ -43,8 +44,8 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
-      <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'jobs.title')}</h1>
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
+      <h1 className="text-xl font-semibold text-theme-fg mb-4 md:mb-6">{t(locale, 'jobs.title')}</h1>
       {loading && <p className="text-theme-fg-muted">{t(locale, 'common.loading')}</p>}
       {!loading && (jobs ?? []).length === 0 && (
         <p className="text-theme-fg-muted">{t(locale, 'jobs.empty')}</p>

@@ -2496,7 +2496,7 @@ func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {
 			})
 			close(ch)
 		}()
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {

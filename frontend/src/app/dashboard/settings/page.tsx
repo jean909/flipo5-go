@@ -92,11 +92,11 @@ export default function SettingsPage() {
   const detailsOverLimit = detailsChars > MAX_USER_DETAILS_CHARS;
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
       <div className="max-w-xl mx-auto">
       <h1 className="font-display text-2xl font-bold text-theme-fg mb-8">{t(locale, 'settings.title')}</h1>
 
-      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
+      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6">
         <h2 className="text-sm font-medium text-theme-fg-muted uppercase tracking-wider mb-2">{t(locale, 'settings.dataRetention')}</h2>
         <p className="text-sm text-theme-fg-subtle mb-4">{t(locale, 'settings.dataRetentionDesc')}</p>
         <div className="flex gap-4">
@@ -123,7 +123,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
+      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6">
         <h2 className="text-sm font-medium text-theme-fg-muted uppercase tracking-wider mb-2">{t(locale, 'settings.aiConfig')}</h2>
         <p className="text-sm text-theme-fg-subtle mb-4">{t(locale, 'settings.aiConfigDesc')}</p>
 
@@ -171,7 +171,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6">
+      <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6">
         <h2 className="text-sm font-medium text-theme-fg-muted uppercase tracking-wider mb-2">{t(locale, 'settings.uiLanguage')}</h2>
         <Select
           value={locale}

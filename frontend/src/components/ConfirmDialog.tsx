@@ -67,7 +67,7 @@ export function ConfirmDialog({
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-6 shadow-xl"
+        className="w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-4 md:p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id={DIALOG_TITLE_ID} className="font-display text-lg font-bold text-theme-fg mb-2">{title}</h3>
@@ -78,7 +78,7 @@ export function ConfirmDialog({
             <button
               type="button"
               onClick={onCancel}
-              className="min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+              className="min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors touch-manipulation"
             >
               {cancelLabel}
             </button>
@@ -87,7 +87,7 @@ export function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className={`min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${confirmClass}`}
+            className={`min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-medium transition-colors touch-manipulation ${confirmClass}`}
           >
             {confirmLabel}
           </button>

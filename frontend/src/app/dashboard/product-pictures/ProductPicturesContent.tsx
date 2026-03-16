@@ -372,7 +372,7 @@ export default function ProductPicturesContent() {
   }, [generatedJobs]);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-xl font-semibold text-theme-fg mb-1">{t(locale, 'productPictures.title')}</h1>
         <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'productPictures.sub')}</p>

@@ -316,7 +316,7 @@ export default function SEOPage() {
   ].filter((tb) => tb.show);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
       <div className="max-w-3xl mx-auto">
 
         {/* Header */}
@@ -544,10 +544,10 @@ export default function SEOPage() {
 
               {/* Tabs */}
               <div>
-                <div className="flex items-center gap-1 mb-3 overflow-x-auto scrollbar-none pb-1 border-b border-theme-border-subtle">
+                <div className="flex items-center gap-1 mb-3 overflow-x-auto scrollbar-none pb-1 border-b border-theme-border-subtle touch-manipulation">
                   {tabs.map((tab) => (
                     <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)}
-                      className={`btn-tap shrink-0 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === tab.key ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
+                      className={`btn-tap shrink-0 px-3.5 py-2.5 min-h-[44px] rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex items-center ${activeTab === tab.key ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:text-theme-fg'}`}>
                       {tab.label}
                     </button>
                   ))}
@@ -576,7 +576,7 @@ export default function SEOPage() {
 
                   {/* SERP Preview */}
                   {activeTab === 'serp' && (
-                    <div className="p-6 flex flex-col gap-5">
+                    <div className="p-4 md:p-6 flex flex-col gap-5">
                       <p className="text-xs text-theme-fg-subtle">
                         Google Search preview — domain: {domain ? <strong className="text-theme-fg font-mono">{domain}</strong> : <span className="text-theme-danger">set your domain in the form above</span>}
                       </p>

@@ -561,7 +561,7 @@ export default function StudioProjectPage() {
         window.location.href = '/start';
         return;
       }
-      setError((e as Error)?.message ?? 'Remove background failed');
+      setError((e as Error)?.message ?? t(locale, 'studio.removeBgFailed'));
       setTimeout(async () => {
         await fetchProject();
         try {
@@ -713,7 +713,7 @@ export default function StudioProjectPage() {
 
   if (!id || !project) {
     return (
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
         <p className="text-theme-fg-subtle">{t(locale, 'studio.projectNotFound')}</p>
         <Link href="/dashboard/studio" className="text-theme-accent hover:underline mt-2 inline-block">
           ← {t(locale, 'studio.title')}
@@ -765,7 +765,7 @@ export default function StudioProjectPage() {
                     <div className="fixed inset-0 z-40" onClick={() => setProjectMenuOpen(false)} />
                     <div className="absolute left-0 top-full mt-1 py-1 rounded-lg bg-theme-bg border border-theme-border shadow-xl z-50 min-w-[140px]">
                       <button type="button" onClick={() => { setEditingName(true); setProjectMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover">{t(locale, 'studio.rename')}</button>
-                      <button type="button" onClick={() => { setPendingDeleteProject(true); setProjectMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted">Remove project</button>
+                      <button type="button" onClick={() => { setPendingDeleteProject(true); setProjectMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted">{t(locale, 'studio.removeProject')}</button>
                     </div>
                   </>
                 )}
@@ -798,7 +798,7 @@ export default function StudioProjectPage() {
               className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
               title={t(locale, 'studio.removeBgTitle')}
             >
-              {removingBg ? '...' : 'Remove BG'}
+              {removingBg ? t(locale, 'common.loading') : t(locale, 'studio.removeBgShort')}
             </button>
             <button
               type="button"
@@ -917,7 +917,7 @@ export default function StudioProjectPage() {
                   disabled={!referenceUrl || !aiPrompt.trim() || !!aiEditJobId}
                   className="w-full px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium"
                 >
-                  {aiEditJobId ? '...' : 'Edit'}
+                  {aiEditJobId ? t(locale, 'common.loading') : 'Edit'}
                 </button>
               )}
               {editMode === 'edit_brush' && (
@@ -929,7 +929,7 @@ export default function StudioProjectPage() {
                       disabled={!aiPrompt.trim() || !!aiEditJobId || paintApplying}
                       className="w-full px-3 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium"
                     >
-                      {paintApplying || aiEditJobId ? '...' : 'Edit with AI'}
+                      {paintApplying || aiEditJobId ? t(locale, 'common.loading') : 'Edit with AI'}
                     </button>
                   ) : (
                     <p className="text-xs text-theme-fg-subtle">Use Brush in the tools panel (right), paint the zone, then OK.</p>
@@ -961,7 +961,7 @@ export default function StudioProjectPage() {
                 <p className="text-theme-fg-subtle mb-4">No items yet. Upload or add from My Content.</p>
                 <div className="flex gap-2 justify-center flex-wrap">
                   <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-4 py-2 rounded-xl border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium">
-                    {uploading ? '...' : t(locale, 'studio.upload')}
+                    {uploading ? t(locale, 'common.loading') : t(locale, 'studio.upload')}
                   </button>
                   <button type="button" onClick={() => setShowAddFromContent(true)} className="px-4 py-2 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-sm font-medium">
                     {t(locale, 'studio.addFromContent')}
@@ -1400,7 +1400,7 @@ export default function StudioProjectPage() {
                         type="button"
                         onClick={() => setLogoOverlays((prev) => prev.filter((e) => e.id !== o.id))}
                         className="p-1 rounded text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-subtle"
-                        aria-label="Remove"
+                        aria-label={t(locale, 'common.remove')}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                       </button>
@@ -1569,7 +1569,7 @@ export default function StudioProjectPage() {
         </div>
       )}
 
-      <ConfirmDialog open={!!pendingDeleteItem} title="Remove item" message="Remove this item from the project?" confirmLabel="Remove" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveItem} onCancel={() => setPendingDeleteItem(null)} />
+      <ConfirmDialog open={!!pendingDeleteItem} title={t(locale, 'studio.removeItem')} message={t(locale, 'studio.removeItemConfirm')} confirmLabel={t(locale, 'common.remove')} cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveItem} onCancel={() => setPendingDeleteItem(null)} />
       <ConfirmDialog open={pendingDeleteVersionNum !== null} title={t(locale, 'studio.deleteVersion')} message={t(locale, 'studio.deleteVersionConfirm')} confirmLabel={t(locale, 'studio.delete')} cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleRemoveVersion} onCancel={() => setPendingDeleteVersionNum(null)} />
       <ConfirmDialog open={pendingDeleteProject} title="Delete project" message="Delete this project and all its items? This cannot be undone." confirmLabel="Delete" cancelLabel={t(locale, 'dialog.cancel')} confirmClass="bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted" onConfirm={handleDeleteProject} onCancel={() => setPendingDeleteProject(false)} />
       {selectedItem?.type === 'image' && (

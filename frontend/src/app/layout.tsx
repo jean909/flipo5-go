@@ -3,6 +3,7 @@ import { Syne, DM_Sans } from 'next/font/google';
 import './globals.css';
 import { LocaleProvider } from './components/LocaleContext';
 import { IncognitoProvider } from './components/IncognitoContext';
+import { Preconnect } from './components/Preconnect';
 import { SITE_URL, SITE_NAME, DEFAULT_DESCRIPTION, absoluteUrl, DEFAULT_OG_IMAGE } from '@/lib/seo';
 
 const syne = Syne({ subsets: ['latin'], variable: '--font-syne', display: 'swap' });
@@ -40,6 +41,16 @@ export const metadata: Metadata = {
     googleBot: { index: true, follow: true },
   },
   icons: { icon: '/favicon.svg' },
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: SITE_NAME,
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
+    'format-detection': 'telephone=no',
+  },
 };
 
 export const viewport: Viewport = {
@@ -56,8 +67,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${syne.variable} ${dmSans.variable}`}>
-      <body className="min-h-screen antialiased font-sans">
+    <html lang="en" className={`${syne.variable} ${dmSans.variable}`} suppressHydrationWarning>
+      <body className="min-h-screen antialiased font-sans touch-manipulation">
+        <Preconnect />
         <LocaleProvider>
         <IncognitoProvider>{children}</IncognitoProvider>
       </LocaleProvider>

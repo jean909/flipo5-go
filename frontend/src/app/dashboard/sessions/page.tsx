@@ -28,8 +28,8 @@ export default function SessionsPage() {
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
-      <h1 className="text-xl font-semibold text-theme-fg mb-6">{t(locale, 'sessions.title')}</h1>
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
+      <h1 className="text-xl font-semibold text-theme-fg mb-4 md:mb-6">{t(locale, 'sessions.title')}</h1>
       {error && (
         <div className="mb-4 px-4 py-2 rounded-lg bg-theme-danger-muted text-theme-danger text-sm">
           {error}

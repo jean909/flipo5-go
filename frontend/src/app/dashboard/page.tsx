@@ -105,6 +105,14 @@ export default function DashboardPage() {
   };
   
   const [submittedRequests, setSubmittedRequests] = useState<Set<string>>(getSubmittedRequests());
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia('(max-width: 768px)');
+    setIsMobile(m.matches);
+    const onMatch = () => setIsMobile(m.matches);
+    m.addEventListener('change', onMatch);
+    return () => m.removeEventListener('change', onMatch);
+  }, []);
   /** When user regenerates a chat reply: old job id -> new job id (show new in same slot, once) */
   const [replaceMap, setReplaceMap] = useState<Record<string, string>>({});
   const [imageSettings, setImageSettings] = useState<ImageSettings>({
@@ -541,11 +549,15 @@ export default function DashboardPage() {
           if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
           if (!tid) {
             if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 2000);
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
           }
         }
         clearAttachments();
-        if (tid) setTimeout(() => refreshThread(), 2000);
+        if (tid) {
+          setTimeout(() => refreshThread(), 400);
+          setTimeout(refreshThread, 2000);
+        }
       } else if (mode === 'image') {
         let imageInput: string[] | undefined;
         const refUrls = referenceImageUrls.length > 0 ? referenceImageUrls : undefined;
@@ -574,12 +586,16 @@ export default function DashboardPage() {
           if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
           if (!tid) {
             if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 2000);
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
           }
         }
         clearAttachments();
         setReferenceImageUrls([]);
-        if (tid) setTimeout(refreshThread, 2000);
+        if (tid) {
+          setTimeout(refreshThread, 400);
+          setTimeout(refreshThread, 2000);
+        }
       } else {
         let imageUrl: string | undefined;
         let videoUrl: string | undefined;
@@ -631,7 +647,8 @@ export default function DashboardPage() {
           if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
           if (!tid) {
             if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 2000);
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
+            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
           }
         }
       clearAttachments();
@@ -641,7 +658,10 @@ export default function DashboardPage() {
       setStartImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       setEndImageFile(null);
       setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-      if (tid) setTimeout(refreshThread, 2000);
+      if (tid) {
+        setTimeout(refreshThread, 400);
+        setTimeout(refreshThread, 2000);
+      }
       // Clear request key after successful submission
       setTimeout(() => {
         setSubmittedRequests(prev => {
@@ -737,10 +757,10 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || attachments.length > 0) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`}
+            className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`}
             aria-label="Attach image"
           >
-            {(referenceImageUrls.length > 0 || attachments.length > 0) ? (
+            {(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? (
               (referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
                 <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
               ) : (
@@ -764,7 +784,7 @@ export default function DashboardPage() {
                 <>
                   <img src={startImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                   <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">Start</span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStartImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeStartImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label={t(locale, 'common.remove')}><XIcon className="w-2 h-2" /></button>
                 </>
               ) : (
                 <ImageIcon className="w-5 h-5" />
@@ -781,7 +801,7 @@ export default function DashboardPage() {
                 <>
                   <img src={endImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                   <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">End</span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeEndImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeEndImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label={t(locale, 'common.remove')}><XIcon className="w-2 h-2" /></button>
                 </>
               ) : (
                 <ImageIcon className="w-5 h-5" />
@@ -806,19 +826,27 @@ export default function DashboardPage() {
         {(mode === 'image' && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && (referenceImageUrls.length > 0 || attachments.length > 0 || videoFile || (videoModel === '2' && (startImageFile || endImageFile)))) || (mode === 'chat' && attachments.length > 0) ? (
           <>
             {mode === 'chat' && attachments.map((a) => (
-              <div key={a.id} className="relative shrink-0 group flex items-center gap-1 w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden">
+              <div
+                key={a.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => removeAttachment(a.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); removeAttachment(a.id); } }}
+                className="relative shrink-0 group flex items-center gap-1 w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden cursor-pointer hover:ring-2 hover:ring-theme-border-hover"
+                aria-label={t(locale, 'common.remove')}
+              >
                 {a.previewUrl ? (
                   <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                 ) : (
                   <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
                 )}
-                <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center pointer-events-none" aria-hidden><XIcon className="w-2.5 h-2.5" /></span>
               </div>
             ))}
             {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
               <div key={url} className="relative shrink-0 group">
                 <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
-                <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove">
+                <button type="button" onClick={(e) => { e.stopPropagation(); removeReferenceImage(url); }} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}>
                   <XIcon className="w-2.5 h-2.5" />
                 </button>
               </div>
@@ -830,7 +858,7 @@ export default function DashboardPage() {
                 ) : (
                   <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
                 )}
-                <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove">
+                <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}>
                   <XIcon className="w-2.5 h-2.5" />
                 </button>
               </div>
@@ -1071,7 +1099,7 @@ export default function DashboardPage() {
               </div>
               {profileError && <p className="text-sm text-theme-danger">{profileError}</p>}
               <motion.button type="submit" disabled={profileSaving} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
-                {profileSaving ? '...' : t(locale, 'login.submit')}
+                {profileSaving ? t(locale, 'common.loading') : t(locale, 'login.submit')}
               </motion.button>
             </form>
           </motion.div>
@@ -1165,7 +1193,49 @@ export default function DashboardPage() {
               <span className="text-sm font-medium">{t(locale, 'nav.incognitoActive')}</span>
             </div>
           )}
-          <h2 className="font-display text-2xl font-bold text-theme-fg mb-8 tracking-tight">FLIPO5</h2>
+          <h2 className="font-display text-2xl font-bold text-theme-fg mb-4 tracking-tight">FLIPO5</h2>
+          {!isMobile && (
+            <div className="w-full mb-6 hidden md:block">
+              <p className="text-sm text-theme-fg-muted mb-3 text-center">{t(locale, 'dashboard.whatToCreate')}</p>
+              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mx-1 touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
+                {(['chat', 'image', 'video'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className={`shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all touch-manipulation ${
+                      mode === m
+                        ? 'border-theme-border-hover bg-theme-bg-hover text-theme-fg'
+                        : 'border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
+                    }`}
+                  >
+                    {m === 'chat' && <ChatIcon />}
+                    {m === 'image' && <ImageIcon />}
+                    {m === 'video' && <VideoIcon />}
+                    {t(locale, `mode.${m}`)}
+                  </button>
+                ))}
+                <Link href="/dashboard/seo" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
+                  {t(locale, 'nav.seo')}
+                </Link>
+                <Link href="/dashboard/translations" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
+                  {t(locale, 'nav.translations')}
+                </Link>
+                <Link href="/dashboard/logo" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
+                  {t(locale, 'nav.logo')}
+                </Link>
+                <Link href="/dashboard/product-pictures" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
+                  {t(locale, 'nav.productPictures')}
+                </Link>
+                <Link href="/dashboard/upscaling" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
+                  {t(locale, 'nav.upscaling')}
+                </Link>
+                <Link href="/dashboard/content" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
+                  {t(locale, 'nav.content')}
+                </Link>
+              </div>
+            </div>
+          )}
           <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full flex flex-col items-center gap-4">
             {mode === 'image' && (
               <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />
@@ -1219,9 +1289,9 @@ export default function DashboardPage() {
                 onDragLeave={onPromptDragLeave}
                 onDrop={onPromptDrop}
               >
-                {(mode === 'image' || (mode === 'video' && videoModel === '1')) && (
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || attachments.length > 0) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`} aria-label="Attach image">
-                    {(referenceImageUrls.length > 0 || attachments.length > 0) ? (
+                {(mode === 'image' || (mode === 'video' && videoModel === '1') || mode === 'chat') && (
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`} aria-label="Attach image">
+                    {(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? (
                       (referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
                         <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                       ) : (
@@ -1239,7 +1309,7 @@ export default function DashboardPage() {
                         <>
                           <img src={startImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                           <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">Start</span>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); removeStartImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); removeStartImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label={t(locale, 'common.remove')}><XIcon className="w-2 h-2" /></button>
                         </>
                       ) : (
                         <ImageIcon className="w-5 h-5" />
@@ -1250,7 +1320,7 @@ export default function DashboardPage() {
                         <>
                           <img src={endImagePreviewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                           <span className="absolute bottom-0 left-0 right-0 py-0.5 bg-black/60 text-white text-[9px] font-medium uppercase text-center">End</span>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); removeEndImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2 h-2" /></button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); removeEndImageFile(); }} className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label={t(locale, 'common.remove')}><XIcon className="w-2 h-2" /></button>
                         </>
                       ) : (
                         <ImageIcon className="w-5 h-5" />
@@ -1266,19 +1336,27 @@ export default function DashboardPage() {
                 {((mode === 'image' || (mode === 'video' && videoModel === '1')) && (referenceImageUrls.length > 0 || attachments.length > 0)) || (mode === 'video' && videoModel === '1' && videoFile) || (mode === 'video' && videoModel === '2' && (startImageFile || endImageFile)) || (mode === 'chat' && attachments.length > 0) ? (
                   <>
                     {mode === 'chat' && attachments.map((a) => (
-                      <div key={a.id} className="relative shrink-0 group flex items-center w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden">
+                      <div
+                        key={a.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => removeAttachment(a.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); removeAttachment(a.id); } }}
+                        className="relative shrink-0 group flex items-center w-8 h-8 rounded-full border border-theme-border bg-theme-bg-elevated overflow-hidden cursor-pointer hover:ring-2 hover:ring-theme-border-hover"
+                        aria-label={t(locale, 'common.remove')}
+                      >
                         {a.previewUrl ? (
                           <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                         ) : (
                           <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
                         )}
-                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                        <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center pointer-events-none" aria-hidden><XIcon className="w-2.5 h-2.5" /></span>
                       </div>
                     ))}
                     {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
                       <div key={url} className="relative shrink-0 group">
                         <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
-                        <button type="button" onClick={() => removeReferenceImage(url)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); removeReferenceImage(url); }} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
                     {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? attachments : attachments.slice(1)).map((a) => (
@@ -1288,7 +1366,7 @@ export default function DashboardPage() {
                         ) : (
                           <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
                         )}
-                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Remove"><XIcon className="w-2.5 h-2.5" /></button>
+                        <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
                   </>

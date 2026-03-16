@@ -47,6 +47,8 @@
 /* Mobile-first: prevent iOS zoom on focus (inputs need min 16px) */
 html {
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -55,6 +57,16 @@ body {
   /* Safe area for notched devices */
   padding-left: env(safe-area-inset-left, 0);
   padding-right: env(safe-area-inset-right, 0);
+  /* Native-like: no pull-to-refresh overscroll in app shell */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Larger tap targets and no 300ms delay on touch (via touch-action) */
+@media (hover: none) and (pointer: coarse) {
+  button, a, [role="button"], input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 /* Inputs/select/textarea: min 16px to prevent iOS zoom on focus */
@@ -165,6 +177,7 @@ input:focus, textarea:focus {
 .scrollbar-subtle {
   scrollbar-width: thin;
   scrollbar-color: var(--theme-scrollbar-thumb) transparent;
+  -webkit-overflow-scrolling: touch;
 }
 .scrollbar-subtle::-webkit-scrollbar {
   width: 4px;

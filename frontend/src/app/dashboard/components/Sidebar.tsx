@@ -13,7 +13,13 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ThreadItem } from './ThreadItem';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export function Sidebar() {
+type SidebarProps = {
+  overlay?: boolean;
+  open?: boolean;
+  onClose?: () => void;
+};
+
+export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { locale } = useLocale();
@@ -28,6 +34,8 @@ export function Sidebar() {
   const [showArchivedDialog, setShowArchivedDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const effectiveCollapsed = overlay ? false : collapsed;
+
   useEffect(() => {
     getMe().then(setUser);
   }, []);
@@ -37,19 +45,20 @@ export function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
-    if (pathname.startsWith('/dashboard/studio')) setCollapsed(true);
-  }, [pathname]);
+    if (pathname.startsWith('/dashboard/studio') && !overlay) setCollapsed(true);
+  }, [pathname, overlay]);
 
   useEffect(() => {
+    if (overlay) return;
     const m = window.matchMedia('(max-width: 639px)');
     const onMatch = () => setCollapsed((c) => (m.matches ? true : c));
     onMatch();
     m.addEventListener('change', onMatch);
     return () => m.removeEventListener('change', onMatch);
-  }, []);
+  }, [overlay]);
 
   useEffect(() => {
-    if (!sessionsExpanded || collapsed) return;
+    if (!sessionsExpanded || effectiveCollapsed) return;
     let cancelled = false;
     setThreadsLoading(true);
     listThreads()
@@ -60,7 +69,7 @@ export function Sidebar() {
       .catch(() => { if (!cancelled) setThreads([]); })
       .finally(() => { if (!cancelled) setThreadsLoading(false); });
     return () => { cancelled = true; };
-  }, [sessionsExpanded, collapsed]);
+  }, [sessionsExpanded, overlay, collapsed]);
 
   async function logout() {
     await supabase.auth.signOut();
@@ -86,14 +95,22 @@ export function Sidebar() {
   }, [threads, urlThreadId]);
   const recentThreads = threadsToShow.slice(0, 5);
 
-  return (
-    <motion.aside
-      animate={{ width: collapsed ? 64 : 224 }}
-      transition={{ duration: 0.2 }}
-      className="h-screen shrink-0 border-r border-theme-border bg-theme-bg flex flex-col overflow-hidden"
-    >
+  if (overlay && !open) return null;
+
+  const asideContent = (
+    <>
       <div className="p-4 border-b border-theme-border flex items-center justify-between gap-2 min-h-[52px]">
-        {collapsed ? (
+        {overlay && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 -m-2 rounded-lg text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation"
+            aria-label={t(locale, 'common.close')}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        )}
+        {effectiveCollapsed ? (
           <button
             type="button"
             onClick={() => setCollapsed(false)}
@@ -109,14 +126,16 @@ export function Sidebar() {
               <span className="font-display font-bold text-theme-fg truncate">FLIPO5</span>
               <span className="text-theme-fg-muted group-hover:text-theme-fg shrink-0">{" />"}</span>
             </Link>
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              className="shrink-0 p-1.5 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
-              aria-label="Collapse"
-            >
-              <ChevronIcon collapsed={false} />
-            </button>
+            {!overlay && (
+              <button
+                type="button"
+                onClick={() => setCollapsed(true)}
+                className="shrink-0 p-1.5 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+                aria-label="Collapse"
+              >
+                <ChevronIcon collapsed={false} />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -130,11 +149,11 @@ export function Sidebar() {
             className={`nav-hover flex items-center gap-3 px-3 py-2.5 min-h-[44px] rounded-md text-sm min-w-0 ${
               isActive ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
             }`}
-            title={collapsed ? t(locale, labelKey) : undefined}
+            title={effectiveCollapsed ? t(locale, labelKey) : undefined}
           >
             <Icon className="w-5 h-5 shrink-0" />
             <AnimatePresence mode="wait">
-              {!collapsed && (
+              {!effectiveCollapsed && (
                 <motion.span
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: 'auto' }}
@@ -149,7 +168,7 @@ export function Sidebar() {
           </Link>
           );
         })}
-        {!collapsed && (
+        {!effectiveCollapsed && (
           <div className="mt-1">
             <button
               type="button"
@@ -228,7 +247,7 @@ export function Sidebar() {
             </AnimatePresence>
           </div>
         )}
-        {collapsed && (
+        {effectiveCollapsed && (
           <Link
             href="/dashboard/sessions"
             className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors"
@@ -239,7 +258,7 @@ export function Sidebar() {
         )}
 
         {/* Business Zone */}
-        {!collapsed && (
+        {!effectiveCollapsed && (
           <div className="mt-3">
             <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-theme-fg-subtle">
               {t(locale, 'nav.businessZone')}
@@ -268,7 +287,7 @@ export function Sidebar() {
             })}
           </div>
         )}
-        {collapsed && (
+        {effectiveCollapsed && (
           <>
             <Link href="/dashboard/logo" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/logo') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.logo')}>
               <LogoIcon className="w-5 h-5 shrink-0" />
@@ -297,18 +316,18 @@ export function Sidebar() {
           className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
             pathname === '/dashboard/profile' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
           }`}
-          title={collapsed ? displayName || t(locale, 'nav.profile') : undefined}
+          title={effectiveCollapsed ? displayName || t(locale, 'nav.profile') : undefined}
         >
           <UserIcon className="w-5 h-5 shrink-0" />
-          <AnimatePresence mode="wait">
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.15 }}
-                className="truncate"
-              >
+            <AnimatePresence mode="wait">
+              {!effectiveCollapsed && (
+                <motion.span
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="truncate"
+                >
                 {displayName || t(locale, 'nav.profile')}
               </motion.span>
             )}
@@ -319,11 +338,11 @@ export function Sidebar() {
           className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
             pathname === '/dashboard/settings' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
           }`}
-          title={collapsed ? t(locale, 'nav.settings') : undefined}
+          title={effectiveCollapsed ? t(locale, 'nav.settings') : undefined}
         >
           <SettingsIcon className="w-5 h-5 shrink-0" />
           <AnimatePresence mode="wait">
-            {!collapsed && (
+            {!effectiveCollapsed && (
               <motion.span
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: 'auto' }}
@@ -344,7 +363,7 @@ export function Sidebar() {
           >
             <AdminIcon className="w-5 h-5 shrink-0" />
             <AnimatePresence mode="wait">
-              {!collapsed && (
+              {!effectiveCollapsed && (
                 <motion.span
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: 'auto' }}
@@ -366,7 +385,7 @@ export function Sidebar() {
         >
           <DoorIcon className="w-5 h-5 shrink-0" />
           <AnimatePresence mode="wait">
-            {!collapsed && (
+            {!effectiveCollapsed && (
               <motion.span
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: 'auto' }}
@@ -415,6 +434,37 @@ export function Sidebar() {
         profileLabel={t(locale, 'thread.myProfile')}
         onClose={() => setShowArchivedDialog(false)}
       />
+    </>
+  );
+
+  if (overlay) {
+    return (
+      <>
+        <div
+          role="presentation"
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/50"
+          aria-hidden
+        />
+        <motion.aside
+          initial={false}
+          animate={{ x: open ? 0 : -320 }}
+          transition={{ type: 'tween', duration: 0.2 }}
+          className="fixed left-0 top-0 bottom-0 z-50 w-[min(280px,85vw)] max-w-[280px] border-r border-theme-border bg-theme-bg flex flex-col overflow-hidden shadow-xl"
+        >
+          {asideContent}
+        </motion.aside>
+      </>
+    );
+  }
+
+  return (
+    <motion.aside
+      animate={{ width: effectiveCollapsed ? 64 : 224 }}
+      transition={{ duration: 0.2 }}
+      className="h-screen shrink-0 border-r border-theme-border bg-theme-bg flex flex-col overflow-hidden"
+    >
+      {asideContent}
     </motion.aside>
   );
 }

@@ -1,0 +1,6 @@
+# Exemplu Caddy pentru api.flipo5.com (HTTPS automat Let's Encrypt).
+# Copiază pe server în /etc/caddy/Caddyfile (sau unde rulează Caddy), apoi: systemctl reload caddy
+
+api.flipo5.com {
+    reverse_proxy localhost:8080
+}

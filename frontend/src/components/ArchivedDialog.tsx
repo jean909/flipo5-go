@@ -29,13 +29,13 @@ export function ArchivedDialog({ open, title, message, profileLabel, onClose }: 
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-6 shadow-xl"
+        className="relative w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg-elevated p-4 md:p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors"
+          className="absolute top-3 right-3 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors touch-manipulation"
           aria-label="Close"
         >
           <XIcon className="w-5 h-5" />
@@ -45,7 +45,7 @@ export function ArchivedDialog({ open, title, message, profileLabel, onClose }: 
         <Link
           href="/dashboard/profile?fromArchive=1"
           onClick={onClose}
-          className="block w-full text-center min-h-[44px] flex items-center justify-center py-3 rounded-xl text-sm font-medium bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong transition-colors"
+          className="block w-full text-center min-h-[44px] flex items-center justify-center py-3 rounded-xl text-sm font-medium bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong transition-colors touch-manipulation"
         >
           {profileLabel}
         </Link>

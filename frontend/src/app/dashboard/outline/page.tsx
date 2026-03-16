@@ -129,17 +129,17 @@ export default function OutlinePage() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-subtle">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
       <div className="max-w-3xl mx-auto">
 
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-4 md:mb-6">
           <h1 className="text-xl font-semibold text-theme-fg mb-1">{t(locale, 'outline.title')}</h1>
           <p className="text-sm text-theme-fg-muted">{t(locale, 'outline.sub')}</p>
         </div>
 
         {/* Input */}
-        <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 mb-8 flex flex-col gap-3">
+        <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5 mb-6 md:mb-8 flex flex-col gap-3">
           <div>
             <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'outline.topic')} *</label>
             <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
@@ -161,7 +161,7 @@ export default function OutlinePage() {
               <div className="flex flex-wrap gap-1">
                 {WORD_COUNTS.map((wc) => (
                   <button key={wc} type="button" onClick={() => setWordCount(wc)}
-                    className={`btn-tap px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${wordCount === wc ? 'bg-theme-bg-hover text-theme-fg border border-theme-border-hover' : 'text-theme-fg-muted border border-transparent hover:text-theme-fg'}`}>
+                    className={`btn-tap px-3 py-2 rounded-lg text-xs font-medium transition-colors min-h-[44px] flex items-center touch-manipulation ${wordCount === wc ? 'bg-theme-bg-hover text-theme-fg border border-theme-border-hover' : 'text-theme-fg-muted border border-transparent hover:text-theme-fg'}`}>
                     {wc}
                   </button>
                 ))}
@@ -178,7 +178,7 @@ export default function OutlinePage() {
           </div>
           <div className="flex items-center gap-3 pt-1">
             <button type="button" onClick={handleGenerate} disabled={loading || !topic.trim()}
-              className="btn-tap px-6 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg font-medium text-sm disabled:opacity-50 disabled:pointer-events-none">
+              className="btn-tap px-6 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover-strong text-theme-fg font-medium text-sm disabled:opacity-50 disabled:pointer-events-none min-h-[44px] touch-manipulation">
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin" />
@@ -194,7 +194,7 @@ export default function OutlinePage() {
 
         {/* Generating preview */}
         {loading && jobId && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-6 mb-6 flex items-center gap-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6 flex items-center gap-4">
             <span className="w-8 h-8 rounded-full border-2 border-theme-border border-t-theme-fg animate-spin shrink-0" />
             <div>
               <p className="text-sm font-medium text-theme-fg">{t(locale, 'outline.generating')}</p>
@@ -209,7 +209,7 @@ export default function OutlinePage() {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="flex flex-col gap-5">
 
               {/* Title + stats */}
-              <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5">
+              <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <h2 className="text-lg font-semibold text-theme-fg">{outline.title || t(locale, 'outline.title')}</h2>
@@ -284,7 +284,7 @@ export default function OutlinePage() {
 
               {/* Conclusion + Meta */}
               {outline.conclusion_cta && (
-                <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5">
+                <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5">
                   <p className="text-xs font-semibold text-theme-fg-muted uppercase tracking-wider mb-2">Conclusion & CTA</p>
                   <p className="text-sm text-theme-fg">{outline.conclusion_cta}</p>
                 </div>

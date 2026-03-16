@@ -170,7 +170,7 @@ export default function StartPage() {
                 </div>
                 {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
-                  {loading ? '...' : t(locale, 'login.submit')}
+                  {loading ? t(locale, 'common.loading') : t(locale, 'login.submit')}
                 </motion.button>
               </form>
               <p className="mt-6 text-center text-sm text-theme-fg-subtle">
@@ -203,7 +203,7 @@ export default function StartPage() {
                 </div>
                 {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
-                  {loading ? '...' : t(locale, 'login.submit')}
+                  {loading ? t(locale, 'common.loading') : t(locale, 'login.submit')}
                 </motion.button>
                 <button type="button" onClick={() => { setStep('forgot'); setError(''); }} className="block w-full mt-2 text-sm text-theme-fg-subtle hover:text-theme-fg text-center">
                   {t(locale, 'start.forgotPassword')}
@@ -228,7 +228,7 @@ export default function StartPage() {
               <form onSubmit={async (e) => { e.preventDefault(); setError(''); setLoading(true); try { const { error: err } = await resetPasswordForEmail(email); if (err) { setError(err); setLoading(false); return; } setStep('forgot_sent'); } catch { setError(t(locale, 'error.generic')); } finally { setLoading(false); } }} className="space-y-5">
                 {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
-                  {loading ? '...' : t(locale, 'start.forgotSend')}
+                  {loading ? t(locale, 'common.loading') : t(locale, 'start.forgotSend')}
                 </motion.button>
               </form>
               <button type="button" onClick={() => { setStep('password'); setError(''); }} className="mt-4 w-full text-sm text-theme-fg-subtle hover:text-theme-fg">
@@ -357,7 +357,7 @@ export default function StartPage() {
                 </div>
                 {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary}>
-                  {loading ? '...' : t(locale, 'login.submit')}
+                  {loading ? t(locale, 'common.loading') : t(locale, 'login.submit')}
                 </motion.button>
               </form>
               <button type="button" onClick={() => setStep('dialog')} className="mt-4 w-full text-sm text-theme-fg-subtle hover:text-theme-fg">← {t(locale, 'start.back')}</button>
@@ -426,7 +426,7 @@ export default function StartPage() {
                 ))}
                 {error && <p className="text-sm text-theme-danger">{error}</p>}
                 <motion.button type="submit" disabled={loading} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={btnPrimary + ' mt-4'}>
-                  {loading ? '...' : t(locale, 'home.cta')}
+                  {loading ? t(locale, 'common.loading') : t(locale, 'home.cta')}
                 </motion.button>
               </form>
             </motion.div>
