@@ -838,7 +838,7 @@ export default function DashboardPage() {
                 {a.previewUrl ? (
                   <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                 ) : (
-                  <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                  <span title={a.file.name}><DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" /></span>
                 )}
                 <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center pointer-events-none" aria-hidden><XIcon className="w-2.5 h-2.5" /></span>
               </div>
@@ -856,7 +856,7 @@ export default function DashboardPage() {
                 {a.previewUrl ? (
                   <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                 ) : (
-                  <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                  <span title={a.file.name}><DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" /></span>
                 )}
                 <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}>
                   <XIcon className="w-2.5 h-2.5" />
@@ -1348,7 +1348,7 @@ export default function DashboardPage() {
                         {a.previewUrl ? (
                           <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                         ) : (
-                          <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                          <span title={a.file.name}><DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" /></span>
                         )}
                         <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center pointer-events-none" aria-hidden><XIcon className="w-2.5 h-2.5" /></span>
                       </div>
@@ -1364,7 +1364,7 @@ export default function DashboardPage() {
                         {a.previewUrl ? (
                           <img src={a.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
                         ) : (
-                          <DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" title={a.file.name} />
+                          <span title={a.file.name}><DocumentIcon className="w-4 h-4 text-theme-fg-muted shrink-0 mx-auto" /></span>
                         )}
                         <button type="button" onClick={() => removeAttachment(a.id)} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}><XIcon className="w-2.5 h-2.5" /></button>
                       </div>

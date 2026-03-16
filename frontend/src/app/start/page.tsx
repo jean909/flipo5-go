@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { checkEmail, signInWithPassword, signUpWithPassword, updateProfile, syncMe, resetPasswordForEmail } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
-import { Header } from '@/app/components/Header';
+import { Header } from '../components/Header';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 

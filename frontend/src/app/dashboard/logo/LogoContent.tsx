@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
-import { t } from '@/lib/i18n';
+import { t, type Locale } from '@/lib/i18n';
 import { createLogoJob, getJob, getToken, getMediaDisplayUrl, downloadMediaUrl, listContent, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -61,7 +61,7 @@ function getColorHex(value: string): string {
   return o?.hex ?? 'transparent';
 }
 
-function getColorLabel(value: string, locale: string): string {
+function getColorLabel(value: string, locale: Locale): string {
   if (!value) return t(locale, 'logo.choose');
   if (value.startsWith('#')) return value;
   return COLOR_OPTIONS.find((c) => c.value === value)?.label ?? value;
@@ -85,7 +85,7 @@ function OptionDialog({
   options: { value: string; label: string }[];
   value: string;
   onSelect: (v: string) => void;
-  locale: string;
+  locale: Locale;
 }) {
   if (!open) return null;
   return (
@@ -144,7 +144,7 @@ function ColorPickerDialog({
   title: string;
   value: string;
   onSelect: (v: string) => void;
-  locale: string;
+  locale: Locale;
 }) {
   const [customHex, setCustomHex] = useState('#000000');
   useEffect(() => {
@@ -245,7 +245,7 @@ function SvgExportDialog({
   open: SvgExportDialog;
   onClose: () => void;
   onDownloadPng: () => void;
-  locale: string;
+  locale: Locale;
 }) {
   if (!open) return null;
   return (

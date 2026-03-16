@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, useInView } from 'framer-motion';
-import { Header } from '@/app/components/Header';
+import { Header } from '../components/Header';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';

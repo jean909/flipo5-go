@@ -305,15 +305,15 @@ export default function SEOPage() {
   const social = useMemo(() => result ? buildSocial(result, domain) : null, [result, domain]);
   const density = useMemo(() => result?.article && result.keywords?.length ? calcDensity(result.article, result.keywords) : [], [result]);
 
-  const tabs: { key: Tab; label: string; show: boolean }[] = [
-    { key: 'article', label: 'Article', show: !!(result?.article) },
-    { key: 'html', label: 'HTML', show: !!(result?.html) },
-    { key: 'serp', label: 'SERP Preview', show: !!result },
-    { key: 'meta_tags', label: 'Meta Tags', show: !!result },
-    { key: 'schema', label: 'Schema', show: !!result },
-    { key: 'social', label: 'Social', show: !!result },
-    { key: 'tips', label: 'Tips', show: !!(result?.readability_tips?.length || result?.internal_links?.length) },
-  ].filter((tb) => tb.show);
+  const tabs = ([
+    { key: 'article' as Tab, label: 'Article', show: !!(result?.article) },
+    { key: 'html' as Tab, label: 'HTML', show: !!(result?.html) },
+    { key: 'serp' as Tab, label: 'SERP Preview', show: !!result },
+    { key: 'meta_tags' as Tab, label: 'Meta Tags', show: !!result },
+    { key: 'schema' as Tab, label: 'Schema', show: !!result },
+    { key: 'social' as Tab, label: 'Social', show: !!result },
+    { key: 'tips' as Tab, label: 'Tips', show: !!(result?.readability_tips?.length || result?.internal_links?.length) },
+  ] as { key: Tab; label: string; show: boolean }[]).filter((tb) => tb.show);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">

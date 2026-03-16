@@ -180,9 +180,10 @@ export default function ProductPicturesContent() {
 
   useEffect(() => {
     if (!improveJobId || !improveLoading) return;
+    const jobId: string = improveJobId;
     let cancelled = false;
     function poll() {
-      getJob(improveJobId).then((j) => {
+      getJob(jobId).then((j) => {
         if (cancelled) return;
         if (j?.status === 'completed') {
           const out = j.output && typeof j.output === 'object' && 'output' in j.output
@@ -230,9 +231,10 @@ export default function ProductPicturesContent() {
 
   useEffect(() => {
     if (!sceneImproveJobId || !sceneImproveLoading) return;
+    const jobId: string = sceneImproveJobId;
     let cancelled = false;
     function poll() {
-      getJob(sceneImproveJobId).then((j) => {
+      getJob(jobId).then((j) => {
         if (cancelled) return;
         if (j?.status === 'completed') {
           const out = j.output && typeof j.output === 'object' && 'output' in j.output
@@ -289,9 +291,10 @@ export default function ProductPicturesContent() {
 
   useEffect(() => {
     if (!scoreJobId || !scoreLoading) return;
+    const jobId: string = scoreJobId;
     let cancelled = false;
     function poll() {
-      getJob(scoreJobId).then((j) => {
+      getJob(jobId).then((j) => {
         if (cancelled) return;
         if (j?.status === 'completed') {
           loadProduct(productId!);
@@ -335,9 +338,10 @@ export default function ProductPicturesContent() {
 
   useEffect(() => {
     if (!generateJobId || !generateLoading) return;
+    const jobId: string = generateJobId;
     let cancelled = false;
     function poll() {
-      getJob(generateJobId).then((j) => {
+      getJob(jobId).then((j) => {
         if (cancelled) return;
         if (j?.status === 'completed') {
           setGeneratedUrls(getOutputUrls(j.output ?? {}));

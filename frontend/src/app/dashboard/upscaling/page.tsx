@@ -65,9 +65,10 @@ export default function UpscalingPage() {
       setResultJob(null);
       return;
     }
+    const id: string = jobId;
     let cancelled = false;
     function poll() {
-      getJob(jobId).then((j) => {
+      getJob(id).then((j) => {
         if (cancelled) return;
         if (j && j.status === 'completed') {
           setResultJob(j);

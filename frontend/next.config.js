@@ -6,15 +6,19 @@ const nextConfig = {
   images: {
     remotePatterns: [{ protocol: 'https', hostname: 'images.unsplash.com', pathname: '/**' }],
   },
-  turbopack: {
-    root: path.join(__dirname),
-  },
   experimental: {
     optimizePackageImports: ['framer-motion', 'react-markdown'],
   },
   compress: true,
   async rewrites() {
     return [{ source: '/favicon.ico', destination: '/favicon.svg' }];
+  },
+  webpack: (config, { dir }) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.join(dir, 'src'),
+    };
+    return config;
   },
 };
 
