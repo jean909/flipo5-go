@@ -287,6 +287,36 @@ Nu e nevoie să dai manual comenzi pe server pentru deploy ulterior – scriptul
    ```
 3. Verificare: `docker compose logs api --tail 30` (caută „migrate: ok”).
 
+**Pe server: „git pull” spune „Already up to date” dar vrei codul nou din git**
+
+Dacă rulezi doar `git pull` și primești „Already up to date”, fie serverul are deja ultimul commit (scriptul a făcut deja pull), fie Git nu a actualizat referințele. Încearcă în ordine:
+
+1. **Actualizează referințele de pe remote**, apoi pull:
+   ```bash
+   cd ~/backend/flipo5
+   git fetch origin
+   git status
+   ```
+   Dacă `git status` arată „Your branch is behind 'origin/main'” (sau origin/master), atunci:
+   ```bash
+   git pull origin main
+   ```
+   *(Înlocuiește `main` cu numele branch-ului tău dacă e altul – vezi cu `git branch -a`.)*
+
+2. **Pull explicit de pe branch-ul curent:**
+   ```bash
+   git pull origin $(git branch --show-current)
+   ```
+
+3. **Sincronizare forțată cu remote** (serverul devine exact ca pe GitHub/GitLab; orice modificare locală necomitată se pierde):
+   ```bash
+   git fetch origin
+   git reset --hard origin/main
+   ```
+   Apoi rebuild și repornire: `docker compose build api && docker compose up -d`.
+
+După ce ai codul actualizat, repornește mereu containerele: `docker compose build api && docker compose up -d`.
+
 ## Port 8080 deja folosit
 
 Dacă vezi `Bind for 0.0.0.0:8080 failed: port is already allocated`:

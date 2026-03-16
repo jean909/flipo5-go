@@ -37,6 +37,8 @@ Scriptul face: `git push` → pe server: `mkdir -p $DEPLOY_PATH` (dacă e script
 
 **Path pe server:** la `backend/deploy/` implicit e `~/backend/flipo5` (folderul se creează cu `mkdir -p`). La `deploy/hetzner/` implicit e `~/backend`. Setează `DEPLOY_PATH` / `$env:DEPLOY_PATH` pentru alt path.
 
+**Pe server, fără script (fără parolă):** dacă vrei să iei codul nou direct pe server cu `git pull` și primești „Already up to date”, rulează mai întâi `git fetch origin`, apoi `git pull origin main` (sau `git pull origin $(git branch --show-current)`). Pentru detalii și opțiunea de sincronizare forțată cu remote, vezi **backend/deploy/README.md** – secțiunea „git pull spune Already up to date”.
+
 ### Workers – mai multă paralelizare
 
 În `.env` pe server, adaugă pentru viteză mai bună (Hetzner AX41 suportă):
