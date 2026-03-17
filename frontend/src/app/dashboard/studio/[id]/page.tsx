@@ -154,6 +154,8 @@ export default function StudioProjectPage() {
     return getReferenceUrl(selectedItem);
   })();
   const displayUrl = getSafeDisplayUrl(referenceUrl, mediaToken);
+  // Fallback so canvas never "disappears" when token loads late (e.g. production): use absolute referenceUrl when displayUrl is null
+  const effectiveDisplayUrl = displayUrl || (referenceUrl && (referenceUrl.startsWith('http://') || referenceUrl.startsWith('https://')) ? referenceUrl : null);
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -519,7 +521,7 @@ export default function StudioProjectPage() {
   }
 
   async function handleDownload() {
-    if (!referenceUrl || !displayUrl) return;
+    if (!referenceUrl || !effectiveDisplayUrl) return;
     setDownloading(true);
     try {
       let blob: Blob;
@@ -732,7 +734,7 @@ export default function StudioProjectPage() {
       )}
       {/* Top bar: project + undo/redo + versions + New + tools + view + download/upload */}
       <header className="shrink-0 border-b border-theme-border bg-theme-bg">
-        <div className="min-h-[48px] h-11 px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
+        <div className="min-h-[52px] md:min-h-[48px] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink-0">
             <Link href="/dashboard/studio" className="text-theme-fg-subtle hover:text-theme-fg min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md -ml-1 sm:ml-0" aria-label="Back">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -757,45 +759,45 @@ export default function StudioProjectPage() {
                 <h1 className="text-sm font-medium text-theme-fg truncate cursor-pointer hover:text-theme-fg/90" onClick={() => setEditingName(true)}>
                   {project.name || t(locale, 'studio.untitled')}
                 </h1>
-                <button type="button" onClick={() => setProjectMenuOpen((o) => !o)} className="p-1 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Menu">
+                <button type="button" onClick={() => setProjectMenuOpen((o) => !o)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" aria-label="Menu">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" /></svg>
                 </button>
                 {projectMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setProjectMenuOpen(false)} />
                     <div className="absolute left-0 top-full mt-1 py-1 rounded-lg bg-theme-bg border border-theme-border shadow-xl z-50 min-w-[140px]">
-                      <button type="button" onClick={() => { setEditingName(true); setProjectMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover">{t(locale, 'studio.rename')}</button>
-                      <button type="button" onClick={() => { setPendingDeleteProject(true); setProjectMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted">{t(locale, 'studio.removeProject')}</button>
+                      <button type="button" onClick={() => { setEditingName(true); setProjectMenuOpen(false); }} className="w-full min-h-[44px] px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover touch-manipulation">{t(locale, 'studio.rename')}</button>
+                      <button type="button" onClick={() => { setPendingDeleteProject(true); setProjectMenuOpen(false); }} className="w-full min-h-[44px] px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted touch-manipulation">{t(locale, 'studio.removeProject')}</button>
                     </div>
                   </>
                 )}
               </div>
             )}
-            <button type="button" className="p-1 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" title="Undo" aria-label="Undo">
+            <button type="button" className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" title="Undo" aria-label="Undo">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
             </button>
-            <button type="button" className="p-1 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" title="Redo" aria-label="Redo">
+            <button type="button" className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" title="Redo" aria-label="Redo">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6 6" /></svg>
             </button>
-            <span className="text-xs text-theme-fg-subtle shrink-0">{currentVersionLabel} versions</span>
-            <Link href="/dashboard/studio" className="px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-xs font-medium shrink-0">
+            <span className="text-xs text-theme-fg-subtle shrink-0 hidden sm:inline">{currentVersionLabel} versions</span>
+            <Link href="/dashboard/studio" className="min-h-[44px] flex items-center px-2.5 py-1.5 rounded-lg border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-xs font-medium shrink-0 touch-manipulation">
               {t(locale, 'studio.backToProjects')}
             </Link>
           </div>
 
           {/* Tools bar - center (on mobile: Edit/Tools open drawers first) */}
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-subtle flex-1 min-w-0 justify-center">
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-subtle flex-1 min-w-0 justify-center" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
             <div className="lg:hidden flex items-center gap-1 shrink-0 mr-1">
-              <button type="button" onClick={() => { setLeftPanelOpen(true); setRightPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium" aria-label="Edit panel">Edit</button>
+              <button type="button" onClick={() => { setLeftPanelOpen(true); setRightPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium touch-manipulation" aria-label="Edit panel">Edit</button>
               {items.some((i) => i.type === 'image') && (
-                <button type="button" onClick={() => { setRightPanelOpen(true); setLeftPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium" aria-label="Tools panel">{t(locale, 'studio.tools')}</button>
+                <button type="button" onClick={() => { setRightPanelOpen(true); setLeftPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium touch-manipulation" aria-label="Tools panel">{t(locale, 'studio.tools')}</button>
               )}
             </div>
             <button
               type="button"
               onClick={handleRemoveBg}
               disabled={!selectedItem || selectedItem.type !== 'image' || removingBg}
-              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              className="min-h-[44px] px-3 py-2 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none touch-manipulation"
               title={t(locale, 'studio.removeBgTitle')}
             >
               {removingBg ? t(locale, 'common.loading') : t(locale, 'studio.removeBgShort')}
@@ -804,7 +806,7 @@ export default function StudioProjectPage() {
               type="button"
               onClick={() => setFiltersOpen(true)}
               disabled={!selectedItem || selectedItem.type !== 'image' || !referenceUrl}
-              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              className="min-h-[44px] px-3 py-2 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none touch-manipulation"
               title={t(locale, 'studio.filters')}
             >
               {t(locale, 'studio.filters')}
@@ -813,7 +815,7 @@ export default function StudioProjectPage() {
               type="button"
               onClick={() => setCropRotateOpen(true)}
               disabled={!selectedItem || selectedItem.type !== 'image' || !referenceUrl}
-              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              className="min-h-[44px] px-3 py-2 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none touch-manipulation"
               title={t(locale, 'studio.cropRotate')}
             >
               {t(locale, 'studio.cropRotate')}
@@ -822,7 +824,7 @@ export default function StudioProjectPage() {
               type="button"
               onClick={() => setAdjustmentsOpen(true)}
               disabled={!selectedItem || selectedItem.type !== 'image' || !referenceUrl}
-              className="px-2 py-1.5 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none"
+              className="min-h-[44px] px-3 py-2 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none touch-manipulation"
               title={t(locale, 'studio.adjustments')}
             >
               {t(locale, 'studio.adjustments')}
@@ -830,14 +832,14 @@ export default function StudioProjectPage() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={handleDownload} disabled={!displayUrl || downloading} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40" title="Download">
+            <button type="button" onClick={handleDownload} disabled={!effectiveDisplayUrl || downloading} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 touch-manipulation" title="Download">
               {downloading ? (
                 <span className="w-5 h-5 block border-2 border-theme-fg-subtle border-t-transparent rounded-full animate-spin" />
               ) : (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               )}
             </button>
-            <button type="button" onClick={handleExportToCollection} disabled={!selectedItem || !referenceUrl || exportingToCollection} className="p-2 rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50" title={t(locale, 'studio.exportToCollection')}>
+            <button type="button" onClick={handleExportToCollection} disabled={!selectedItem || !referenceUrl || exportingToCollection} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 touch-manipulation" title={t(locale, 'studio.exportToCollection')}>
               {exportingToCollection ? (
                 <span className="w-5 h-5 block border-2 border-theme-fg-subtle border-t-transparent rounded-full animate-spin" />
               ) : (
@@ -863,7 +865,7 @@ export default function StudioProjectPage() {
         <aside className={`fixed lg:relative inset-y-0 left-0 z-40 w-72 lg:w-52 shrink-0 flex flex-col border-r border-theme-border bg-theme-bg p-4 transition-transform duration-200 lg:translate-x-0 ${leftPanelOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between mb-3 lg:hidden">
             <span className="text-sm font-medium text-theme-fg">Edit</span>
-            <button type="button" onClick={() => setLeftPanelOpen(false)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg" aria-label="Close">×</button>
+            <button type="button" onClick={() => setLeftPanelOpen(false)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg touch-manipulation" aria-label="Close">×</button>
           </div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">Edit</label>
@@ -871,7 +873,7 @@ export default function StudioProjectPage() {
               <button
                 type="button"
                 onClick={() => { setEditMode('edit'); setMaskBlobForInpaint(null); }}
-                className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 ${editMode === 'edit' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                className={`flex-1 min-h-[44px] px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 touch-manipulation ${editMode === 'edit' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
               >
                 Edit
               </button>
@@ -885,7 +887,7 @@ export default function StudioProjectPage() {
                     setEditorTool('highlight');
                   }
                 }}
-                className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 ${editMode === 'edit_brush' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                className={`flex-1 min-h-[44px] px-2 py-1.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1 touch-manipulation ${editMode === 'edit_brush' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
                 title="Edit using Brush"
               >
                 <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -915,7 +917,7 @@ export default function StudioProjectPage() {
                   type="button"
                   onClick={handleEdit}
                   disabled={!referenceUrl || !aiPrompt.trim() || !!aiEditJobId}
-                  className="w-full px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium"
+                  className="w-full min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium touch-manipulation"
                 >
                   {aiEditJobId ? t(locale, 'common.loading') : 'Edit'}
                 </button>
@@ -927,7 +929,7 @@ export default function StudioProjectPage() {
                       type="button"
                       onClick={handleSubmitBrushEdit}
                       disabled={!aiPrompt.trim() || !!aiEditJobId || paintApplying}
-                      className="w-full px-3 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium"
+                      className="w-full min-h-[44px] px-3 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 text-sm font-medium touch-manipulation"
                     >
                       {paintApplying || aiEditJobId ? t(locale, 'common.loading') : 'Edit with AI'}
                     </button>
@@ -960,10 +962,10 @@ export default function StudioProjectPage() {
               <div className="text-center max-w-sm">
                 <p className="text-theme-fg-subtle mb-4">No items yet. Upload or add from My Content.</p>
                 <div className="flex gap-2 justify-center flex-wrap">
-                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-4 py-2 rounded-xl border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium">
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="min-h-[44px] px-4 py-2 rounded-xl border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 text-sm font-medium touch-manipulation">
                     {uploading ? t(locale, 'common.loading') : t(locale, 'studio.upload')}
                   </button>
-                  <button type="button" onClick={() => setShowAddFromContent(true)} className="px-4 py-2 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-sm font-medium">
+                  <button type="button" onClick={() => setShowAddFromContent(true)} className="min-h-[44px] px-4 py-2 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-sm font-medium touch-manipulation">
                     {t(locale, 'studio.addFromContent')}
                   </button>
                 </div>
@@ -982,12 +984,12 @@ export default function StudioProjectPage() {
                     </div>
                   </div>
                 )}
-                {editorTool && selectedItem?.type === 'image' && referenceUrl && !((displayUrl && displayUrl.startsWith('http')) || referenceUrl.startsWith('http')) ? (
+                {editorTool && selectedItem?.type === 'image' && referenceUrl && !effectiveDisplayUrl ? (
                   <div className="flex flex-col items-center justify-center gap-2 text-theme-fg-subtle py-12">
                     <div className="w-8 h-8 border-2 border-theme-accent border-t-transparent rounded-full animate-spin" />
                     <p className="text-sm">Loading image…</p>
                   </div>
-                ) : selectedItem && displayUrl ? (
+                ) : selectedItem && effectiveDisplayUrl ? (
                   <div
                     className={`relative group flex items-center justify-center transition-[filter] duration-200 overflow-hidden ${removingBg || aiEditJobId ? 'blur-sm' : ''} ${!editorTool ? 'cursor-grab active:cursor-grabbing' : ''}`}
                     onMouseDown={(e) => {
@@ -1014,9 +1016,9 @@ export default function StudioProjectPage() {
                         ...(imageBoxSize ? { width: imageBoxSize.w, height: imageBoxSize.h } : {}),
                       }}
                     >
-                      {editorTool === 'logo' && logoOverlays.length > 0 && selectedItem?.type === 'image' && displayUrl ? (
+                      {editorTool === 'logo' && logoOverlays.length > 0 && selectedItem?.type === 'image' && effectiveDisplayUrl ? (
                         <MultiLogoPlacer
-                          baseImageUrl={displayUrl}
+                          baseImageUrl={effectiveDisplayUrl}
                           overlays={logoOverlays}
                           getLogoDisplayUrl={(url) => getMediaDisplayUrl(url, mediaToken) ?? url}
                           onUpdate={(id, patch) => {
@@ -1070,9 +1072,9 @@ export default function StudioProjectPage() {
                           applying={logoApplying}
                           contentSize={imageBoxSize ?? { w: 400, h: 400 }}
                         />
-                      ) : editorTool && editorTool !== 'logo' && selectedItem?.type === 'image' && referenceUrl && ((displayUrl && displayUrl.startsWith('http')) || referenceUrl.startsWith('http')) ? (
+                      ) : editorTool && editorTool !== 'logo' && selectedItem?.type === 'image' && effectiveDisplayUrl ? (
                         <PaintCanvas
-                          imageUrl={(displayUrl && displayUrl.startsWith('http') ? displayUrl : referenceUrl) as string}
+                          imageUrl={effectiveDisplayUrl}
                           tool={editorTool}
                           brushSize={brushSize}
                           colorizeColor={colorizeColor}
@@ -1112,19 +1114,19 @@ export default function StudioProjectPage() {
                             className="block w-full h-full min-w-0 min-h-0 relative group/img"
                           >
                             {selectedItem.type === 'video' ? (
-                              <video src={displayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
+                              <video src={effectiveDisplayUrl} className="max-w-full max-h-[calc(100vh-14rem)] object-contain" controls playsInline />
                             ) : (
                               <>
-                                <img src={displayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} decoding="async" />
-                                <span className="absolute bottom-2 right-2 px-2 py-1 rounded-lg bg-theme-bg-overlay text-theme-fg-subtle opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center gap-1.5 text-xs" title={t(locale, 'studio.previewZoom')}>
+                                <img src={effectiveDisplayUrl} alt="" className="max-w-full max-h-[calc(100vh-14rem)] object-contain" draggable={false} decoding="async" />
+                                <span className="absolute bottom-2 right-2 px-2 py-1 rounded-lg bg-theme-bg-overlay text-theme-fg-subtle opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity flex items-center gap-1.5 text-xs" title={t(locale, 'studio.previewZoom')}>
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
                                   {t(locale, 'studio.previewZoom')}
                                 </span>
                               </>
                             )}
                           </button>
-                          <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button type="button" onClick={() => setPendingDeleteItem(selectedItem)} className="p-2 rounded-lg bg-theme-bg-overlay hover:bg-theme-danger text-theme-fg">
+                          <div className="absolute top-2 right-2 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                            <button type="button" onClick={() => setPendingDeleteItem(selectedItem)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg bg-theme-bg-overlay hover:bg-theme-danger text-theme-fg touch-manipulation">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                           </div>
@@ -1146,10 +1148,10 @@ export default function StudioProjectPage() {
                         />
                       );
                     })()}
-                    <div className="absolute bottom-2 right-2 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" onClick={() => setCanvasScale((s) => Math.max(0.25, s - 0.25))} className="p-1 rounded text-theme-fg hover:bg-theme-bg-hover" title="Smaller">−</button>
+                    <div className="absolute bottom-2 right-2 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-theme-bg-overlay opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => setCanvasScale((s) => Math.max(0.25, s - 0.25))} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg hover:bg-theme-bg-hover touch-manipulation" title="Smaller">−</button>
                       <span className="text-xs text-theme-fg min-w-[3rem] text-center">{Math.round(canvasScale * 100)}%</span>
-                      <button type="button" onClick={() => setCanvasScale((s) => Math.min(3, s + 0.25))} className="p-1 rounded text-theme-fg hover:bg-theme-bg-hover" title="Larger">+</button>
+                      <button type="button" onClick={() => setCanvasScale((s) => Math.min(3, s + 0.25))} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg hover:bg-theme-bg-hover touch-manipulation" title="Larger">+</button>
                     </div>
                   </div>
                 ) : null}
@@ -1159,18 +1161,18 @@ export default function StudioProjectPage() {
               {selectedItem && versionHistory.length >= 2 && (
                 <div className="shrink-0 border-t border-theme-border bg-theme-bg px-3 py-2">
                   <p className="text-xs text-theme-fg-subtle mb-2">{t(locale, 'studio.versionHistory')}</p>
-                  <div className="flex items-center gap-2 overflow-x-auto scrollbar-subtle">
+                  <div className="flex items-center gap-2 overflow-x-auto scrollbar-subtle touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
                     {versionHistory.map((entry) => {
                       const latestEntry = versionHistory[versionHistory.length - 1];
                       const active = viewingVersionNum === entry.version_num || (viewingVersionNum === null && latestEntry && entry.version_num === latestEntry.version_num);
                       const thumbUrl = getSafeDisplayUrl(entry.url, mediaToken);
                       const canDeleteVersion = entry.version_num >= 1;
                       return (
-                        <div key={entry.version_num} className="relative shrink-0 w-14 h-14">
+                        <div key={entry.version_num} className="relative shrink-0 w-14 h-14 min-w-[3.5rem]">
                           <button
                             type="button"
                             onClick={() => setViewingVersionNum(entry.version_num)}
-                            className={`w-full h-full rounded-lg overflow-hidden border-2 transition-colors ${
+                            className={`w-full h-full min-h-[44px] rounded-lg overflow-hidden border-2 transition-colors touch-manipulation ${
                               active ? 'border-theme-accent ring-2 ring-theme-accent/50' : 'border-theme-border hover:border-theme-border-hover'
                             }`}
                             title={entry.label}
@@ -1222,11 +1224,11 @@ export default function StudioProjectPage() {
               <div className="shrink-0 border-t border-theme-border bg-theme-bg p-3">
                 <div className="flex items-center gap-3 overflow-x-auto scrollbar-subtle">
                   <div className="relative shrink-0">
-                    <button
+                      <button
                       type="button"
                       onClick={() => setAddMenuOpen((o) => !o)}
                       disabled={uploading}
-                      className="w-16 h-16 rounded-lg border-2 border-dashed border-theme-border hover:border-theme-border-hover text-theme-fg-subtle hover:text-theme-fg flex items-center justify-center disabled:opacity-50"
+                      className="w-16 h-16 min-h-[64px] min-w-[64px] rounded-lg border-2 border-dashed border-theme-border hover:border-theme-border-hover text-theme-fg-subtle hover:text-theme-fg flex items-center justify-center disabled:opacity-50 touch-manipulation"
                       title="Add"
                     >
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -1235,10 +1237,10 @@ export default function StudioProjectPage() {
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setAddMenuOpen(false)} />
                         <div className="absolute left-0 top-full mt-1 py-1 rounded-lg bg-theme-bg border border-theme-border shadow-xl z-50 min-w-[160px]">
-                          <button type="button" onClick={() => { fileInputRef.current?.click(); setAddMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover">
+                          <button type="button" onClick={() => { fileInputRef.current?.click(); setAddMenuOpen(false); }} className="w-full min-h-[44px] px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover touch-manipulation">
                             {t(locale, 'studio.upload')}
                           </button>
-                          <button type="button" onClick={() => { setShowAddFromContent(true); setAddMenuOpen(false); }} className="w-full px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover">
+                          <button type="button" onClick={() => { setShowAddFromContent(true); setAddMenuOpen(false); }} className="w-full min-h-[44px] px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover touch-manipulation">
                             {t(locale, 'studio.addFromContent')}
                           </button>
                         </div>
@@ -1279,7 +1281,7 @@ export default function StudioProjectPage() {
           <aside className={`fixed lg:relative inset-y-0 right-0 z-40 w-72 lg:w-40 shrink-0 flex flex-col border-l border-theme-border bg-theme-bg p-3 min-w-0 transition-transform duration-200 lg:translate-x-0 ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="flex items-center justify-between mb-2 lg:hidden">
               <p className="text-sm font-medium text-theme-fg">{t(locale, 'studio.tools')}</p>
-              <button type="button" onClick={() => setRightPanelOpen(false)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg" aria-label="Close">×</button>
+              <button type="button" onClick={() => setRightPanelOpen(false)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg touch-manipulation" aria-label="Close">×</button>
             </div>
             <p className="text-xs font-medium text-theme-fg-muted mb-2 hidden lg:block">{t(locale, 'studio.tools')}</p>
             {selectedItem?.type !== 'image' ? (
@@ -1290,7 +1292,7 @@ export default function StudioProjectPage() {
               <button
                 type="button"
                 onClick={() => setEditorTool(editorTool === 'clone' ? null : 'clone')}
-                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'clone' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                className={`min-h-[44px] px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 touch-manipulation ${editorTool === 'clone' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
                 title={t(locale, 'studio.tool.cloneStamp')}
               >
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
@@ -1301,7 +1303,7 @@ export default function StudioProjectPage() {
               <button
                 type="button"
                 onClick={() => setEditorTool(editorTool === 'colorize' ? null : 'colorize')}
-                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'colorize' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                className={`min-h-[44px] px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 touch-manipulation ${editorTool === 'colorize' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
                 title={t(locale, 'studio.tool.colorize')}
               >
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
@@ -1318,7 +1320,7 @@ export default function StudioProjectPage() {
                     setEditorTool(editorTool === 'highlight' ? null : 'highlight');
                   }
                 }}
-                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${
+                className={`min-h-[44px] px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 touch-manipulation ${
                   editorTool === 'highlight' || (editMode === 'edit_brush' && referenceUrl)
                     ? 'border-theme-accent bg-theme-accent/10 text-theme-accent'
                     : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'
@@ -1342,7 +1344,7 @@ export default function StudioProjectPage() {
                     setEditorTool('logo');
                   }
                 }}
-                className={`px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 ${editorTool === 'logo' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
+                className={`min-h-[44px] px-2.5 py-2 rounded-lg border text-left flex items-center gap-2 min-w-0 touch-manipulation ${editorTool === 'logo' ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong'}`}
                 title={t(locale, 'studio.tool.logo')}
               >
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
@@ -1536,7 +1538,7 @@ export default function StudioProjectPage() {
           locale={locale}
         />
       )}
-      {previewZoomOpen && selectedItem?.type === 'image' && displayUrl && (
+      {previewZoomOpen && selectedItem?.type === 'image' && effectiveDisplayUrl && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-theme-bg-overlay-strong p-4"
           role="dialog"
@@ -1551,7 +1553,7 @@ export default function StudioProjectPage() {
           />
           <div className="relative z-10 max-w-[95vw] max-h-[95vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             <img
-              src={displayUrl}
+              src={effectiveDisplayUrl}
               alt=""
               className="max-w-full max-h-[95vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
               style={{ maxWidth: 'min(95vw, 100%)', maxHeight: '95vh' }}

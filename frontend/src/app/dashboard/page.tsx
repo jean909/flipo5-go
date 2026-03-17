@@ -1194,48 +1194,6 @@ export default function DashboardPage() {
             </div>
           )}
           <h2 className="font-display text-2xl font-bold text-theme-fg mb-4 tracking-tight">FLIPO5</h2>
-          {!isMobile && (
-            <div className="w-full mb-6 hidden md:block">
-              <p className="text-sm text-theme-fg-muted mb-3 text-center">{t(locale, 'dashboard.whatToCreate')}</p>
-              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mx-1 touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
-                {(['chat', 'image', 'video'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMode(m)}
-                    className={`shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all touch-manipulation ${
-                      mode === m
-                        ? 'border-theme-border-hover bg-theme-bg-hover text-theme-fg'
-                        : 'border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
-                    }`}
-                  >
-                    {m === 'chat' && <ChatIcon />}
-                    {m === 'image' && <ImageIcon />}
-                    {m === 'video' && <VideoIcon />}
-                    {t(locale, `mode.${m}`)}
-                  </button>
-                ))}
-                <Link href="/dashboard/seo" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
-                  {t(locale, 'nav.seo')}
-                </Link>
-                <Link href="/dashboard/translations" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
-                  {t(locale, 'nav.translations')}
-                </Link>
-                <Link href="/dashboard/logo" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
-                  {t(locale, 'nav.logo')}
-                </Link>
-                <Link href="/dashboard/product-pictures" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
-                  {t(locale, 'nav.productPictures')}
-                </Link>
-                <Link href="/dashboard/upscaling" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
-                  {t(locale, 'nav.upscaling')}
-                </Link>
-                <Link href="/dashboard/content" className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-sm font-medium transition-all touch-manipulation">
-                  {t(locale, 'nav.content')}
-                </Link>
-              </div>
-            </div>
-          )}
           <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full flex flex-col items-center gap-4">
             {mode === 'image' && (
               <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />

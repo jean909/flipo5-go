@@ -62,7 +62,7 @@ export function LogoPlacer({
     const canvas = document.createElement('canvas');
     canvas.width = baseSize.w;
     canvas.height = baseSize.h;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
     ctx.drawImage(baseImg, 0, 0);
     const x = (pos.x - size.w / 2) * baseSize.w;

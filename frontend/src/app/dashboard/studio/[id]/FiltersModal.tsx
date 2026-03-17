@@ -414,7 +414,7 @@ export function FiltersModal({
     const h = Math.round(img.naturalHeight * scale);
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     drawWithFilterStack(ctx, img, w, h, effectStack);
   }, [effectStack]);
@@ -472,7 +472,7 @@ export function FiltersModal({
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) throw new Error('Canvas failed');
       drawWithFilterStack(ctx, img, w, h, effectStack);
       const blob = await new Promise<Blob>((res, rej) => {
@@ -504,18 +504,18 @@ export function FiltersModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-bg-overlay"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-4 bg-theme-bg-overlay"
       role="dialog"
       aria-modal="true"
     >
       <div className="absolute inset-0" onClick={onClose} aria-hidden />
       <div className="relative z-10 bg-theme-bg rounded-xl border border-theme-border shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-theme-border">
+        <div className="flex items-center justify-between p-3 md:p-4 border-b border-theme-border">
           <h3 className="font-semibold text-theme-fg">{t(locale, 'studio.filters')}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation"
             aria-label="Close"
           >
             ×
@@ -524,7 +524,7 @@ export function FiltersModal({
         {error && (
           <div className="px-4 py-2 text-sm text-theme-danger bg-theme-danger-muted">{error}</div>
         )}
-        <div className="flex flex-col sm:flex-row flex-1 min-h-0 p-4 gap-4">
+        <div className="flex flex-col sm:flex-row flex-1 min-h-0 p-3 md:p-4 gap-4 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center bg-theme-bg-subtle rounded-lg">
             {loading && !blobUrl && (
               <p className="text-theme-fg-subtle py-8">{t(locale, 'common.loading')}</p>
@@ -556,7 +556,7 @@ export function FiltersModal({
                           type="button"
                           onClick={() => moveUp(item.id)}
                           disabled={index === 0}
-                          className="p-1 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 disabled:pointer-events-none"
+                          className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 disabled:pointer-events-none touch-manipulation"
                           aria-label="Move up"
                         >
                           ↑
@@ -565,7 +565,7 @@ export function FiltersModal({
                           type="button"
                           onClick={() => moveDown(item.id)}
                           disabled={index === effectStack.length - 1}
-                          className="p-1 rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 disabled:pointer-events-none"
+                          className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 disabled:pointer-events-none touch-manipulation"
                           aria-label="Move down"
                         >
                           ↓
@@ -573,7 +573,7 @@ export function FiltersModal({
                         <button
                           type="button"
                           onClick={() => removeEffect(item.id)}
-                          className="p-1 rounded text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover"
+                          className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover touch-manipulation"
                           aria-label="Remove"
                         >
                           ×
@@ -609,7 +609,7 @@ export function FiltersModal({
               <button
                 type="button"
                 onClick={() => setAddOpen((o) => !o)}
-                className={`w-full px-3 py-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-2 transition-all duration-200 ${
+                className={`w-full min-h-[44px] px-3 py-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-2 transition-all duration-200 touch-manipulation ${
                   addOpen
                     ? 'border-theme-accent bg-theme-accent/10 text-theme-accent'
                     : 'border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover hover:border-theme-border-hover'
@@ -643,7 +643,7 @@ export function FiltersModal({
                           key={opt.id}
                           type="button"
                           onClick={() => addEffect(opt.id)}
-                          className={`px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all duration-150 flex items-center justify-between gap-1.5 ${
+                          className={`min-h-[44px] px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all duration-150 flex items-center justify-between gap-1.5 touch-manipulation ${
                             added
                               ? 'border border-theme-accent/40 bg-theme-accent/5 text-theme-accent'
                               : 'border border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover hover:border-theme-border-hover'
@@ -664,11 +664,11 @@ export function FiltersModal({
             </div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t border-theme-border">
+        <div className="flex justify-end gap-2 p-3 md:p-4 border-t border-theme-border shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover"
+            className="min-h-[44px] px-4 py-2 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover touch-manipulation"
           >
             {t(locale, 'dialog.cancel')}
           </button>
@@ -676,7 +676,7 @@ export function FiltersModal({
             type="button"
             onClick={handleApply}
             disabled={loading || applying}
-            className="px-4 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50"
+            className="min-h-[44px] px-4 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 touch-manipulation"
           >
             {applying ? '...' : t(locale, 'studio.apply')}
           </button>

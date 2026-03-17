@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import { Select } from '@/components/Select';
@@ -15,27 +16,48 @@ interface ImageSettingsRowProps {
   onChange: (s: ImageSettings) => void;
 }
 
+const RESOLUTION_OPTIONS = ['2K', '4K', 'HD'] as const;
+
 export function ImageSettingsRow({ locale, settings, onChange }: ImageSettingsRowProps) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia('(max-width: 768px)');
+    setIsMobile(m.matches);
+    const onMatch = () => setIsMobile(m.matches);
+    m.addEventListener('change', onMatch);
+    return () => m.removeEventListener('change', onMatch);
+  }, []);
+
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm">
       <div className="flex items-center gap-2">
         <span className="text-theme-fg-muted">{t(locale, 'image.resolution')}</span>
-        <div className="flex rounded-lg border border-theme-border overflow-hidden">
-          {(['2K', '4K', 'HD'] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onChange({ ...settings, size: s })}
-              className={`px-3 py-1.5 text-sm transition-colors ${
-                settings.size === s
-                  ? 'bg-theme-bg-hover-strong text-theme-fg'
-                  : 'bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <Select
+            value={settings.size}
+            options={RESOLUTION_OPTIONS.map((s) => ({ value: s, label: s }))}
+            onChange={(v) => onChange({ ...settings, size: v as '2K' | '4K' | 'HD' })}
+            size="sm"
+            className="min-w-[80px]"
+          />
+        ) : (
+          <div className="flex rounded-lg border border-theme-border overflow-hidden">
+            {RESOLUTION_OPTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onChange({ ...settings, size: s })}
+                className={`px-3 py-1.5 text-sm transition-colors ${
+                  settings.size === s
+                    ? 'bg-theme-bg-hover-strong text-theme-fg'
+                    : 'bg-theme-bg-subtle text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <span className="text-theme-fg-muted">{t(locale, 'image.aspectRatio')}</span>

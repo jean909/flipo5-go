@@ -139,7 +139,7 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
           </>
         )}
       </div>
-      <nav className="flex-1 p-3 flex flex-col gap-0.5 min-h-0 overflow-hidden">
+      <nav className="flex-1 p-3 flex flex-col gap-0.5 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-subtle" style={{ WebkitOverflowScrolling: 'touch' }}>
         {nav.map(({ href, labelKey, icon: Icon }) => {
           const isActive = href === '/dashboard/studio' ? pathname.startsWith('/dashboard/studio') : href === '/dashboard/upscaling' ? pathname.startsWith('/dashboard/upscaling') : pathname === href;
           return (
@@ -310,7 +310,7 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
           </>
         )}
       </nav>
-      <div className="p-3 border-t border-theme-border flex flex-col gap-1">
+      <div className="p-3 border-t border-theme-border flex flex-col gap-1 shrink-0">
         <Link
           href="/dashboard/profile"
           className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
@@ -333,70 +333,106 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
             )}
           </AnimatePresence>
         </Link>
-        <Link
-          href="/dashboard/settings"
-          className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
-            pathname === '/dashboard/settings' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
-          }`}
-          title={effectiveCollapsed ? t(locale, 'nav.settings') : undefined}
-        >
-          <SettingsIcon className="w-5 h-5 shrink-0" />
-          <AnimatePresence mode="wait">
-            {!effectiveCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.15 }}
-                className="truncate"
+        {overlay ? (
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/settings"
+              className={`flex items-center justify-center min-h-[44px] min-w-[44px] rounded-md text-sm transition-colors touch-manipulation ${
+                pathname === '/dashboard/settings' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
+              }`}
+              aria-label={t(locale, 'nav.settings')}
+              title={t(locale, 'nav.settings')}
+            >
+              <SettingsIcon className="w-5 h-5 shrink-0" />
+            </Link>
+            {isAdminUser(user) && (
+              <Link
+                href="/admin"
+                className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-md text-sm text-theme-accent hover:bg-theme-bg-hover transition-colors touch-manipulation"
+                aria-label="Admin"
+                title="Admin"
               >
-                {t(locale, 'nav.settings')}
-              </motion.span>
+                <AdminIcon className="w-5 h-5 shrink-0" />
+              </Link>
             )}
-          </AnimatePresence>
-        </Link>
-        {isAdminUser(user) && (
-          <Link
-            href="/admin"
-            className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-accent hover:bg-theme-bg-hover transition-colors min-w-0"
-            title="Admin"
-          >
-            <AdminIcon className="w-5 h-5 shrink-0" />
-            <AnimatePresence mode="wait">
-              {!effectiveCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="truncate"
-                >
-                  Admin
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </Link>
+            <button
+              type="button"
+              onClick={logout}
+              className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors touch-manipulation"
+              aria-label={t(locale, 'nav.logout')}
+              title={t(locale, 'nav.logout')}
+            >
+              <DoorIcon className="w-5 h-5 shrink-0" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <Link
+              href="/dashboard/settings"
+              className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm transition-colors min-w-0 ${
+                pathname === '/dashboard/settings' ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
+              }`}
+              title={effectiveCollapsed ? t(locale, 'nav.settings') : undefined}
+            >
+              <SettingsIcon className="w-5 h-5 shrink-0" />
+              <AnimatePresence mode="wait">
+                {!effectiveCollapsed && (
+                  <motion.span
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="truncate"
+                  >
+                    {t(locale, 'nav.settings')}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </Link>
+            {isAdminUser(user) && (
+              <Link
+                href="/admin"
+                className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-accent hover:bg-theme-bg-hover transition-colors min-w-0"
+                title="Admin"
+              >
+                <AdminIcon className="w-5 h-5 shrink-0" />
+                <AnimatePresence mode="wait">
+                  {!effectiveCollapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="truncate"
+                    >
+                      Admin
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={logout}
+              className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-left transition-colors w-full"
+              title={t(locale, 'nav.logout')}
+            >
+              <DoorIcon className="w-5 h-5 shrink-0" />
+              <AnimatePresence mode="wait">
+                {!effectiveCollapsed && (
+                  <motion.span
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    {t(locale, 'nav.logout')}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+          </>
         )}
-        <button
-          type="button"
-          onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg text-left transition-colors w-full"
-          title={t(locale, 'nav.logout')}
-        >
-          <DoorIcon className="w-5 h-5 shrink-0" />
-          <AnimatePresence mode="wait">
-            {!effectiveCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.15 }}
-              >
-                {t(locale, 'nav.logout')}
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </button>
       </div>
       <ConfirmDialog
         open={!!pendingDeleteThread}

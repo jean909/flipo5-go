@@ -206,7 +206,7 @@ export function AdjustmentsModal({ imageUrl, itemId, onClose, onSuccess, onUploa
     const h = Math.round(img.naturalHeight * scale);
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     ctx.filter = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`;
     ctx.drawImage(img, 0, 0, w, h);
@@ -260,7 +260,7 @@ export function AdjustmentsModal({ imageUrl, itemId, onClose, onSuccess, onUploa
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) throw new Error('Canvas failed');
       applyPipeline(ctx, w, h, img);
       const blob = await new Promise<Blob>((res, rej) => {
@@ -314,19 +314,19 @@ export function AdjustmentsModal({ imageUrl, itemId, onClose, onSuccess, onUploa
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-bg-overlay" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-4 bg-theme-bg-overlay" role="dialog" aria-modal="true">
       <div className="absolute inset-0" onClick={onClose} aria-hidden />
       <div className="relative z-10 bg-theme-bg rounded-xl border border-theme-border shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-theme-border">
+        <div className="flex items-center justify-between p-3 md:p-4 border-b border-theme-border">
           <h3 className="font-semibold text-theme-fg">{t(locale, 'studio.adjustments')}</h3>
-          <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Close">
+          <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" aria-label="Close">
             ×
           </button>
         </div>
         {error && (
           <div className="px-4 py-2 text-sm text-theme-danger bg-theme-danger-muted">{error}</div>
         )}
-        <div className="flex flex-col sm:flex-row flex-1 min-h-0 p-4 gap-4">
+        <div className="flex flex-col sm:flex-row flex-1 min-h-0 p-3 md:p-4 gap-4 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center bg-theme-bg-subtle rounded-lg">
             {loading && !blobUrl && (
               <p className="text-theme-fg-subtle py-8">{t(locale, 'common.loading')}</p>
@@ -364,11 +364,11 @@ export function AdjustmentsModal({ imageUrl, itemId, onClose, onSuccess, onUploa
             ))}
           </div>
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t border-theme-border">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover">
+        <div className="flex justify-end gap-2 p-3 md:p-4 border-t border-theme-border shrink-0">
+          <button type="button" onClick={onClose} className="min-h-[44px] px-4 py-2 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover touch-manipulation">
             {t(locale, 'dialog.cancel')}
           </button>
-          <button type="button" onClick={handleApply} disabled={loading || applying} className="px-4 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50">
+          <button type="button" onClick={handleApply} disabled={loading || applying} className="min-h-[44px] px-4 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 touch-manipulation">
             {applying ? '...' : t(locale, 'studio.apply')}
           </button>
         </div>

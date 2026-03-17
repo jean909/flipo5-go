@@ -108,7 +108,7 @@ export function CropRotateModal({ imageUrl, itemId, onClose, onSuccess, onUpload
     canvas.width = dw;
     canvas.height = dh;
     setDisplaySize({ w: dw, h: dh });
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
     ctx.save();
     ctx.scale(dw / rotatedSize.w, dh / rotatedSize.h);
@@ -170,7 +170,7 @@ export function CropRotateModal({ imageUrl, itemId, onClose, onSuccess, onUpload
       const canvas1 = document.createElement('canvas');
       canvas1.width = rw;
       canvas1.height = rh;
-      const ctx1 = canvas1.getContext('2d');
+      const ctx1 = canvas1.getContext('2d', { willReadFrequently: false });
       if (!ctx1) throw new Error('Canvas failed');
       ctx1.translate(rw / 2, rh / 2);
       ctx1.rotate((rot * Math.PI) / 180);
@@ -179,7 +179,7 @@ export function CropRotateModal({ imageUrl, itemId, onClose, onSuccess, onUpload
       const canvas2 = document.createElement('canvas');
       canvas2.width = Math.round(crop.w);
       canvas2.height = Math.round(crop.h);
-      const ctx2 = canvas2.getContext('2d');
+      const ctx2 = canvas2.getContext('2d', { willReadFrequently: false });
       if (!ctx2) throw new Error('Canvas failed');
       ctx2.drawImage(canvas1, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas2.width, canvas2.height);
       const blob = await new Promise<Blob>((res, rej) => {
@@ -214,28 +214,28 @@ export function CropRotateModal({ imageUrl, itemId, onClose, onSuccess, onUpload
     : undefined;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-bg-overlay" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-4 bg-theme-bg-overlay" role="dialog" aria-modal="true">
       <div className="absolute inset-0" onClick={onClose} aria-hidden />
       <div className="relative z-10 bg-theme-bg rounded-xl border border-theme-border shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-theme-border">
+        <div className="flex items-center justify-between p-3 md:p-4 border-b border-theme-border">
           <h3 className="font-semibold text-theme-fg">{t(locale, 'studio.cropRotate')}</h3>
-          <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover" aria-label="Close">×</button>
+          <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" aria-label="Close">×</button>
         </div>
         {error && (
           <div className="px-4 py-2 text-sm text-theme-danger bg-theme-danger-muted">{error}</div>
         )}
         <div className="flex items-center gap-2 p-2 border-b border-theme-border flex-wrap">
           <span className="text-xs text-theme-fg-subtle">{t(locale, 'studio.rotate')}:</span>
-          <button type="button" onClick={() => setRotation((r) => ((r - 90 + 360) % 360) as Rotation)} className="px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-sm hover:bg-theme-bg-hover-strong">
+          <button type="button" onClick={() => setRotation((r) => ((r - 90 + 360) % 360) as Rotation)} className="min-h-[44px] px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-sm hover:bg-theme-bg-hover-strong touch-manipulation">
             −90°
           </button>
-          <button type="button" onClick={() => setRotation((r) => ((r + 90) % 360) as Rotation)} className="px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-sm hover:bg-theme-bg-hover-strong">
+          <button type="button" onClick={() => setRotation((r) => ((r + 90) % 360) as Rotation)} className="min-h-[44px] px-3 py-1.5 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-sm hover:bg-theme-bg-hover-strong touch-manipulation">
             +90°
           </button>
           <span className="text-xs text-theme-fg-subtle ml-2">{t(locale, 'studio.crop')}:</span>
           <span className="text-xs text-theme-fg-subtle">{t(locale, 'studio.cropHint')}</span>
         </div>
-        <div ref={containerRef} className="flex-1 min-h-0 overflow-auto p-4 flex items-center justify-center bg-theme-bg-subtle">
+        <div ref={containerRef} className="flex-1 min-h-0 overflow-auto p-3 md:p-4 flex items-center justify-center bg-theme-bg-subtle" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           {loading && !blobUrl && (
             <p className="text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
           )}
@@ -269,11 +269,11 @@ export function CropRotateModal({ imageUrl, itemId, onClose, onSuccess, onUpload
             </>
           )}
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t border-theme-border">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover">
+        <div className="flex justify-end gap-2 p-3 md:p-4 border-t border-theme-border">
+          <button type="button" onClick={onClose} className="min-h-[44px] px-4 py-2 rounded-lg border border-theme-border text-theme-fg hover:bg-theme-bg-hover touch-manipulation">
             {t(locale, 'dialog.cancel')}
           </button>
-          <button type="button" onClick={handleApply} disabled={loading || applying || naturalSize.w === 0} className="px-4 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50">
+          <button type="button" onClick={handleApply} disabled={loading || applying || naturalSize.w === 0} className="min-h-[44px] px-4 py-2 rounded-lg bg-theme-accent text-theme-fg-inverse hover:opacity-90 disabled:opacity-50 touch-manipulation">
             {applying ? '...' : t(locale, 'studio.apply')}
           </button>
         </div>

@@ -10,6 +10,7 @@ import { t } from '@/lib/i18n';
 import { Sidebar } from './components/Sidebar';
 import { JobsInProgressButton } from './components/JobsInProgressButton';
 import { JobsInProgressProvider } from './components/JobsInProgressContext';
+import { InstallPromptBanner } from './components/InstallPromptBanner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function DashboardLayoutClient({
@@ -131,6 +132,7 @@ export default function DashboardLayoutClient({
           )}
           <ErrorBoundary>{children}</ErrorBoundary>
         </div>
+        <InstallPromptBanner />
       </main>
     </div>
     </JobsInProgressProvider>

@@ -203,7 +203,7 @@ export function PaintCanvas({
   const pushUndo = useCallback(() => {
     const overlay = overlayRef.current;
     if (!overlay?.width || !overlay?.height) return;
-    const ctx = overlay.getContext('2d');
+    const ctx = overlay.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     const id = ctx.getImageData(0, 0, overlay.width, overlay.height);
     const copy = new ImageData(new Uint8ClampedArray(id.data), id.width, id.height);
@@ -220,7 +220,7 @@ export function PaintCanvas({
     const prev = stack.pop();
     setUndoCount(stack.length);
     if (!prev) return;
-    const ctx = overlay.getContext('2d');
+    const ctx = overlay.getContext('2d', { willReadFrequently: false });
     if (ctx) ctx.putImageData(prev, 0, 0);
   }, []);
 
@@ -298,12 +298,12 @@ export function PaintCanvas({
     const mask = document.createElement('canvas');
     mask.width = w;
     mask.height = h;
-    const mCtx = mask.getContext('2d');
+    const mCtx = mask.getContext('2d', { willReadFrequently: true });
     if (!mCtx) return Promise.resolve(null);
     mCtx.fillStyle = '#000000';
     mCtx.fillRect(0, 0, w, h);
     const src = mCtx.getImageData(0, 0, w, h);
-    const overlayCtx = overlay.getContext('2d');
+    const overlayCtx = overlay.getContext('2d', { willReadFrequently: true });
     if (!overlayCtx) return Promise.resolve(null);
     const ov = overlayCtx.getImageData(0, 0, w, h);
     for (let i = 0; i < ov.data.length; i += 4) {
@@ -333,7 +333,7 @@ export function PaintCanvas({
     const out = document.createElement('canvas');
     out.width = w;
     out.height = h;
-    const ctx = out.getContext('2d');
+    const ctx = out.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
     ctx.drawImage(base, 0, 0);
     ctx.drawImage(overlay, 0, 0);

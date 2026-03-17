@@ -2382,6 +2382,7 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 	defer body.Close()
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // required for canvas drawImage when frontend loads image cross-origin (e.g. Add Elements)
 	io.Copy(w, body)
 }
 

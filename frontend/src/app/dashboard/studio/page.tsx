@@ -153,12 +153,12 @@ export default function StudioPage() {
   );
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle" ref={contextRef}>
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle" ref={contextRef} style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
       <div>
         {listError && (
           <div className="mb-4 rounded-lg border border-theme-danger/50 bg-theme-danger-muted px-4 py-3 text-theme-danger text-sm flex items-center justify-between gap-2">
             <span>{listError}</span>
-            <button type="button" onClick={() => setListError(null)} className="p-1 rounded hover:bg-theme-danger/20">×</button>
+            <button type="button" onClick={() => setListError(null)} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-theme-danger/20 touch-manipulation">×</button>
           </div>
         )}
         <div className="flex items-center justify-between gap-3 mb-4 md:mb-6">
@@ -191,13 +191,13 @@ export default function StudioPage() {
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleRename()}
-                        className="flex-1 px-3 py-2 rounded-lg border border-theme-border bg-theme-bg text-theme-fg"
+                        className="flex-1 min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg text-theme-fg"
                         autoFocus
                       />
-                      <button type="button" onClick={handleRename} className="px-3 py-2 rounded-lg bg-theme-accent-muted text-theme-accent text-sm">
+                      <button type="button" onClick={handleRename} className="min-h-[44px] px-3 py-2 rounded-lg bg-theme-accent-muted text-theme-accent text-sm touch-manipulation">
                         Save
                       </button>
-                      <button type="button" onClick={() => { setEditingProject(null); setEditName(''); setNameError(''); }} className="px-3 py-2 rounded-lg text-theme-fg-subtle text-sm">
+                      <button type="button" onClick={() => { setEditingProject(null); setEditName(''); setNameError(''); }} className="min-h-[44px] px-3 py-2 rounded-lg text-theme-fg-subtle text-sm touch-manipulation">
                         Cancel
                       </button>
                     </div>
@@ -205,7 +205,7 @@ export default function StudioPage() {
                     <Link
                       href={`/dashboard/studio/${p.id}`}
                       onContextMenu={(e) => openContextMenu(e, p)}
-                      className="block p-4 rounded-xl border border-theme-border bg-theme-bg-subtle hover:bg-theme-bg-hover hover:border-theme-border-hover transition-colors"
+                      className="block p-4 rounded-xl border border-theme-border bg-theme-bg-subtle hover:bg-theme-bg-hover hover:border-theme-border-hover transition-colors touch-manipulation min-h-[60px]"
                     >
                       <p className="font-medium text-theme-fg truncate">{p.name || t(locale, 'studio.untitled')}</p>
                       <p className="text-xs text-theme-fg-subtle mt-1">
@@ -240,7 +240,7 @@ export default function StudioPage() {
                 setEditName(contextMenu.project.name || '');
                 setContextMenu(null);
               }}
-              className="w-full px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover"
+              className="w-full min-h-[44px] px-4 py-2 text-left text-sm text-theme-fg hover:bg-theme-bg-hover touch-manipulation"
             >
               {t(locale, 'studio.rename')}
             </button>
@@ -250,7 +250,7 @@ export default function StudioPage() {
                 setPendingDelete(contextMenu.project);
                 setContextMenu(null);
               }}
-              className="w-full px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted"
+              className="w-full min-h-[44px] px-4 py-2 text-left text-sm text-theme-danger hover:bg-theme-danger-muted touch-manipulation"
             >
               {t(locale, 'studio.delete')}
             </button>

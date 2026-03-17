@@ -275,19 +275,21 @@ export default function StartPage() {
                 <h2 className="font-display text-lg font-bold text-white mb-2">{t(locale, 'start.confirmEmailTitle')}</h2>
                 <p className="text-sm text-theme-fg-muted mb-4">{t(locale, 'start.confirmEmailBody')}</p>
                 <p className="text-xs font-medium uppercase tracking-wider text-theme-fg-subtle mb-6">{email}</p>
-                <motion.button
-                  type="button"
-                  onClick={() => { setStep('email'); setError(''); }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="w-full rounded-xl border border-theme-border bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
-                >
-                  {t(locale, 'start.another')}
-                </motion.button>
+                <div className="flex flex-col gap-3 w-full">
+                  <motion.button
+                    type="button"
+                    onClick={() => { setStep('email'); setError(''); }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full rounded-xl bg-theme-accent border border-transparent py-3 px-4 text-sm font-semibold text-theme-accent-fg hover:opacity-90 transition-opacity capitalize"
+                  >
+                    {t(locale, 'login.title')}
+                  </motion.button>
+                  <button type="button" onClick={() => { setStep('email'); setError(''); }} className="text-sm text-theme-fg-muted hover:text-theme-fg transition-colors">
+                    {t(locale, 'start.another')}
+                  </button>
+                </div>
               </div>
-              <p className="mt-6 text-center text-sm text-theme-fg-subtle">
-                <Link href="/" className="text-theme-fg-muted hover:text-theme-fg transition-colors">← {t(locale, 'start.back')}</Link>
-              </p>
             </motion.div>
           )}
 
@@ -307,32 +309,32 @@ export default function StartPage() {
                 <p className="mb-1 text-xs font-medium uppercase tracking-wider text-theme-fg-subtle">{email}</p>
                 <h2 className="font-display text-lg font-bold text-theme-fg mb-1">{t(locale, 'start.emailNotExists')}</h2>
                 <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'start.createAccountQuestion')}</p>
-                <div className="flex w-full gap-3">
-                  <motion.button
-                    type="button"
-                    onClick={handleCreateAccountClick}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="flex-1 rounded-xl border border-theme-border bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
-                  >
-                    {t(locale, 'start.create')}
-                  </motion.button>
-                  <motion.button
-                    type="button"
-                    onClick={() => setStep('email')}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="flex-1 rounded-xl border border-theme-border bg-transparent py-3 px-4 text-sm font-semibold text-theme-fg hover:bg-theme-bg-hover transition-colors"
-                  >
-                    {t(locale, 'start.cancel')}
-                  </motion.button>
+                <div className="flex flex-col gap-3 w-full">
+                  <div className="flex w-full gap-3">
+                    <motion.button
+                      type="button"
+                      onClick={handleCreateAccountClick}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="flex-1 rounded-xl border border-theme-border bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors"
+                    >
+                      {t(locale, 'start.create')}
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={() => { setStep('email'); setError(''); }}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="flex-1 rounded-xl bg-theme-accent border border-transparent py-3 px-4 text-sm font-semibold text-theme-accent-fg hover:opacity-90 transition-opacity capitalize"
+                    >
+                      {t(locale, 'login.title')}
+                    </motion.button>
+                  </div>
+                  <button type="button" onClick={() => { setStep('email'); setError(''); }} className="text-sm text-theme-fg-muted hover:text-theme-fg transition-colors">
+                    {t(locale, 'start.another')}
+                  </button>
                 </div>
               </div>
-              <p className="mt-6 text-center text-sm text-theme-fg-subtle">
-                <button type="button" onClick={() => setStep('email')} className="text-theme-fg-muted hover:text-theme-fg transition-colors">
-                  ← {t(locale, 'start.back')}
-                </button>
-              </p>
             </motion.div>
           )}
 
