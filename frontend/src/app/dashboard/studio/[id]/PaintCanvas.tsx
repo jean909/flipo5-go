@@ -87,11 +87,11 @@ export function PaintCanvas({
     const isExternal = imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
     let load: Promise<void>;
     if (isOurMediaProxy) {
-      // No credentials: token is in URL; credentials + CORS * would be rejected by browser
-      load = fetch(imageUrl)
+      // Token in URL; if fetch fails (e.g. CORS), fallback to download via API with Auth header
+      load = fetch(imageUrl, { mode: 'cors' })
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))
         .then(setBlob)
-        .catch(fail);
+        .catch(() => downloadMediaUrl(imageUrl).then(setBlob).catch(fail));
     } else if (isExternal) {
       load = fetch(imageUrl, { credentials: 'include' })
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('Fetch failed'))))

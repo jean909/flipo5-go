@@ -1026,7 +1026,8 @@ export default function StudioProjectPage() {
                           }}
                           onRemove={(id) => setLogoOverlays((prev) => prev.filter((o) => o.id !== id))}
                           onApplyElement={async (canvas, id) => {
-                            if (!selectedItem) return;
+                            if (!selectedItem || !id) return;
+                            const itemId = selectedItem.id;
                             setLogoApplying(true);
                             setError(null);
                             try {
@@ -1034,11 +1035,15 @@ export default function StudioProjectPage() {
                                 canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png');
                               });
                               const file = new File([blob], 'with-element.png', { type: 'image/png' });
-                              await uploadProjectVersion(selectedItem.id, file);
-                              await fetchProject();
-                              const { versions } = await listProjectVersions(selectedItem.id);
-                              setItemVersions(versions ?? []);
-                              const maxVer = versions?.length ? Math.max(...versions.map((v) => v.version_num)) : 0;
+                              await uploadProjectVersion(itemId, file);
+                              const [r, v] = await Promise.all([getProject(id), listProjectVersions(itemId)]);
+                              const itemList = r.items ?? [];
+                              setProject(r.project ?? null);
+                              setItems(itemList);
+                              setSelectedItem((prev) => (prev ? itemList.find((i) => i.id === prev.id) ?? prev : null));
+                              const versions = v.versions ?? [];
+                              setItemVersions(versions);
+                              const maxVer = versions.length ? Math.max(...versions.map((v) => v.version_num)) : 0;
                               setViewingVersionNum(maxVer);
                               setLogoOverlays((prev) => prev.filter((o) => o.id !== id));
                             } catch (e) {
@@ -1048,7 +1053,8 @@ export default function StudioProjectPage() {
                             }
                           }}
                           onApply={async (canvas) => {
-                            if (!selectedItem) return;
+                            if (!selectedItem || !id) return;
+                            const itemId = selectedItem.id;
                             setLogoApplying(true);
                             setError(null);
                             try {
@@ -1056,10 +1062,16 @@ export default function StudioProjectPage() {
                                 canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png');
                               });
                               const file = new File([blob], 'with-logo.png', { type: 'image/png' });
-                              await uploadProjectVersion(selectedItem.id, file);
-                              await fetchProject();
-                              const { versions } = await listProjectVersions(selectedItem.id);
-                              setItemVersions(versions ?? []);
+                              await uploadProjectVersion(itemId, file);
+                              const [r, v] = await Promise.all([getProject(id), listProjectVersions(itemId)]);
+                              const itemList = r.items ?? [];
+                              setProject(r.project ?? null);
+                              setItems(itemList);
+                              setSelectedItem((prev) => (prev ? itemList.find((i) => i.id === prev.id) ?? prev : null));
+                              setItemVersions(v.versions ?? []);
+                              const versions = v.versions ?? [];
+                              const maxVer = versions.length ? Math.max(...versions.map((x) => x.version_num)) : 0;
+                              setViewingVersionNum(maxVer);
                               setEditorTool(null);
                               setLogoOverlays([]);
                             } catch (e) {
@@ -1082,6 +1094,8 @@ export default function StudioProjectPage() {
                           highlightOpacity={highlightOpacity}
                           contentSize={imageBoxSize ?? undefined}
                           onApply={async (canvas) => {
+                      if (!selectedItem || !id) return;
+                      const itemId = selectedItem.id;
                       setPaintApplying(true);
                       setError(null);
                       try {
@@ -1089,10 +1103,16 @@ export default function StudioProjectPage() {
                           canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png');
                         });
                         const file = new File([blob], 'paint.png', { type: 'image/png' });
-                        await uploadProjectVersion(selectedItem.id, file);
-                        await fetchProject();
-                        const { versions } = await listProjectVersions(selectedItem.id);
-                        setItemVersions(versions ?? []);
+                        await uploadProjectVersion(itemId, file);
+                        const [r, v] = await Promise.all([getProject(id), listProjectVersions(itemId)]);
+                        const itemList = r.items ?? [];
+                        setProject(r.project ?? null);
+                        setItems(itemList);
+                        setSelectedItem((prev) => (prev ? itemList.find((i) => i.id === prev.id) ?? prev : null));
+                        setItemVersions(v.versions ?? []);
+                        const versions = v.versions ?? [];
+                        const maxVer = versions.length ? Math.max(...versions.map((x) => x.version_num)) : 0;
+                        setViewingVersionNum(maxVer);
                         setEditorTool(null);
                         setBrushEditForInpaint(false);
                       } catch (e) {

@@ -2307,6 +2307,7 @@ func (s *Server) adminListJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*") // so frontend can use response when loading image for canvas (clone/colorize/highlight)
 	urlStr := strings.TrimSpace(r.URL.Query().Get("url"))
 	if urlStr == "" {
 		http.Error(w, `{"error":"url required"}`, http.StatusBadRequest)
