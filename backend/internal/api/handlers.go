@@ -2354,6 +2354,7 @@ func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
 
 // serveMedia streams a file from storage by key. Used when public URL is not available (e.g. relative key).
 func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*") // always set so browser doesn't hide real error (401/404) behind CORS)
 	userID, ok := middleware.UserID(r.Context())
 	if !ok {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -2382,7 +2383,6 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 	defer body.Close()
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.Header().Set("Access-Control-Allow-Origin", "*") // required for canvas drawImage when frontend loads image cross-origin (e.g. Add Elements)
 	io.Copy(w, body)
 }
 
