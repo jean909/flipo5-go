@@ -70,41 +70,6 @@ export default function DashboardPage() {
   const [lastSentPrompt, setLastSentPrompt] = useState<string>('');
   const [pendingUserMessage, setPendingUserMessage] = useState<string>('');
   const [pendingUserMessageThreadId, setPendingUserMessageThreadId] = useState<string | null>(null);
-  // localStorage key for submitted requests (prevent refresh re-submission)
-  const SUBMITTED_REQUESTS_KEY = 'flipo5_submitted_requests';
-  
-  // Load submitted requests from localStorage
-  const getSubmittedRequests = (): Set<string> => {
-    if (typeof window === 'undefined') return new Set();
-    try {
-      const stored = localStorage.getItem(SUBMITTED_REQUESTS_KEY);
-      if (!stored) return new Set();
-      const data: { key: string; timestamp: number }[] = JSON.parse(stored);
-      const now = Date.now();
-      const hourAgo = now - 60 * 60 * 1000; // 1 hour
-      // Keep only recent submissions
-      const recent = data.filter(item => item.timestamp > hourAgo);
-      if (recent.length !== data.length) {
-        localStorage.setItem(SUBMITTED_REQUESTS_KEY, JSON.stringify(recent));
-      }
-      return new Set(recent.map(item => item.key));
-    } catch {
-      return new Set();
-    }
-  };
-  
-  // Save submitted request to localStorage
-  const saveSubmittedRequest = (key: string) => {
-    if (typeof window === 'undefined') return;
-    try {
-      const stored = localStorage.getItem(SUBMITTED_REQUESTS_KEY);
-      const existing: { key: string; timestamp: number }[] = stored ? JSON.parse(stored) : [];
-      const updated = [...existing.filter(item => item.key !== key), { key, timestamp: Date.now() }];
-      localStorage.setItem(SUBMITTED_REQUESTS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
-  
-  const [submittedRequests, setSubmittedRequests] = useState<Set<string>>(getSubmittedRequests());
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const m = window.matchMedia('(max-width: 768px)');
@@ -139,7 +104,6 @@ export default function DashboardPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [showIncognitoMediaDialog, setShowIncognitoMediaDialog] = useState(false);
-  const [showDuplicateRequestDialog, setShowDuplicateRequestDialog] = useState(false);
   const [showPromptBuilder, setShowPromptBuilder] = useState(false);
   const pendingNormalSessionSubmit = useRef(false);
 
@@ -404,6 +368,59 @@ export default function DashboardPage() {
     }
   }, [effectiveThreadId]);
 
+  // Regenerate image: re-run same prompt as new image job
+  const handleRegenerateImage = useCallback(async (oldJobId: string, prompt: string, jobThreadId: string | null) => {
+    const tid = jobThreadId ?? effectiveThreadId;
+    try {
+      const res = await createImage({
+        prompt: prompt || ' ',
+        threadId: tid ?? undefined,
+        incognito,
+        size: imageSettings.size,
+        aspectRatio: imageSettings.aspectRatio,
+        maxImages: 4,
+      });
+      setReplaceMap((prev) => ({ ...prev, [oldJobId]: res.job_id }));
+      setJobId(res.job_id);
+      setPendingJobThreadId(res.thread_id ?? tid ?? null);
+      setPendingJobType('image');
+      if (res.thread_id && !tid) {
+        setThreadId(res.thread_id);
+        setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
+      }
+      if (tid) setTimeout(() => refreshThread(), 400);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    }
+  }, [effectiveThreadId, incognito, imageSettings.size, imageSettings.aspectRatio, refreshThread]);
+
+  // Regenerate video: re-run same prompt as new video job
+  const handleRegenerateVideo = useCallback(async (oldJobId: string, prompt: string, jobThreadId: string | null) => {
+    const tid = jobThreadId ?? effectiveThreadId;
+    try {
+      const res = await createVideo({
+        prompt: prompt || ' ',
+        threadId: tid ?? undefined,
+        incognito,
+        videoModel,
+        duration: videoSettings.duration,
+        aspectRatio: videoSettings.aspectRatio,
+        resolution: videoSettings.resolution,
+      });
+      setReplaceMap((prev) => ({ ...prev, [oldJobId]: res.job_id }));
+      setJobId(res.job_id);
+      setPendingJobThreadId(res.thread_id ?? tid ?? null);
+      setPendingJobType('video');
+      if (res.thread_id && !tid) {
+        setThreadId(res.thread_id);
+        setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
+      }
+      if (tid) setTimeout(() => refreshThread(), 400);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    }
+  }, [effectiveThreadId, incognito, videoModel, videoSettings.duration, videoSettings.aspectRatio, videoSettings.resolution, refreshThread]);
+
   // Apply ref URLs from session (e.g. "Start new chat with this" from another page)
   useEffect(() => {
     const raw = typeof window !== 'undefined' ? sessionStorage.getItem('flipo5_ref_urls') : null;
@@ -485,7 +502,7 @@ export default function DashboardPage() {
     const trimmed = prompt.trim();
     if (!trimmed && attachments.length === 0) return;
     
-    // Prevent duplicate submissions: create unique request key based on content
+    // Allow re-running the same prompt; no duplicate submission block
     const requestKey = `${mode}-${trimmed}-${JSON.stringify({
       attachments: attachments.map(a => a.file.name),
       imageSettings: mode === 'image' ? imageSettings : undefined,
@@ -496,13 +513,8 @@ export default function DashboardPage() {
       startImageFile: startImageFile?.name,
       endImageFile: endImageFile?.name,
     })}`;
-    
-    if (submittedRequests.has(requestKey)) {
-      setShowDuplicateRequestDialog(true);
-      return;
-    }
 
-    // Prevent same video request re-submit after hard refresh (only block identical request, not any video)
+    // Prevent same video request re-submit only after hard refresh within 90s (avoid double-click)
     if (mode === 'video' && typeof window !== 'undefined') {
       try {
         const raw = sessionStorage.getItem('flipo5_video_pending');
@@ -513,10 +525,7 @@ export default function DashboardPage() {
         }
       } catch { sessionStorage.removeItem('flipo5_video_pending'); }
     }
-    
-    setSubmittedRequests(prev => new Set(prev).add(requestKey));
-    saveSubmittedRequest(requestKey);
-    
+
     const useNormalSession = pendingNormalSessionSubmit.current;
     if (useNormalSession) pendingNormalSessionSubmit.current = false;
     if (!useNormalSession && incognito && (mode === 'image' || mode === 'video')) {
@@ -662,14 +671,6 @@ export default function DashboardPage() {
         setTimeout(refreshThread, 400);
         setTimeout(refreshThread, 2000);
       }
-      // Clear request key after successful submission
-      setTimeout(() => {
-        setSubmittedRequests(prev => {
-          const next = new Set(prev);
-          next.delete(requestKey);
-          return next;
-        });
-      }, 5000); // Clear after 5s to allow legitimate re-submission
     }
     setHasStarted(true);
     setPrompt('');
@@ -682,12 +683,6 @@ export default function DashboardPage() {
       setPendingUserMessage('');
       setPendingUserMessageThreadId(null);
       setError(err instanceof Error ? err.message : t(locale, 'error.generic'));
-      // Remove failed request key to allow retry
-      setSubmittedRequests(prev => {
-        const next = new Set(prev);
-        next.delete(requestKey);
-        return next;
-      });
     } finally {
       setLoading(false);
     }
@@ -1053,17 +1048,6 @@ export default function DashboardPage() {
           formRef.current?.requestSubmit();
         }}
         onCancel={() => setShowIncognitoMediaDialog(false)}
-      />
-      <ConfirmDialog
-        open={showDuplicateRequestDialog}
-        title={t(locale, 'dashboard.duplicateRequest.title')}
-        message={t(locale, 'dashboard.duplicateRequest.message')}
-        confirmLabel={t(locale, 'dialog.ok')}
-        cancelLabel={t(locale, 'dialog.cancel')}
-        alert
-        confirmClass="bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong"
-        onConfirm={() => setShowDuplicateRequestDialog(false)}
-        onCancel={() => setShowDuplicateRequestDialog(false)}
       />
       <PromptBuilderDialog
         open={showPromptBuilder}
@@ -1533,9 +1517,15 @@ export default function DashboardPage() {
                     onNotFound={job.id === jobId ? () => { if (pendingJobType === 'video' && typeof window !== 'undefined') sessionStorage.removeItem('flipo5_video_pending'); setJobId(null); setPendingJobThreadId(null); } : undefined}
                     onUseAsReference={addReferenceImage}
                     regenerateUsed={isRegeneratedSlot}
-                    onRegenerate={job.type === 'chat' && isLastReply && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
-                      ? () => handleRegenerate(job.id, promptForRegenerate)
-                      : undefined}
+                    onRegenerate={
+                      job.type === 'chat' && isLastReply && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
+                        ? () => handleRegenerate(job.id, promptForRegenerate)
+                        : job.type === 'image' && promptForRegenerate
+                          ? () => handleRegenerateImage(job.id, promptForRegenerate, job.thread_id ?? null)
+                          : job.type === 'video' && promptForRegenerate
+                            ? () => handleRegenerateVideo(job.id, promptForRegenerate, job.thread_id ?? null)
+                            : undefined
+                    }
                     onRetry={(oldId, newId) => setReplaceMap((prev) => ({ ...prev, [oldId]: newId }))}
                     onCancel={undefined}
                     onStartThreadFromText={handleStartThreadFromText}

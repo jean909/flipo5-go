@@ -433,6 +433,8 @@ export const JobCard = React.memo(function JobCard({
             initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
             mediaUrls={urls}
             threadId={job.thread_id ?? null}
+            showRegenerate={!!(job.input as { prompt?: string })?.prompt}
+            onRegenerate={onRegenerate}
             locale={locale}
           />
         </div>
@@ -517,6 +519,8 @@ export const JobCard = React.memo(function JobCard({
               initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
               mediaUrls={[videoUrl]}
               threadId={job.thread_id ?? null}
+              showRegenerate={!!(job.input as { prompt?: string })?.prompt}
+              onRegenerate={onRegenerate}
               locale={locale}
             />
           </div>

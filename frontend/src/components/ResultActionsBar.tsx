@@ -98,20 +98,20 @@ export function ResultActionsBar({
   };
 
   const hasMedia = mediaUrls.length > 0;
-  const canRegenerate = showRegenerate && !regenerateUsed && text.length > 0 && onRegenerate;
+  const canRegenerate = !!onRegenerate && (jobType === 'chat' ? (showRegenerate && !regenerateUsed && text.length > 0) : showRegenerate);
   /** Start subject only for chat when there is message text; not for image/video */
   const showStartSubject = jobType === 'chat' && onStartThreadFromText && text.trim().length > 0;
 
   return (
     <div className="flex items-center gap-1 mt-2 text-theme-fg-muted" role="toolbar" aria-label={t(locale, 'feedback.actions')}>
-      {canRegenerate && (
-        <button type="button" onClick={onRegenerate} className={btnCls} title={t(locale, 'feedback.regenerate')} aria-label={t(locale, 'feedback.regenerate')}>
-          <RegenerateIcon className={iconCls} />
-        </button>
-      )}
       {hasMedia && (
         <button type="button" onClick={handleDownload} disabled={downloading} className={btnCls} title={t(locale, 'feedback.download')} aria-label={t(locale, 'feedback.download')}>
           <DownloadIcon className={iconCls} />
+        </button>
+      )}
+      {canRegenerate && (
+        <button type="button" onClick={onRegenerate} className={btnCls} title={t(locale, 'feedback.regenerate')} aria-label={t(locale, 'feedback.regenerate')}>
+          <RegenerateIcon className={iconCls} />
         </button>
       )}
       {showStartSubject && (
