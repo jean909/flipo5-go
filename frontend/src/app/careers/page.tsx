@@ -5,6 +5,8 @@ import { motion } from 'framer-motion';
 import { Header } from '../components/Header';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
+import { Card } from '@/components/ui/Card';
+import { buttonClassName } from '@/components/ui/Button';
 
 const CAREERS_EMAIL = 'info@flipo5.com';
 
@@ -101,8 +103,9 @@ export default function CareersPage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.4, delay: i * 0.08 }}
-                  className="group relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden hover:border-white/20 hover:bg-white/[0.07] transition-all duration-300"
+                  className="group relative"
                 >
+                  <Card className="relative rounded-2xl border-white/10 bg-white/5 overflow-hidden hover:border-white/20 hover:bg-white/[0.07] transition-all duration-300 h-full">
                   <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`} />
                   <div className="relative p-6 sm:p-7 flex flex-col h-full">
                     <span className="inline-flex items-center gap-1.5 text-neutral-500 text-xs font-medium mb-3">
@@ -117,7 +120,10 @@ export default function CareersPage() {
                     </p>
                     <a
                       href={`mailto:${CAREERS_EMAIL}?subject=${encodeURIComponent(t(locale, `careers.position.${id}.title`))}`}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10 hover:border-white/35 transition-colors"
+                      className={buttonClassName({
+                        variant: 'secondary',
+                        className: 'inline-flex justify-center gap-2 min-h-[44px] border-white/25 bg-white/5 px-4 py-3 text-white hover:bg-white/10 hover:border-white/35',
+                      })}
                     >
                       {t(locale, 'careers.apply')}
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,6 +131,7 @@ export default function CareersPage() {
                       </svg>
                     </a>
                   </div>
+                  </Card>
                 </motion.article>
               ))}
             </div>
@@ -137,8 +144,9 @@ export default function CareersPage() {
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="max-w-3xl mx-auto rounded-2xl sm:rounded-3xl border border-white/15 bg-white/5 p-8 sm:p-10 text-center"
+            className="max-w-3xl mx-auto"
           >
+            <Card className="rounded-2xl sm:rounded-3xl border-white/15 bg-white/5 p-8 sm:p-10 text-center">
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-2">
               {t(locale, 'careers.contactTitle')}
             </h2>
@@ -147,11 +155,15 @@ export default function CareersPage() {
             </p>
             <a
               href={`mailto:${CAREERS_EMAIL}`}
-              className="inline-flex items-center gap-2 rounded-xl bg-white text-black font-semibold px-6 py-3.5 hover:bg-neutral-200 transition-colors"
+              className={buttonClassName({
+                variant: 'primary',
+                className: 'inline-flex items-center gap-2 min-h-[44px] rounded-xl px-6 py-3.5 font-semibold',
+              })}
             >
               <MailIcon className="w-5 h-5" />
               {CAREERS_EMAIL}
             </a>
+            </Card>
           </motion.div>
         </section>
 

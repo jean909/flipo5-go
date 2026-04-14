@@ -7,6 +7,7 @@ import { listContent, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../components/ImageViewModal';
+import { buttonClassName } from '@/components/ui/Button';
 
 type MediaItem = Job & { mediaUrls: string[] };
 
@@ -21,6 +22,19 @@ export default function CollectionsContent() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState<{ urls: string[]; type: string } | null>(null);
+
+  const handleDeleteFromModal = useCallback((targetUrl: string) => {
+    setItems((prev) =>
+      prev
+        .map((item) => ({ ...item, mediaUrls: item.mediaUrls.filter((u) => u !== targetUrl) }))
+        .filter((item) => item.mediaUrls.length > 0)
+    );
+    setViewing((prev) => {
+      if (!prev) return prev;
+      const nextUrls = prev.urls.filter((u) => u !== targetUrl);
+      return nextUrls.length > 0 ? { ...prev, urls: nextUrls } : null;
+    });
+  }, []);
 
   const fetchAll = useCallback(() => {
     setLoading(true);
@@ -55,7 +69,10 @@ export default function CollectionsContent() {
       <div className="shrink-0 flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-theme-border-subtle">
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-sm text-theme-fg-muted hover:text-theme-fg transition-colors"
+          className={buttonClassName({
+            variant: 'ghost',
+            className: 'inline-flex items-center gap-1.5 min-h-[36px] px-0 py-0 text-sm text-theme-fg-muted hover:text-theme-fg hover:bg-transparent',
+          })}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -79,7 +96,10 @@ export default function CollectionsContent() {
             <p className="text-theme-fg-muted">{t(locale, 'content.empty')}</p>
             <Link
               href="/dashboard"
-              className="btn-tap inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium"
+              className={buttonClassName({
+                variant: 'secondary',
+                className: 'btn-tap inline-flex items-center gap-2 min-h-[44px] px-4 py-2.5',
+              })}
             >
               {t(locale, 'content.emptyCta')}
             </Link>
@@ -143,6 +163,7 @@ export default function CollectionsContent() {
         <ImageViewModal
           url={viewing.urls[0]}
           urls={viewing.urls}
+          onDelete={handleDeleteFromModal}
           onClose={() => setViewing(null)}
           locale={locale}
         />

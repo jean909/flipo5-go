@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getAdminUser } from '@/lib/api';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 
 export default function AdminUserDetailPage() {
   const params = useParams();
@@ -35,7 +37,7 @@ export default function AdminUserDetailPage() {
   return (
     <div>
       <Link href="/admin/users" className="text-theme-accent hover:underline mb-4 inline-block">Back to Users</Link>
-      <div className="rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="p-6 border-b border-theme-border">
           <h1 className="text-xl font-semibold text-theme-fg">{user.email}</h1>
           <p className="text-theme-fg-muted mt-1">{user.full_name || 'No name'}</p>
@@ -43,7 +45,7 @@ export default function AdminUserDetailPage() {
             <span><strong className="text-theme-fg">Jobs:</strong> {job_count}</span>
             <span><strong className="text-theme-fg">Threads:</strong> {thread_count}</span>
             {user.plan && <span><strong className="text-theme-fg">Plan:</strong> {user.plan}</span>}
-            {user.is_admin && <span className="text-theme-accent">Admin</span>}
+            {user.is_admin && <Badge variant="accent" className="px-2 py-0.5 text-xs">Admin</Badge>}
           </div>
           <p className="text-theme-fg-muted text-xs mt-2">
             Created {user.created_at ? new Date(user.created_at).toLocaleString() : '—'}
@@ -57,7 +59,7 @@ export default function AdminUserDetailPage() {
             View this user jobs
           </Link>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

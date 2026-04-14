@@ -16,11 +16,12 @@ interface ImageViewModalProps {
   urls?: string[];
   /** When URLs need a proxy to display, pass raw URLs here for download. Same order as urls. */
   downloadUrls?: string[];
+  onDelete?: (url: string) => void | Promise<void>;
   onClose: () => void;
   locale?: Locale;
 }
 
-export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en' }: ImageViewModalProps) {
+export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, locale = 'en' }: ImageViewModalProps) {
   const router = useRouter();
   const list = urls && urls.length > 1 ? urls : [url];
   const [idx, setIdx] = useState(() => Math.max(0, list.indexOf(url)));
@@ -31,9 +32,12 @@ export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en'
   const hasPrev = safeIdx > 0;
   const hasNext = safeIdx < list.length - 1;
   const [editLoading, setEditLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
-    if (urls?.length) setIdx(urls.indexOf(url));
+    if (!urls?.length) return;
+    const next = urls.indexOf(url);
+    setIdx(next >= 0 ? next : 0);
   }, [url, urls]);
 
   useEffect(() => {
@@ -117,6 +121,16 @@ export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en'
     }
   }, [downloadUrl, isVideo, onClose, router, editLoading]);
 
+  const handleDelete = useCallback(async () => {
+    if (!onDelete || deleteLoading) return;
+    setDeleteLoading(true);
+    try {
+      await onDelete(currentUrl);
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [onDelete, currentUrl, deleteLoading]);
+
   return (
     <div
       role="dialog"
@@ -141,6 +155,18 @@ export function ImageViewModal({ url, urls, downloadUrls, onClose, locale = 'en'
             <XIcon className="w-5 h-5" />
           </button>
           <div className="flex flex-wrap items-center gap-2">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                className="min-h-[44px] min-w-[44px] rounded-full bg-theme-danger-muted text-theme-danger hover:bg-theme-danger-muted/80 transition-colors flex items-center justify-center disabled:opacity-60 touch-manipulation"
+                aria-label="Delete"
+                title="Delete"
+              >
+                <TrashIcon className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={handleEditInStudio}
@@ -241,6 +267,14 @@ function EditIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673A2.25 2.25 0 0 1 15.916 21.75H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0V4.875c0-1.035-.84-1.875-1.875-1.875h-3.75c-1.035 0-1.875.84-1.875 1.875v.518" />
     </svg>
   );
 }

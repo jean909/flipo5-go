@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
+import { Card } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -49,12 +52,11 @@ export default function SetPasswordPage() {
     }
   }
 
-  const inputCls = 'w-full px-4 py-3 min-h-[48px] rounded-xl bg-theme-bg-elevated border border-theme-border-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-border focus:border-theme-border transition-all';
   const labelCls = 'block text-xs font-medium text-theme-fg-subtle uppercase tracking-wider mb-2';
 
   return (
     <div className="min-h-screen bg-theme-bg text-theme-fg flex flex-col items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-theme-border-subtle bg-theme-bg-subtle p-6 sm:p-8">
+      <Card className="w-full max-w-md rounded-2xl border-theme-border-subtle p-6 sm:p-8">
         <h1 className="font-display text-xl font-bold text-theme-fg mb-1">{t(locale, 'auth.setNewPassword')}</h1>
         <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'auth.setNewPasswordDesc')}</p>
         {done ? (
@@ -63,35 +65,35 @@ export default function SetPasswordPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className={labelCls}>{t(locale, 'start.password')}</label>
-              <input
+              <Input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t(locale, 'start.passwordPlaceholder')}
-                className={inputCls}
+                className="min-h-[48px] rounded-xl bg-theme-bg-elevated border-theme-border-subtle px-4 py-3"
                 required
                 autoComplete="new-password"
               />
             </div>
             <div>
               <label className={labelCls}>{t(locale, 'start.confirmPassword')}</label>
-              <input
+              <Input
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder={t(locale, 'start.passwordPlaceholder')}
-                className={inputCls}
+                className="min-h-[48px] rounded-xl bg-theme-bg-elevated border-theme-border-subtle px-4 py-3"
                 required
                 autoComplete="new-password"
               />
             </div>
             {error && <p className="text-sm text-theme-danger">{error}</p>}
-            <button type="submit" disabled={loading} className="w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 disabled:opacity-50 transition-colors">
+            <Button type="submit" disabled={loading} variant="primary" className="w-full min-h-[48px] rounded-xl px-4 py-3.5 font-semibold">
               {loading ? t(locale, 'common.loading') : t(locale, 'auth.setNewPassword')}
-            </button>
+            </Button>
           </form>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

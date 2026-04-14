@@ -2,6 +2,13 @@ import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+/** Base URL for auth redirects (links in emails). Set NEXT_PUBLIC_APP_URL in production so emails point to flipo5.com, not localhost. */
+function getAuthRedirectBase(): string {
+  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+  if (typeof window !== 'undefined') return window.location.origin;
+  return process.env.NEXT_PUBLIC_APP_URL || '';
+}
+
 /** Returns display URL for media. When url is relative (no http), uses /api/media proxy with token. Data URLs are returned as-is. */
 export function getMediaDisplayUrl(url: string | null | undefined, token: string | null): string {
   if (!url) return '';
@@ -145,10 +152,11 @@ export async function signInWithPassword(email: string, password: string): Promi
 }
 
 export async function signUpWithPassword(email: string, password: string): Promise<{ error?: string }> {
+  const base = getAuthRedirectBase();
   const { error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
-    options: { emailRedirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback` },
+    options: { emailRedirectTo: base ? `${base}/auth/callback` : undefined },
   });
   return { error: error?.message };
 }
@@ -197,18 +205,19 @@ export async function updateSettings(settings: {
 
 /** Magic link – e.g. for login from different IP / recovery. */
 export async function signInWithMagicLink(email: string): Promise<{ error?: string }> {
+  const base = getAuthRedirectBase();
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    options: { emailRedirectTo: base ? `${base}/auth/callback` : undefined },
   });
   return { error: error?.message };
 }
 
 /** Send password reset email. User clicks link and lands on /auth/callback then /auth/set-password. */
 export async function resetPasswordForEmail(email: string): Promise<{ error?: string }> {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const base = getAuthRedirectBase();
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: `${origin}/auth/callback`,
+    redirectTo: base ? `${base}/auth/callback` : undefined,
   });
   return { error: error?.message };
 }
@@ -421,6 +430,20 @@ export async function createProduct(params: { name: string; category?: string; d
     throw new Error((e as { error?: string }).error || 'Failed');
   }
   return res.json();
+}
+
+export async function updateProduct(id: string, params: { name: string; category?: string; description?: string; brand?: string }): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/products/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Failed');
+  }
 }
 
 export async function getProduct(id: string): Promise<{ product: Product; photos: ProductPhoto[]; generated_jobs: Job[]; suggested_scenes?: string[] }> {

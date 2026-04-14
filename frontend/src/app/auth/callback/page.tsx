@@ -31,19 +31,17 @@ function AuthCallbackContent() {
           router.replace('/auth/set-password');
           return;
         }
+        setStatus('ok');
+        router.replace('/dashboard');
+        syncMe().catch(() => {}); // background sync; dashboard getMe() will upsert user if needed
+        return;
       }
       const { data: { session } } = await supabase.auth.getSession();
       if (cancelled) return;
       if (session) {
-        const synced = await syncMe();
-        if (cancelled) return;
-        if (synced) {
-          setStatus('ok');
-          router.replace('/dashboard');
-        } else {
-          setStatus('error');
-          setTimeout(() => { if (!cancelled) router.replace('/dashboard'); }, 3000);
-        }
+        setStatus('ok');
+        router.replace('/dashboard');
+        syncMe().catch(() => {});
       } else {
         setStatus('error');
         router.replace('/start');

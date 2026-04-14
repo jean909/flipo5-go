@@ -8,9 +8,12 @@ import {
   getToken,
   getMediaDisplayUrl,
   createProduct,
+  updateProduct,
   listProducts,
   getProduct,
   addProductPhotos,
+  deleteProductPhoto,
+  deleteProduct,
   createProductScoreJob,
   createProductDescriptionImproveJob,
   createProductSceneImproveJob,
@@ -48,6 +51,13 @@ const SCENE_TEMPLATES = [
   { labelKey: 'productPictures.sceneGradient' as const, prompt: 'product on soft gradient background, modern and clean, professional lighting' },
 ];
 
+const CATEGORY_LABEL_BY_VALUE: Record<string, (typeof CATEGORY_OPTIONS)[number]['labelKey']> = CATEGORY_OPTIONS
+  .filter((opt) => opt.value)
+  .reduce((acc, opt) => {
+    acc[opt.value] = opt.labelKey;
+    return acc;
+  }, {} as Record<string, (typeof CATEGORY_OPTIONS)[number]['labelKey']>);
+
 function averageScore(photos: ProductPhoto[]): number | null {
   const withScore = photos.filter((p) => p.score != null);
   if (withScore.length === 0) return null;
@@ -84,6 +94,14 @@ export default function ProductPicturesContent() {
   const [sceneImproveJobId, setSceneImproveJobId] = useState<string | null>(null);
   const [sceneImproveLoading, setSceneImproveLoading] = useState(false);
   const [suggestedScenes, setSuggestedScenes] = useState<string[]>([]);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editingProductName, setEditingProductName] = useState('');
+  const [editingProductCategory, setEditingProductCategory] = useState('');
+  const [editingProductDescription, setEditingProductDescription] = useState('');
+  const [editingProductBrand, setEditingProductBrand] = useState('');
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -151,6 +169,63 @@ export default function ProductPicturesContent() {
   const handleSelectProduct = (id: string) => {
     setProductId(id);
     setStep(2);
+  };
+
+  const handleOpenEditProduct = (p: Product) => {
+    setEditingProductId(p.id);
+    setEditingProductName(p.name ?? '');
+    setEditingProductCategory(p.category ?? '');
+    setEditingProductDescription(p.description ?? '');
+    setEditingProductBrand(p.brand ?? '');
+    setError('');
+  };
+
+  const handleSaveEditProduct = async () => {
+    if (!editingProductId) return;
+    const name = editingProductName.trim();
+    if (!name) return;
+    setError('');
+    try {
+      await updateProduct(editingProductId, {
+        name,
+        category: editingProductCategory.trim() || undefined,
+        description: editingProductDescription.trim() || undefined,
+        brand: editingProductBrand.trim() || undefined,
+      });
+      setProducts((prev) => prev.map((p) => p.id === editingProductId ? {
+        ...p,
+        name,
+        category: editingProductCategory.trim() || '',
+        description: editingProductDescription.trim() || '',
+        brand: editingProductBrand.trim() || '',
+      } : p));
+      if (productId === editingProductId) {
+        loadProduct(editingProductId);
+      }
+      setEditingProductId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (deletingProductId) return;
+    setError('');
+    setDeletingProductId(id);
+    try {
+      await deleteProduct(id);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+      if (productId === id) {
+        setProductId(null);
+        setProduct(null);
+        setPhotos([]);
+        setStep(1);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setDeletingProductId(null);
+    }
   };
 
   const canShowImproveHint = productDescription.trim().length >= MIN_DESCRIPTION_LENGTH_FOR_IMPROVE;
@@ -276,6 +351,20 @@ export default function ProductPicturesContent() {
     }
   };
 
+  const handleDeletePhoto = async (photoId: string) => {
+    if (!productId || deletingPhotoId) return;
+    setError('');
+    setDeletingPhotoId(photoId);
+    try {
+      await deleteProductPhoto(productId, photoId);
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeletingPhotoId(null);
+    }
+  };
+
   const handleScore = async () => {
     if (!productId || photos.length === 0) return;
     setError('');
@@ -366,6 +455,47 @@ export default function ProductPicturesContent() {
   const avgScore = averageScore(photos);
   const canGenerate = avgScore != null && avgScore >= MIN_AVG_SCORE && photos.length > 0;
   const scoreBlocked = avgScore != null && avgScore < MIN_AVG_SCORE;
+  const productsByCategory = useMemo(() => {
+    const map = new Map<string, Product[]>();
+    products.forEach((p) => {
+      const categoryKey = (p.category ?? '').trim() || '__uncategorized__';
+      const list = map.get(categoryKey) ?? [];
+      list.push(p);
+      map.set(categoryKey, list);
+    });
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === '__uncategorized__') return 1;
+      if (b === '__uncategorized__') return -1;
+      return a.localeCompare(b);
+    });
+  }, [products]);
+  const categorySuggestions = useMemo(() => {
+    const set = new Set<string>();
+    CATEGORY_OPTIONS.forEach((opt) => {
+      if (opt.value) set.add(opt.value);
+    });
+    products.forEach((p) => {
+      const c = (p.category ?? '').trim();
+      if (c) set.add(c);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const getCategoryDisplay = useCallback((categoryKey: string) => {
+    const normalized = categoryKey.trim().toLowerCase();
+    const labelKey = CATEGORY_LABEL_BY_VALUE[normalized];
+    return labelKey ? t(locale, labelKey) : categoryKey;
+  }, [locale]);
+
+  useEffect(() => {
+    setExpandedCategories((prev) => {
+      const next: Record<string, boolean> = {};
+      productsByCategory.forEach(([key]) => {
+        next[key] = prev[key] ?? true;
+      });
+      return next;
+    });
+  }, [productsByCategory]);
 
   const previewGeneratedUrls = useMemo(() => {
     const out: string[] = [];
@@ -416,17 +546,55 @@ export default function ProductPicturesContent() {
             {products.length > 0 && (
               <div>
                 <p className="text-xs font-medium text-theme-fg-muted mb-2">{t(locale, 'productPictures.selectExisting')}</p>
-                <div className="flex flex-wrap gap-2">
-                  {products.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => handleSelectProduct(p.id)}
-                      className="btn-tap px-4 py-2 rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm font-medium hover:border-theme-border-hover hover:bg-theme-bg-hover"
-                    >
-                      {p.name}
-                    </button>
-                  ))}
+                <div className="space-y-3">
+                  {productsByCategory.map(([categoryKey, categoryProducts]) => {
+                    const open = expandedCategories[categoryKey] ?? true;
+                    const isUncategorized = categoryKey === '__uncategorized__';
+                    const title = isUncategorized ? t(locale, 'common.none') : getCategoryDisplay(categoryKey);
+                    return (
+                      <div key={categoryKey} className="rounded-xl border border-theme-border bg-theme-bg/60">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCategories((prev) => ({ ...prev, [categoryKey]: !open }))}
+                          className="w-full flex items-center justify-between px-3 py-2 text-left"
+                        >
+                          <span className="text-sm font-medium text-theme-fg">{title}</span>
+                          <span className="text-xs text-theme-fg-muted">{categoryProducts.length} {open ? '▲' : '▼'}</span>
+                        </button>
+                        {open && (
+                          <div className="px-3 pb-3 flex flex-wrap gap-2">
+                            {categoryProducts.map((p) => (
+                              <div key={p.id} className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-xl border border-theme-border bg-theme-bg">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectProduct(p.id)}
+                                  className="btn-tap px-2 py-1 rounded-lg text-theme-fg text-sm font-medium hover:bg-theme-bg-hover"
+                                  title={p.category ? `${p.name} · ${p.category}` : p.name}
+                                >
+                                  {p.name}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditProduct(p)}
+                                  className="btn-tap px-2 py-1 rounded-md text-xs border border-theme-border text-theme-fg-muted hover:text-theme-fg hover:border-theme-border-hover"
+                                >
+                                  {t(locale, 'common.edit') || 'Edit'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteProduct(p.id)}
+                                  disabled={deletingProductId === p.id}
+                                  className="btn-tap px-2 py-1 rounded-md text-xs border border-red-400/40 text-red-300 hover:bg-red-500/20 disabled:opacity-60"
+                                >
+                                  {deletingProductId === p.id ? '…' : (t(locale, 'common.delete') || 'Delete')}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -446,16 +614,22 @@ export default function ProductPicturesContent() {
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.category')}</label>
-                  <select
+                  <input
+                    type="text"
+                    list="product-category-suggestions"
                     value={productCategory}
                     onChange={(e) => setProductCategory(e.target.value)}
                     disabled={improveLoading}
+                    placeholder={t(locale, 'productPictures.categoryNone')}
                     className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
-                  >
-                    {CATEGORY_OPTIONS.map((opt) => (
-                      <option key={opt.value || 'none'} value={opt.value}>{t(locale, opt.labelKey)}</option>
+                  />
+                  <datalist id="product-category-suggestions">
+                    {categorySuggestions.map((category) => (
+                      <option key={category} value={category}>
+                        {getCategoryDisplay(category)}
+                      </option>
                     ))}
-                  </select>
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.description')}</label>
@@ -503,10 +677,53 @@ export default function ProductPicturesContent() {
           </div>
         )}
 
+        {editingProductId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditingProductId(null)}>
+            <div className="rounded-2xl border border-theme-border-hover bg-theme-bg p-5 w-full max-w-md shadow-2xl ring-1 ring-white/15 text-left" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'common.edit') || 'Edit product'}</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.productName')}</label>
+                  <input value={editingProductName} onChange={(e) => setEditingProductName(e.target.value)} className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.category')}</label>
+                  <input
+                    type="text"
+                    list="edit-product-category-suggestions"
+                    value={editingProductCategory}
+                    onChange={(e) => setEditingProductCategory(e.target.value)}
+                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
+                  />
+                  <datalist id="edit-product-category-suggestions">
+                    {categorySuggestions.map((category) => (
+                      <option key={category} value={category}>
+                        {getCategoryDisplay(category)}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.description')}</label>
+                  <textarea value={editingProductDescription} onChange={(e) => setEditingProductDescription(e.target.value)} rows={2} className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none resize-none" />
+                </div>
+                <div>
+                  <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.brand')}</label>
+                  <input value={editingProductBrand} onChange={(e) => setEditingProductBrand(e.target.value)} className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none" />
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2 justify-end">
+                <button type="button" onClick={() => setEditingProductId(null)} className="btn-tap px-3 py-2 rounded-xl border border-theme-border text-theme-fg text-sm">{t(locale, 'productPictures.cancel')}</button>
+                <button type="button" onClick={handleSaveEditProduct} disabled={!editingProductName.trim()} className="btn-tap px-4 py-2 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg text-sm font-medium disabled:opacity-50">{t(locale, 'common.save') || 'Save'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Improve description dialog */}
         {improveDialogOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !improveLoading && setImproveDialogOpen(false)}>
-            <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 w-full max-w-md shadow-xl text-left" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !improveLoading && setImproveDialogOpen(false)}>
+            <div className="rounded-2xl border border-theme-border-hover bg-theme-bg p-5 w-full max-w-md shadow-2xl ring-1 ring-white/15 text-left" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'productPictures.improveDescriptionTitle')}</h3>
               {improveLoading ? (
                 <div className="flex items-center gap-2 text-theme-fg-muted text-sm py-4">
@@ -586,6 +803,16 @@ export default function ProductPicturesContent() {
                           {ph.score}/10
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePhoto(ph.id)}
+                        disabled={deletingPhotoId === ph.id || uploading || scoreLoading || generateLoading}
+                        className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full border border-theme-border-hover bg-black/90 text-white text-sm leading-none flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 hover:bg-red-500 hover:border-red-300 hover:text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label={t(locale, 'common.remove')}
+                        title={t(locale, 'common.remove')}
+                      >
+                        {deletingPhotoId === ph.id ? '…' : '×'}
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -682,7 +909,7 @@ export default function ProductPicturesContent() {
                   <button
                     type="button"
                     onClick={handleOpenSceneImproveDialog}
-                    className="absolute right-2 bottom-2 text-xs font-medium text-theme-fg-muted hover:text-theme-fg rounded-md px-2 py-1 bg-theme-fg/5 hover:bg-theme-fg/10 transition-colors"
+                    className="absolute right-2 bottom-2 text-xs font-semibold text-white rounded-md px-2.5 py-1 bg-theme-accent/90 hover:bg-theme-accent transition-colors shadow-sm"
                   >
                     {t(locale, 'productPictures.improve')}
                   </button>
@@ -725,8 +952,8 @@ export default function ProductPicturesContent() {
 
             {/* Scene improve dialog */}
             {sceneImproveDialogOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !sceneImproveLoading && setSceneImproveDialogOpen(false)}>
-                <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-5 w-full max-w-md shadow-xl text-left" onClick={(e) => e.stopPropagation()}>
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !sceneImproveLoading && setSceneImproveDialogOpen(false)}>
+                <div className="rounded-2xl border border-theme-border-hover bg-theme-bg p-5 w-full max-w-md shadow-2xl ring-1 ring-white/15 text-left" onClick={(e) => e.stopPropagation()}>
                   <h3 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'productPictures.sceneImproveTitle')}</h3>
                   {sceneImproveLoading ? (
                     <div className="flex items-center gap-2 text-theme-fg-muted text-sm py-4">

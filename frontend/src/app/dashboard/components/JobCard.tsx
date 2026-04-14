@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,19 +53,7 @@ function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
   );
 }
 
-export const JobCard = React.memo(function JobCard({
-  jobId,
-  locale,
-  dark,
-  onNotFound,
-  onUseAsReference,
-  onRegenerate,
-  onStartThreadFromText,
-  onCancel,
-  onRetry,
-  regenerateUsed = false,
-  variant = 'card',
-}: {
+type JobCardProps = {
   jobId: string;
   locale: Locale;
   dark?: boolean;
@@ -80,7 +68,50 @@ export const JobCard = React.memo(function JobCard({
   onRetry?: (oldJobId: string, newJobId: string) => void;
   regenerateUsed?: boolean;
   variant?: 'card' | 'chat';
-}) {
+};
+
+function areEqualJobCardProps(prev: JobCardProps, next: JobCardProps): boolean {
+  return (
+    prev.jobId === next.jobId &&
+    prev.locale === next.locale &&
+    prev.dark === next.dark &&
+    prev.regenerateUsed === next.regenerateUsed &&
+    prev.variant === next.variant &&
+    // Re-render only when callback availability toggles (affects UI controls),
+    // not when function identities change due to parent re-renders.
+    Boolean(prev.onNotFound) === Boolean(next.onNotFound) &&
+    Boolean(prev.onUseAsReference) === Boolean(next.onUseAsReference) &&
+    Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
+    Boolean(prev.onStartThreadFromText) === Boolean(next.onStartThreadFromText) &&
+    Boolean(prev.onCancel) === Boolean(next.onCancel) &&
+    Boolean(prev.onRetry) === Boolean(next.onRetry)
+  );
+}
+
+function isSameJobSnapshot(prev: Job | null, next: Job): boolean {
+  if (!prev) return false;
+  return (
+    prev.id === next.id &&
+    prev.status === next.status &&
+    prev.updated_at === next.updated_at &&
+    prev.error === next.error &&
+    prev.rating === next.rating
+  );
+}
+
+function JobCardInner({
+  jobId,
+  locale,
+  dark,
+  onNotFound,
+  onUseAsReference,
+  onRegenerate,
+  onStartThreadFromText,
+  onCancel,
+  onRetry,
+  regenerateUsed = false,
+  variant = 'card',
+}: JobCardProps) {
   const [job, setJob] = useState<Job | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [retryLoading, setRetryLoading] = useState(false);
@@ -90,10 +121,16 @@ export const JobCard = React.memo(function JobCard({
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [displayLen, setDisplayLen] = useState(0); // typing animation
   const esRef = useRef<EventSource | null>(null);
+  const onNotFoundRef = useRef<typeof onNotFound>(onNotFound);
   const streamBufferRef = useRef('');
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const lastAutoScrollRef = useRef(0);
   const [retryCount, setRetryCount] = useState(0);
   const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => {
+    onNotFoundRef.current = onNotFound;
+  }, [onNotFound]);
 
   const handleCancel = async () => {
     if (cancelLoading) return;
@@ -141,10 +178,10 @@ export const JobCard = React.memo(function JobCard({
               return;
             }
             setNotFound(true);
-            onNotFound?.();
+            onNotFoundRef.current?.();
             return;
           }
-          setJob(j);
+          setJob((prev) => (isSameJobSnapshot(prev, j) ? prev : j));
           if (j.status === 'pending' || j.status === 'running') {
             setTimeout(poll, 4000); // 4s to reduce API load when multiple JobCards poll
           }
@@ -152,7 +189,7 @@ export const JobCard = React.memo(function JobCard({
     }
     poll();
     return () => { cancelled = true; };
-  }, [jobId, onNotFound, retryKey]);
+  }, [jobId, retryKey]);
 
   // Retry fetch when completed image/video job has no URLs (mirror may still be updating)
   useEffect(() => {
@@ -162,7 +199,7 @@ export const JobCard = React.memo(function JobCard({
     let cancelled = false;
     const t = setTimeout(() => {
       getJob(jobId).then((j) => {
-        if (!cancelled && j) setJob(j);
+        if (!cancelled && j) setJob((prev) => (isSameJobSnapshot(prev, j) ? prev : j));
         if (!cancelled) setRetryCount((c) => c + 1);
       });
     }, 800);
@@ -172,40 +209,34 @@ export const JobCard = React.memo(function JobCard({
     };
   }, [job?.id, job?.output, job?.status, job?.type, jobId, retryCount]);
 
-  // Buffer flush: SSE → state every 40ms for snappier chat streaming
+  // Streaming loop: flush SSE buffer + typing animation in one timer.
+  // Keeps UI smooth while reducing timer overhead.
   const isStreaming = variant === 'chat' && job && (job.status === 'pending' || job.status === 'running');
   useEffect(() => {
     if (!isStreaming) return;
     const id = setInterval(() => {
-      setStreamOutput((prev) => {
-        const buf = streamBufferRef.current;
-        return prev !== buf ? buf : prev;
+      const buf = streamBufferRef.current;
+      setStreamOutput((prev) => (prev !== buf ? buf : prev));
+      setDisplayLen((prev) => {
+        const target = buf.length;
+        if (target === 0) return 0;
+        if (prev >= target) return prev;
+        const step = Math.min(10, Math.ceil((target - prev) / 3));
+        return Math.min(prev + step, target);
       });
     }, 40);
     return () => clearInterval(id);
   }, [isStreaming]);
 
-  // Typing animation: displayLen catches up (faster step for snappier feel)
-  useEffect(() => {
-    if (streamOutput.length === 0) {
-      setDisplayLen(0);
-      return;
-    }
-    const id = setInterval(() => {
-      setDisplayLen((prev) => {
-        const target = streamOutput.length;
-        if (prev >= target) return prev;
-        const step = Math.min(10, Math.ceil((target - prev) / 3));
-        return Math.min(prev + step, target);
-      });
-    }, 30);
-    return () => clearInterval(id);
-  }, [streamOutput]);
-
   // Auto-scroll streaming bubble into view (keep latest content visible)
   useEffect(() => {
     if (streamOutput.length > 0 && streamStatus !== 'completed' && streamStatus !== 'failed' && bubbleRef.current) {
-      bubbleRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      const now = Date.now();
+      // Avoid repeated layout work on every token; 120ms throttle feels responsive.
+      if (now - lastAutoScrollRef.current >= 120) {
+        bubbleRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+        lastAutoScrollRef.current = now;
+      }
     }
   }, [displayLen, streamOutput.length, streamStatus]);
 
@@ -261,6 +292,27 @@ export const JobCard = React.memo(function JobCard({
   const isChat = variant === 'chat';
   const textCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';
   const errCls = dark ? 'text-theme-danger' : 'text-theme-danger';
+  const parsedOutput = useMemo(() => {
+    const out = (job?.output ?? null) as { output?: string | string[] } | string[] | null;
+    let outputStr = '';
+    let outputArr: string[] = [];
+    if (Array.isArray(out)) {
+      outputStr = out.filter((x): x is string => typeof x === 'string').join('');
+      outputArr = out.filter((x): x is string => typeof x === 'string' && x.startsWith('http'));
+    } else if (out && typeof out === 'object') {
+      outputStr = typeof out.output === 'string' ? out.output : '';
+      outputArr = Array.isArray(out.output) ? out.output.filter((x): x is string => typeof x === 'string' && x.startsWith('http')) : [];
+      if (!outputStr && outputArr.length > 0) outputStr = outputArr.filter((x): x is string => typeof x === 'string').join('');
+    }
+    const imageUrls = outputArr.length > 0 ? outputArr : getOutputUrls(job?.output ?? null);
+    return { outputStr, outputArr, imageUrls };
+  }, [job?.output]);
+  const { outputStr, outputArr, imageUrls } = parsedOutput;
+  const completedChatMarkdown = useMemo(() => (
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
+      {outputStr}
+    </ReactMarkdown>
+  ), [outputStr]);
 
   if (notFound) {
     return (
@@ -281,7 +333,7 @@ export const JobCard = React.memo(function JobCard({
   if (job && job.type === 'image' && (job.status === 'pending' || job.status === 'running')) {
     return (
       <div className="flex justify-start flex-col items-start gap-2">
-        <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
+        <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
           <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
             <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
             <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
@@ -300,7 +352,7 @@ export const JobCard = React.memo(function JobCard({
   if (job && job.type === 'video' && (job.status === 'pending' || job.status === 'running')) {
     return (
       <div className="flex justify-start flex-col items-start gap-2">
-        <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
+        <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
           <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
             <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
             <p className="text-sm text-theme-fg/80">{t(locale, 'video.creating')}</p>
@@ -346,7 +398,7 @@ export const JobCard = React.memo(function JobCard({
     const showCursor = streamStatus !== 'completed' && streamStatus !== 'failed';
     return (
       <div className="flex justify-start" aria-label={t(locale, 'jobs.waitingForResponse')} ref={bubbleRef}>
-        <div className="max-w-[85%] min-w-0 rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-3 flex flex-col gap-2 overflow-visible">
+        <div className="max-w-[min(85vw,680px)] min-w-0 rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-3 flex flex-col gap-2 overflow-visible">
           <div className="flex items-center gap-2 min-w-0">
             {showStream ? (
               <div className="flex-1 min-w-0 prose prose-invert prose-sm max-w-none overflow-visible break-words [&_*]:break-words">
@@ -407,19 +459,6 @@ export const JobCard = React.memo(function JobCard({
   const linkCls = dark ? 'text-theme-fg hover:underline' : 'text-theme-fg underline';
   const preCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';
 
-  const out = job.output as { output?: string | string[] } | string[] | null;
-  let outputStr = '';
-  let outputArr: string[] = [];
-  if (Array.isArray(out)) {
-    outputStr = out.filter((x): x is string => typeof x === 'string').join('');
-    outputArr = out.filter((x): x is string => typeof x === 'string' && x.startsWith('http'));
-  } else if (out && typeof out === 'object') {
-    outputStr = typeof out.output === 'string' ? out.output : '';
-    outputArr = Array.isArray(out.output) ? out.output.filter((x): x is string => typeof x === 'string' && x.startsWith('http')) : [];
-    if (!outputStr && outputArr.length > 0) outputStr = outputArr.filter((x): x is string => typeof x === 'string').join('');
-  }
-  const imageUrls = outputArr.length > 0 ? outputArr : getOutputUrls(job.output);
-
   // Image job: completed = gallery (1 large + thumbnails to swap)
   if (job && job.type === 'image' && job.status === 'completed') {
     const urls = imageUrls;
@@ -444,7 +483,7 @@ export const JobCard = React.memo(function JobCard({
     if (retryCount < 3) {
       return (
         <div className="flex justify-start">
-          <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
+          <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
             <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
               <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
               <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
@@ -480,7 +519,7 @@ export const JobCard = React.memo(function JobCard({
     if (!videoUrl && retryCount < 3) {
       return (
         <div className="flex justify-start">
-          <div className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden">
+          <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
             <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
               <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
               <p className="text-sm text-theme-fg/80">{t(locale, 'video.creating')}</p>
@@ -497,7 +536,7 @@ export const JobCard = React.memo(function JobCard({
               <button
                 type="button"
                 onClick={() => setViewingVideoUrl(videoUrl)}
-                className="max-w-[340px] rounded-2xl rounded-tl-md overflow-hidden text-left block cursor-pointer relative group"
+                className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden text-left block cursor-pointer relative group"
               >
                 <video
                   src={videoUrl}
@@ -565,7 +604,7 @@ export const JobCard = React.memo(function JobCard({
     if (!hasText && !hasImages) {
       return (
         <div className="flex justify-start flex-col items-start">
-          <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5">
+          <div className="max-w-[min(85vw,680px)] rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5">
             <p className="text-[15px] text-theme-fg/50 italic">{t(locale, 'chat.noResponse')}</p>
             {validAttachments.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
@@ -596,12 +635,10 @@ export const JobCard = React.memo(function JobCard({
     const chatMediaUrls = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http'));
     return (
       <div className="flex justify-start flex-col items-start">
-        <div className="max-w-[85%] min-w-0 rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5 overflow-visible break-words">
+        <div className="max-w-[min(85vw,680px)] min-w-0 rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5 overflow-visible break-words">
           {outputStr && (
             <div className="prose prose-invert prose-sm max-w-none overflow-visible break-words [&_*]:break-words">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
-                {outputStr}
-              </ReactMarkdown>
+              {completedChatMarkdown}
             </div>
           )}
           {chatMediaUrls.map((url) => (
@@ -681,7 +718,7 @@ export const JobCard = React.memo(function JobCard({
           {cardOutputUrls.map((url) => (
             <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded border border-theme-border-subtle" decoding="async" />
           ))}
-          {!outputStr && outputArr.length === 0 && out && typeof out === 'object' && 'output' in out && (
+          {!outputStr && outputArr.length === 0 && job.output && typeof job.output === 'object' && 'output' in job.output && (
             <pre className={`mt-2 text-xs overflow-auto ${preCls}`}>{JSON.stringify(job.output)}</pre>
           )}
           <ResultActionsBar
@@ -704,7 +741,10 @@ export const JobCard = React.memo(function JobCard({
       )}
     </div>
   );
-});
+}
+
+export const JobCard = React.memo(JobCardInner, areEqualJobCardProps);
+
 function PlayIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24">

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { getMe, isAdminUser } from '@/lib/api';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 
 const nav = [
   { href: '/admin', label: 'Dashboard' },
@@ -38,6 +40,12 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
     return () => { cancelled = true; };
   }, [router]);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-theme-bg flex items-center justify-center">
@@ -55,23 +63,17 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
     );
   }
 
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, [sidebarOpen]);
-
   return (
     <div className="min-h-screen bg-theme-bg text-theme-fg flex">
       {/* Mobile menu button */}
-      <button
-        type="button"
+      <Button
         onClick={() => setSidebarOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-30 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border border-theme-border bg-theme-bg-elevated text-theme-fg hover:bg-theme-bg-hover"
+        size="sm"
+        className="md:hidden fixed top-4 left-4 z-30 min-h-[44px] min-w-[44px] p-0 rounded-lg bg-theme-bg-elevated text-theme-fg"
         aria-label="Open menu"
       >
         <MenuIcon className="w-5 h-5" />
-      </button>
+      </Button>
       {/* Backdrop when sidebar open on mobile */}
       {sidebarOpen && (
         <div
@@ -83,22 +85,15 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       <aside className={`w-56 shrink-0 border-r border-theme-border bg-theme-bg-elevated flex flex-col z-50 transition-transform md:relative fixed inset-y-0 left-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="p-4 border-b border-theme-border flex items-center justify-between">
           <Link href="/admin" className="font-semibold text-theme-fg" onClick={() => setSidebarOpen(false)}>Admin</Link>
-          <button type="button" onClick={() => setSidebarOpen(false)} className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-muted hover:text-theme-fg" aria-label="Close menu">
+          <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(false)} className="md:hidden min-h-[44px] min-w-[44px] p-0" aria-label="Close menu">
             <XIcon className="w-5 h-5" />
-          </button>
+          </Button>
         </div>
         <nav className="p-2 flex flex-col gap-0.5">
           {nav.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              onClick={() => setSidebarOpen(false)}
-              className={`min-h-[44px] flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${
-                pathname === href ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
-              }`}
-            >
+            <AdminNavLink key={href} href={href} active={pathname === href} onNavigate={() => setSidebarOpen(false)}>
               {label}
-            </Link>
+            </AdminNavLink>
           ))}
         </nav>
         <div className="mt-auto p-2 border-t border-theme-border">
@@ -111,6 +106,31 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         {children}
       </main>
     </div>
+  );
+}
+
+function AdminNavLink({
+  href,
+  active,
+  onNavigate,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  onNavigate: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={cn(
+        'min-h-[44px] flex items-center px-3 py-2 rounded-lg text-sm transition-colors',
+        active ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 

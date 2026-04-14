@@ -9,6 +9,8 @@ import { listContent, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageViewModal } from '../components/ImageViewModal';
+import { Input } from '@/components/ui/Input';
+import { buttonClassName } from '@/components/ui/Button';
 
 type ContentJob = Job & { outputUrls: string[] };
 
@@ -46,6 +48,19 @@ export default function ContentPage() {
   const searchQ = searchParams.get('q') || '';
 
   const contentCacheRef = useRef<{ key: string; items: ContentJob[]; total: number; at: number } | null>(null);
+
+  const handleDeleteFromModal = useCallback((targetUrl: string) => {
+    setItems((prev) =>
+      prev
+        .map((item) => ({ ...item, outputUrls: item.outputUrls.filter((u) => u !== targetUrl) }))
+        .filter((item) => item.outputUrls.length > 0)
+    );
+    setViewingMedia((prev) => {
+      if (!prev) return prev;
+      const nextUrls = prev.urls.filter((u) => u !== targetUrl);
+      return nextUrls.length > 0 ? { urls: nextUrls } : null;
+    });
+  }, []);
 
   const fetchContent = useCallback(() => {
     const cacheKey = `${page}:${typeFilter}:${searchQ}`;
@@ -122,13 +137,13 @@ export default function ContentPage() {
           }}
         >
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-fg-subtle pointer-events-none" />
-          <input
+          <Input
             key={`${searchQ}-${typeFilter}`}
             name="q"
             type="search"
             placeholder={t(locale, 'content.searchPlaceholder')}
             defaultValue={searchQ}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg placeholder:text-theme-fg-subtle focus:border-theme-border-strong focus:outline-none focus:ring-1 focus:ring-theme-border-hover"
+            className="pl-10 pr-4 py-2.5 rounded-xl"
           />
         </form>
         <div className="flex flex-wrap gap-2">
@@ -139,11 +154,14 @@ export default function ContentPage() {
                 ...(searchQ && { q: searchQ }),
                 ...(typeVal && { type: typeVal }),
               }).toString()}`}
-              className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-colors min-h-[44px] flex items-center touch-manipulation ${
-                typeFilter === typeVal
-                  ? 'bg-theme-bg-hover-strong text-theme-fg border border-theme-border-hover'
-                  : 'bg-theme-bg-subtle text-theme-fg-muted border border-theme-border-subtle hover:bg-theme-bg-hover hover:text-theme-fg'
-              }`}
+              className={buttonClassName({
+                variant: 'secondary',
+                className: `px-4 py-2.5 rounded-xl min-h-[44px] ${
+                  typeFilter === typeVal
+                    ? 'bg-theme-bg-hover-strong text-theme-fg border-theme-border-hover'
+                    : 'bg-theme-bg-subtle text-theme-fg-muted border-theme-border-subtle hover:bg-theme-bg-hover hover:text-theme-fg'
+                }`,
+              })}
             >
               {typeVal === '' ? t(locale, 'content.all') : typeVal === 'image' ? t(locale, 'content.images') : t(locale, 'content.videos')}
             </a>
@@ -155,7 +173,14 @@ export default function ContentPage() {
       {!loading && listError && (
         <div className="py-8 flex flex-col items-center gap-4">
           <p className="text-theme-danger text-center">{listError}</p>
-          <button type="button" onClick={() => fetchContent()} className="btn-tap px-4 py-2.5 rounded-xl border border-theme-border-hover bg-theme-bg-hover text-theme-fg font-medium hover:bg-theme-bg-hover-strong">
+          <button
+            type="button"
+            onClick={() => fetchContent()}
+            className={buttonClassName({
+              variant: 'secondary',
+              className: 'btn-tap px-4 py-2.5 rounded-xl border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong',
+            })}
+          >
             {t(locale, 'content.retry')}
           </button>
         </div>
@@ -163,7 +188,13 @@ export default function ContentPage() {
       {!loading && !listError && items.length === 0 && (
         <div className="py-12 flex flex-col items-center gap-6 text-center">
           <p className="text-theme-fg-muted max-w-sm">{t(locale, 'content.empty')}</p>
-          <Link href="/dashboard" className="btn-tap inline-block px-5 py-2.5 rounded-xl bg-theme-bg-hover-strong text-theme-fg font-medium border border-theme-border-hover hover:bg-theme-bg-hover">
+          <Link
+            href="/dashboard"
+            className={buttonClassName({
+              variant: 'secondary',
+              className: 'btn-tap inline-block px-5 py-2.5 rounded-xl bg-theme-bg-hover-strong text-theme-fg border-theme-border-hover hover:bg-theme-bg-hover',
+            })}
+          >
             {t(locale, 'content.emptyCta')}
           </Link>
         </div>
@@ -233,9 +264,12 @@ export default function ContentPage() {
                   ...(searchQ && { q: searchQ }),
                   ...(typeFilter && { type: typeFilter }),
                 }).toString()}`}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  hasPrev ? 'bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong' : 'bg-theme-bg-subtle text-theme-fg-subtle pointer-events-none'
-                }`}
+                className={buttonClassName({
+                  variant: 'secondary',
+                  className: `px-4 py-2 rounded-lg ${
+                    hasPrev ? 'bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong' : 'bg-theme-bg-subtle text-theme-fg-subtle pointer-events-none'
+                  }`,
+                })}
               >
                 {t(locale, 'content.prev')}
               </a>
@@ -248,9 +282,12 @@ export default function ContentPage() {
                   ...(searchQ && { q: searchQ }),
                   ...(typeFilter && { type: typeFilter }),
                 }).toString()}`}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  hasNext ? 'bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong' : 'bg-theme-bg-subtle text-theme-fg-subtle pointer-events-none'
-                }`}
+                className={buttonClassName({
+                  variant: 'secondary',
+                  className: `px-4 py-2 rounded-lg ${
+                    hasNext ? 'bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong' : 'bg-theme-bg-subtle text-theme-fg-subtle pointer-events-none'
+                  }`,
+                })}
               >
                 {t(locale, 'content.next')}
               </a>
@@ -263,6 +300,7 @@ export default function ContentPage() {
         <ImageViewModal
           url={viewingMedia.urls[0]}
           urls={viewingMedia.urls.length > 1 ? viewingMedia.urls : undefined}
+          onDelete={handleDeleteFromModal}
           onClose={() => setViewingMedia(null)}
           locale={locale}
         />

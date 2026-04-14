@@ -16,14 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MicahParks/keyfunc/v2"
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/hibiken/asynq"
-	"github.com/redis/go-redis/v9"
-	repgo "github.com/replicate/replicate-go"
 	"flipo5/backend/internal/cache"
 	"flipo5/backend/internal/middleware"
 	"flipo5/backend/internal/queue"
@@ -31,22 +23,30 @@ import (
 	"flipo5/backend/internal/storage"
 	"flipo5/backend/internal/store"
 	"flipo5/backend/internal/stream"
+	"github.com/MicahParks/keyfunc/v2"
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
+	repgo "github.com/replicate/replicate-go"
 )
 
 type Server struct {
-	DB                   *store.DB
-	Asynq                *asynq.Client
-	Store                *storage.Store
-	Stream               *stream.Subscriber
-	Cache                *cache.Redis
-	Repl                 *replicate.Client
-	ModelRemoveBg        string
-	ModelText            string
-	redisURL             string
-	supabaseJWTSecret    string
-	jwks                 *keyfunc.JWKS
-	supabaseURL          string
-	supabaseServiceRole  string
+	DB                  *store.DB
+	Asynq               *asynq.Client
+	Store               *storage.Store
+	Stream              *stream.Subscriber
+	Cache               *cache.Redis
+	Repl                *replicate.Client
+	ModelRemoveBg       string
+	ModelText           string
+	redisURL            string
+	supabaseJWTSecret   string
+	jwks                *keyfunc.JWKS
+	supabaseURL         string
+	supabaseServiceRole string
 }
 
 // NewServer builds the API server.
@@ -80,7 +80,7 @@ func (s *Server) Routes() http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SupabaseAuth(s.supabaseJWTSecret, s.jwks, s.DB))
-		r.Use(middleware.RateLimit(2000)) // Permissive for launch; lower later (e.g. 300)
+		r.Use(middleware.RateLimit(2000))                                         // Permissive for launch; lower later (e.g. 300)
 		r.Use(middleware.RateLimitJobCreation(120, "/api/seo", "/api/translate")) // Permissive for launch; lower later (e.g. 20)
 		r.Get("/me", s.me)
 		r.Patch("/me", s.patchMe)
@@ -109,6 +109,7 @@ func (s *Server) Routes() http.Handler {
 		r.Route("/products", func(r chi.Router) {
 			r.Get("/", s.listProducts)
 			r.Post("/", s.createProduct)
+			r.Patch("/{id}", s.updateProduct)
 			r.Post("/improve-description", s.createProductDescriptionImprove)
 			r.Post("/improve-scene", s.createProductSceneImprove)
 			r.Get("/{id}", s.getProduct)
@@ -323,12 +324,12 @@ var validLangs = map[string]bool{"browser": true, "en": true, "de": true, "ro": 
 func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	var body struct {
-		FullName             *string                `json:"full_name"`
-		WhereHeard           *string                `json:"where_heard"`
-		UseCase              *string                `json:"use_case"`
-		Plan                 *string                `json:"plan"`
-		DataRetentionAccepted *bool                 `json:"data_retention_accepted"`
-		AIConfiguration      map[string]interface{} `json:"ai_configuration"`
+		FullName              *string                `json:"full_name"`
+		WhereHeard            *string                `json:"where_heard"`
+		UseCase               *string                `json:"use_case"`
+		Plan                  *string                `json:"plan"`
+		DataRetentionAccepted *bool                  `json:"data_retention_accepted"`
+		AIConfiguration       map[string]interface{} `json:"ai_configuration"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -395,11 +396,11 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt                  string   `json:"prompt"`
+		Prompt                 string   `json:"prompt"`
 		AttachmentURLs         []string `json:"attachment_urls,omitempty"`
 		AttachmentContentTypes []string `json:"attachment_content_types,omitempty"` // e.g. "image/jpeg", "application/pdf" – only image/* are sent to Replicate
-		ThreadID                string   `json:"thread_id,omitempty"`
-		Incognito               bool     `json:"incognito,omitempty"`
+		ThreadID               string   `json:"thread_id,omitempty"`
+		Incognito              bool     `json:"incognito,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -472,7 +473,7 @@ func (s *Server) generatePromptVariants(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Type        string `json:"type"`         // "image" or "video"
+		Type        string `json:"type"` // "image" or "video"
 		Description string `json:"description"`
 		Angle       string `json:"angle,omitempty"`
 		Movement    string `json:"movement,omitempty"`
@@ -912,10 +913,10 @@ func (s *Server) createImageInpaint(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
 	input := map[string]interface{}{
-		"prompt":   req.Prompt,
-		"image":    imageURL,
-		"mask":     maskURL,
-		"inpaint":  true,
+		"prompt":  req.Prompt,
+		"image":   imageURL,
+		"mask":    maskURL,
+		"inpaint": true,
 	}
 	if req.Steps >= 15 && req.Steps <= 50 {
 		input["steps"] = req.Steps
@@ -1022,14 +1023,14 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createUpscale(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ImageURL                 string   `json:"image_url"`
-		Scale                    int      `json:"scale"`
-		EnhanceModel             string   `json:"enhance_model"`
-		OutputFormat             string   `json:"output_format"`
-		FaceEnhancement          *bool    `json:"face_enhancement"`
-		SubjectDetection         string   `json:"subject_detection"`
+		ImageURL                  string   `json:"image_url"`
+		Scale                     int      `json:"scale"`
+		EnhanceModel              string   `json:"enhance_model"`
+		OutputFormat              string   `json:"output_format"`
+		FaceEnhancement           *bool    `json:"face_enhancement"`
+		SubjectDetection          string   `json:"subject_detection"`
 		FaceEnhancementCreativity *float64 `json:"face_enhancement_creativity"`
-		FaceEnhancementStrength  *float64 `json:"face_enhancement_strength"`
+		FaceEnhancementStrength   *float64 `json:"face_enhancement_strength"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -1504,10 +1505,10 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	maxSEOBodyBytes     = 1 << 20  // 1MB
-	maxSEOSourceTextLen = 400_000  // ~400KB text
-	maxSEOSourceURLLen  = 2048
-	maxTranslateBodyBytes    = 2 << 20  // 2MB (allow images list)
+	maxSEOBodyBytes           = 1 << 20 // 1MB
+	maxSEOSourceTextLen       = 400_000 // ~400KB text
+	maxSEOSourceURLLen        = 2048
+	maxTranslateBodyBytes     = 2 << 20 // 2MB (allow images list)
 	maxTranslateSourceTextLen = 100_000 // ~100KB per job
 	maxTranslateSourceURLLen  = 2048
 	maxTranslateImages        = 10
@@ -1674,6 +1675,44 @@ func (s *Server) createProduct(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": id.String()})
+}
+
+func (s *Server) updateProduct(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	productID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Name        string `json:"name"`
+		Category    string `json:"category"`
+		Description string `json:"description"`
+		Brand       string `json:"brand"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if err := s.DB.UpdateProduct(
+		r.Context(),
+		productID,
+		userID,
+		name,
+		strings.TrimSpace(req.Category),
+		strings.TrimSpace(req.Description),
+		strings.TrimSpace(req.Brand),
+	); err != nil {
+		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) createProductDescriptionImprove(w http.ResponseWriter, r *http.Request) {
@@ -1975,10 +2014,10 @@ func (s *Server) createTranslate(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
 	input := map[string]interface{}{
-		"source_url":   sourceURL,
-		"source_text":  sourceText,
-		"source_lang":  strings.TrimSpace(req.SourceLang),
-		"target_lang":  targetLang,
+		"source_url":  sourceURL,
+		"source_text": sourceText,
+		"source_lang": strings.TrimSpace(req.SourceLang),
+		"target_lang": targetLang,
 	}
 	if len(sourceImages) > 0 {
 		input["source_images"] = sourceImages
@@ -2279,8 +2318,8 @@ func (s *Server) adminGetUser(w http.ResponseWriter, r *http.Request) {
 	_ = s.DB.Pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM threads WHERE user_id = $1`, id).Scan(&threadCount)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"user":        u,
-		"job_count":   jobCount,
+		"user":         u,
+		"job_count":    jobCount,
 		"thread_count": threadCount,
 	})
 }
@@ -2403,11 +2442,11 @@ func (s *Server) streamAllJobs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ctx := r.Context()
 	flusher := w.(http.Flusher)
-	
+
 	log.Printf("[streamAllJobs] User %s connected to job stream", userID)
 	fmt.Fprintf(w, "data: {\"type\":\"connected\",\"user\":\"%s\"}\n\n", userID)
 	flusher.Flush()
-	
+
 	// Subscribe to user-specific job updates channel
 	userJobsChannel := fmt.Sprintf("user:%s:jobs", userID.String())
 	pubsub := s.Stream.SubscribeRaw(ctx, userJobsChannel)
@@ -2416,7 +2455,7 @@ func (s *Server) streamAllJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer pubsub.Close()
-	
+
 	ch := pubsub.Channel()
 	for {
 		select {
@@ -2717,8 +2756,8 @@ func (s *Server) addProjectItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Type      string    `json:"type"` // image, video
-		SourceURL string    `json:"source_url"`
+		Type      string     `json:"type"` // image, video
+		SourceURL string     `json:"source_url"`
 		JobID     *uuid.UUID `json:"job_id,omitempty"`
 	}
 	if json.NewDecoder(r.Body).Decode(&body) != nil {

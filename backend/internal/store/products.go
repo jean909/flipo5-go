@@ -19,12 +19,12 @@ type Product struct {
 }
 
 type ProductPhoto struct {
-	ID        uuid.UUID  `json:"id"`
-	ProductID uuid.UUID  `json:"product_id"`
-	ImageURL  string     `json:"image_url"`
-	Score     *float64   `json:"score,omitempty"`
-	SortOrder int        `json:"sort_order"`
-	CreatedAt string     `json:"created_at"`
+	ID        uuid.UUID `json:"id"`
+	ProductID uuid.UUID `json:"product_id"`
+	ImageURL  string    `json:"image_url"`
+	Score     *float64  `json:"score,omitempty"`
+	SortOrder int       `json:"sort_order"`
+	CreatedAt string    `json:"created_at"`
 }
 
 func (db *DB) CreateProduct(ctx context.Context, userID uuid.UUID, name, category, description, brand string) (uuid.UUID, error) {
@@ -130,5 +130,18 @@ func (db *DB) DeleteProductPhoto(ctx context.Context, photoID uuid.UUID, userID 
 
 func (db *DB) DeleteProduct(ctx context.Context, productID, userID uuid.UUID) error {
 	_, err := db.Pool.Exec(ctx, `DELETE FROM products WHERE id = $1 AND user_id = $2`, productID, userID)
+	return err
+}
+
+func (db *DB) UpdateProduct(ctx context.Context, productID, userID uuid.UUID, name, category, description, brand string) error {
+	_, err := db.Pool.Exec(ctx,
+		`UPDATE products
+		 SET name = $3,
+		     category = $4,
+		     description = $5,
+		     brand = $6,
+		     updated_at = NOW()
+		 WHERE id = $1 AND user_id = $2`,
+		productID, userID, name, category, description, brand)
 	return err
 }

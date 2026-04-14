@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
+import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
 import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, type User, type Job, type Thread } from '@/lib/api';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
@@ -106,9 +107,11 @@ export default function DashboardPage() {
   const [showIncognitoMediaDialog, setShowIncognitoMediaDialog] = useState(false);
   const [showPromptBuilder, setShowPromptBuilder] = useState(false);
   const pendingNormalSessionSubmit = useRef(false);
+  const isSubmittingRef = useRef(false);
 
   const addReferenceImage = useCallback((url: string) => {
     setReferenceImageUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
+    setMode('image'); // User chose a reference image → switch to Photo so the prompt goes to image generation
   }, []);
   const removeReferenceImage = useCallback((url: string) => {
     setReferenceImageUrls((prev) => prev.filter((u) => u !== url));
@@ -129,7 +132,11 @@ export default function DashboardPage() {
     const id = Math.random().toString(36).slice(2);
     const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
     setAttachments((prev) => [...prev, { id, file, previewUrl }]);
-    if (mode === 'video') setVideoFile(null);
+    if (mode === 'video') {
+      // Switching from video input to attachments should clean video preview resources.
+      setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setVideoFile(null);
+    }
   }, [mode, isAcceptedAttachment]);
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
@@ -189,6 +196,15 @@ export default function DashboardPage() {
     setEndImageFile(file);
   }, []);
   const removeEndImageFile = useCallback(() => {
+    setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setEndImageFile(null);
+  }, []);
+
+  const clearVideoComposer = useCallback(() => {
+    setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setVideoFile(null);
+    setStartImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setStartImageFile(null);
     setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setEndImageFile(null);
   }, []);
@@ -335,6 +351,12 @@ export default function DashboardPage() {
     }).catch(() => { if (effectiveThreadIdRef.current === id) setThreadJobs([]); });
   }, []);
 
+  const scheduleThreadRefresh = useCallback((tid: string | null) => {
+    if (!tid) return;
+    setTimeout(refreshThread, 400);
+    setTimeout(refreshThread, 2000);
+  }, [refreshThread]);
+
   // Start new subject from a chat message (text): prefill prompt and open new thread
   const handleStartThreadFromText = useCallback((text: string) => {
     setPrompt(text);
@@ -345,6 +367,16 @@ export default function DashboardPage() {
     setHasStarted(true);
     if (!incognito) router.replace('/dashboard', { scroll: false });
   }, [incognito, router]);
+  const handleJobRetry = useCallback((oldId: string, newId: string) => {
+    setReplaceMap((prev) => ({ ...prev, [oldId]: newId }));
+  }, []);
+  const handleActiveJobNotFound = useCallback(() => {
+    if (pendingJobType === 'video' && typeof window !== 'undefined') {
+      sessionStorage.removeItem('flipo5_video_pending');
+    }
+    setJobId(null);
+    setPendingJobThreadId(null);
+  }, [pendingJobType]);
 
   // Start new chat with given media as reference (e.g. from sessionStorage when coming from another page)
   const handleStartThreadWithRef = useCallback((mediaUrls: string[]) => {
@@ -497,197 +529,108 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = prompt.trim();
-    if (!trimmed && attachments.length === 0) return;
-    
-    // Allow re-running the same prompt; no duplicate submission block
-    const requestKey = `${mode}-${trimmed}-${JSON.stringify({
-      attachments: attachments.map(a => a.file.name),
-      imageSettings: mode === 'image' ? imageSettings : undefined,
-      videoSettings: mode === 'video' ? videoSettings : undefined,
-      referenceImageUrls,
-      videoFile: videoFile?.name,
-      videoModel: mode === 'video' ? videoModel : undefined,
-      startImageFile: startImageFile?.name,
-      endImageFile: endImageFile?.name,
-    })}`;
-
-    // Prevent same video request re-submit only after hard refresh within 90s (avoid double-click)
-    if (mode === 'video' && typeof window !== 'undefined') {
-      try {
-        const raw = sessionStorage.getItem('flipo5_video_pending');
-        if (raw) {
-          const { key: pendingKey, t } = JSON.parse(raw) as { key?: string; t?: number };
-          if (pendingKey === requestKey && typeof t === 'number' && Date.now() - t < 90_000) return;
-          sessionStorage.removeItem('flipo5_video_pending');
-        }
-      } catch { sessionStorage.removeItem('flipo5_video_pending'); }
-    }
-
-    const useNormalSession = pendingNormalSessionSubmit.current;
-    if (useNormalSession) pendingNormalSessionSubmit.current = false;
-    if (!useNormalSession && incognito && (mode === 'image' || mode === 'video')) {
-      setShowIncognitoMediaDialog(true);
-      return;
-    }
-    setError('');
-    setLoading(true);
-    const effectiveIncognito = useNormalSession ? false : incognito;
-    const tid = effectiveIncognito ? incognitoThreadId : threadId;
-    try {
-      if (mode === 'chat') {
-        const msg = trimmed || ' ';
-        setPendingUserMessage(msg);
-        setPendingUserMessageThreadId(tid ?? null);
-        let attachmentUrls: string[] = [];
-        const attachmentContentTypes = attachments.map((a) => a.file.type);
-        if (attachments.length > 0) {
-          attachmentUrls = await uploadAttachments(attachments.map((a) => a.file));
-        }
-        const res = await createChat(msg, attachmentUrls.length ? attachmentUrls : undefined, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito, attachmentUrls.length ? attachmentContentTypes : undefined);
-        setPendingUserMessage('');
-        setPendingUserMessageThreadId(null);
-        setJobId(res.job_id);
-        setLastSentPrompt(msg);
-        setPendingJobThreadId(res.thread_id ?? tid ?? null);
-        setPendingJobType('chat');
-        if (res.thread_id) {
-          setThreadId(res.thread_id);
-          if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
-          if (!tid) {
-            if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
-          }
-        }
-        clearAttachments();
-        if (tid) {
-          setTimeout(() => refreshThread(), 400);
-          setTimeout(refreshThread, 2000);
-        }
-      } else if (mode === 'image') {
-        let imageInput: string[] | undefined;
-        const refUrls = referenceImageUrls.length > 0 ? referenceImageUrls : undefined;
-        if (attachments.length > 0) {
-          const uploaded = await uploadAttachments(attachments.map((a) => a.file));
-          imageInput = [...(refUrls ?? []), ...uploaded];
-        } else if (refUrls) {
-          imageInput = refUrls;
-        }
-        const res = await createImage({
-          prompt: trimmed || ' ',
-          threadId: useNormalSession ? undefined : tid ?? undefined,
-          incognito: effectiveIncognito,
-          size: imageSettings.size,
-          aspectRatio: imageSettings.aspectRatio,
-          imageInput,
-          maxImages: 4,
-        });
-        addOptimisticJob({ id: res.job_id, type: 'image', thread_id: res.thread_id ?? tid ?? null });
-        setJobId(res.job_id);
-        setPendingJobThreadId(res.thread_id ?? tid ?? null);
-        setPendingJobType('image');
-        setLastSentPrompt(trimmed || ' ');
-        if (res.thread_id) {
-          setThreadId(res.thread_id);
-          if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
-          if (!tid) {
-            if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
-          }
-        }
-        clearAttachments();
-        setReferenceImageUrls([]);
-        if (tid) {
-          setTimeout(refreshThread, 400);
-          setTimeout(refreshThread, 2000);
-        }
-      } else {
-        let imageUrl: string | undefined;
-        let videoUrl: string | undefined;
-        let startImageUrl: string | undefined;
-        let endImageUrl: string | undefined;
-        if (videoModel === '2') {
-          const toUpload: File[] = [];
-          if (startImageFile) toUpload.push(startImageFile);
-          if (endImageFile) toUpload.push(endImageFile);
-          if (toUpload.length > 0) {
-            const urls = await uploadAttachments(toUpload);
-            let i = 0;
-            if (startImageFile) startImageUrl = urls[i++];
-            if (endImageFile) endImageUrl = urls[i];
-          }
-        } else {
-          const refUrls = referenceImageUrls.length > 0 ? referenceImageUrls : undefined;
-          if (attachments.length > 0) {
-            const uploaded = await uploadAttachments(attachments.map((a) => a.file));
-            imageUrl = (refUrls ? [...refUrls, ...uploaded] : uploaded)[0];
-          } else if (refUrls?.[0]) {
-            imageUrl = refUrls[0];
-          }
-          if (videoFile) {
-            const urls = await uploadAttachments([videoFile]);
-            videoUrl = urls[0];
-          }
-        }
-        const res = await createVideo({
-          prompt: trimmed || ' ',
-          threadId: useNormalSession ? undefined : tid ?? undefined,
-          incognito: effectiveIncognito,
-          videoModel,
-          duration: videoSettings.duration,
-          aspectRatio: videoSettings.aspectRatio,
-          resolution: videoSettings.resolution,
-          ...(videoModel === '2'
-            ? { startImage: startImageUrl, endImage: endImageUrl }
-            : { image: imageUrl, video: videoUrl }),
-        });
-        if (typeof window !== 'undefined') sessionStorage.setItem('flipo5_video_pending', JSON.stringify({ key: requestKey, t: Date.now() }));
-        addOptimisticJob({ id: res.job_id, type: 'video', thread_id: res.thread_id ?? tid ?? null });
-        setJobId(res.job_id);
-        setPendingJobThreadId(res.thread_id ?? tid ?? null);
-        setPendingJobType('video');
-        setLastSentPrompt(trimmed || ' ');
-        if (res.thread_id) {
-          setThreadId(res.thread_id);
-          if (effectiveIncognito) setIncognitoThreadId(res.thread_id);
-          if (!tid) {
-            if (!effectiveIncognito) router.replace(`/dashboard?thread=${res.thread_id}`, { scroll: false });
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => setThreadJobs([])), 400);
-            setTimeout(() => getThread(res.thread_id!).then((r) => { setThreadData(r.thread ?? null); setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
-          }
-        }
-      clearAttachments();
-      setReferenceImageUrls([]);
-      setVideoFile(null);
-      setStartImageFile(null);
-      setStartImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-      setEndImageFile(null);
-      setEndImagePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-      if (tid) {
-        setTimeout(refreshThread, 400);
-        setTimeout(refreshThread, 2000);
-      }
-    }
-    setHasStarted(true);
-    setPrompt('');
-    
-    // Reset form to prevent browser auto-resubmission
-    if (formRef.current) {
-      formRef.current.reset();
-    }
-    } catch (err) {
-      setPendingUserMessage('');
-      setPendingUserMessageThreadId(null);
-      setError(err instanceof Error ? err.message : t(locale, 'error.generic'));
-    } finally {
-      setLoading(false);
-    }
+  /** "nochmal", "again", etc. → treat as regenerate last image/video (when on photo/video). */
+  function isRegenerateKeyword(text: string): boolean {
+    const lower = text.toLowerCase().trim();
+    const keywords = [
+      'nochmal', 'noch einmal', 'nochmal bitte', 'erneut', 'regen', 'wieder', 'nochmal bitte',
+      'again', 'again please', 'regenerate', 'regenerate please', 'one more', 'same again', 'same please',
+      'retry', 'retry please', 'another one', 'one more time',
+    ];
+    return keywords.some((k) => lower === k || lower.startsWith(k + ' ') || lower.startsWith(k + ','));
   }
 
+  /** When user is on Text (chat) mode, detect if prompt clearly asks for photo or video and route there. */
+  function getIntentFromPrompt(text: string): 'image' | 'video' | null {
+    const lower = text.toLowerCase().trim();
+    // Video first so "create a video" isn't matched by image patterns
+    const videoPrefixes = [
+      'create a video', 'generate a video', 'create video', 'generate video', 'make a video', 'make video',
+      'creat a video', 'generat a video', 'creat video', 'generat video', 'create a vid', 'generate a vid',
+      'erstelle ein video', 'generiere ein video', 'erstelle video', 'generiere video', 'video erstellen', 'video generieren',
+      'erstel ein video', 'generier ein video', 'erstelle ein vid', 'mach ein video', 'mach video',
+      'create video of', 'generate video of', 'make video of',
+    ];
+    if (videoPrefixes.some((p) => lower.startsWith(p))) return 'video';
+    const imagePrefixes = [
+      'create a photo', 'generate a photo', 'create a picture', 'generate a picture', 'create an image', 'generate an image',
+      'create photo', 'generate photo', 'create picture', 'generate picture', 'create image', 'generate image',
+      'creat a photo', 'generat a photo', 'creat a picture', 'creat photo', 'generat photo', 'creat image', 'generat image',
+      'create a foto', 'generate a foto', 'create foto', 'generate foto', 'creat a foto', 'creat foto',
+      'draw a ', 'draw an ', 'make a photo', 'make a picture', 'make an image', 'make photo', 'make picture', 'make image',
+      'mach ein foto', 'mach ein bild', 'mach foto', 'mach bild', 'mach ein photo', 'mach ein picture',
+      'erstelle ein foto', 'generiere ein foto', 'erstelle ein bild', 'generiere ein bild',
+      'erstelle foto', 'generiere foto', 'foto erstellen', 'bild erstellen', 'bild generieren',
+      'erstel ein foto', 'generier ein foto', 'erstel ein bild', 'generier ein bild',
+      'erstelle ein photo', 'generiere ein photo', 'erstelle ein picture', 'photo erstellen', 'picture erstellen',
+      'create a img', 'generate a img', 'create img', 'generate img',
+    ];
+    if (imagePrefixes.some((p) => lower.startsWith(p))) return 'image';
+    return null;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (isSubmittingRef.current) return;
+    await submitDashboardPrompt({
+      prompt,
+      attachments,
+      mode,
+      imageSettings,
+      videoSettings,
+      referenceImageUrls,
+      videoFile,
+      videoModel,
+      startImageFile,
+      endImageFile,
+      isSubmittingRef,
+      pendingNormalSessionSubmit,
+      incognito,
+      incognitoThreadId,
+      threadId,
+      effectiveThreadId,
+      pendingJobThreadId,
+      pendingJobType,
+      jobId,
+      lastSentPrompt,
+      threadJobs,
+      locale,
+      t,
+      setShowIncognitoMediaDialog,
+      setError,
+      setLoading,
+      setPendingUserMessage,
+      setPendingUserMessageThreadId,
+      setJobId,
+      setLastSentPrompt,
+      setPendingJobThreadId,
+      setPendingJobType,
+      setThreadId,
+      setIncognitoThreadId,
+      setThreadData,
+      setThreadJobs,
+      setHasStarted,
+      setPrompt,
+      setReferenceImageUrls,
+      uploadAttachments,
+      createChat,
+      createImage,
+      createVideo,
+      getThread,
+      routerReplace: (href: string) => router.replace(href, { scroll: false }),
+      refreshThread,
+      addOptimisticJob,
+      handleRegenerateImage,
+      handleRegenerateVideo,
+      clearAttachments,
+      clearVideoComposer,
+      scheduleThreadRefresh,
+      formReset: () => {
+        // Reset form to prevent browser auto-resubmission
+        if (formRef.current) formRef.current.reset();
+      },
+    });
+  }
   const inputCls = 'w-full rounded-xl border border-theme-border bg-theme-bg-subtle px-4 py-3 text-theme-fg placeholder:text-theme-fg-subtle focus:border-theme-border-strong focus:outline-none focus:ring-1 focus:ring-theme-border-hover';
   const labelCls = 'block text-sm font-medium text-theme-fg-muted mb-1';
   const btnPrimary = 'w-full rounded-xl bg-white py-3 px-4 text-sm font-semibold text-black hover:bg-neutral-100 transition-colors';
@@ -895,7 +838,7 @@ export default function DashboardPage() {
   );
 
   const bottomBar = (
-    <div className="shrink-0 border-t border-theme-border-subtle bg-theme-bg p-4">
+    <div className="shrink-0 border-t border-theme-border-subtle bg-theme-bg p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
       <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full max-w-2xl mx-auto flex flex-col gap-3">
         {mode === 'image' && (hasStarted || inspireMode) && (
           <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />
@@ -1020,6 +963,39 @@ export default function DashboardPage() {
     P('yearning',  540, 820),
     P('zeal',      780, 520),
   ];
+
+  const chatRenderModel = useMemo(() => {
+    const rawList = [
+      ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
+        ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
+        : []),
+      ...threadJobs.map((j) => ({ ...j, id: replaceMap[j.id] || j.id })),
+      ...(jobId &&
+      !threadJobs.some((j) => j.id === jobId) &&
+      effectiveThreadId === pendingJobThreadId
+        ? [{ id: jobId, type: pendingJobType, input: lastSentPrompt ? { prompt: lastSentPrompt } : {} }]
+        : []),
+    ];
+    const seenIds = new Set<string>();
+    const displayList = rawList.filter((j) => {
+      if (seenIds.has(j.id)) return false;
+      seenIds.add(j.id);
+      return true;
+    });
+    const lastChatJobId = displayList.filter((j) => j.type === 'chat' && j.id !== '_pending').pop()?.id;
+    const regeneratedIds = new Set(Object.values(replaceMap));
+    return { displayList, lastChatJobId, regeneratedIds };
+  }, [
+    pendingUserMessage,
+    effectiveThreadId,
+    pendingUserMessageThreadId,
+    threadJobs,
+    replaceMap,
+    jobId,
+    pendingJobThreadId,
+    pendingJobType,
+    lastSentPrompt,
+  ]);
 
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${(hasStarted || inspireMode) ? '' : 'items-center justify-center overflow-y-auto scrollbar-subtle'} ${!inspireMode ? 'px-4 py-8' : ''}`}>
@@ -1476,23 +1452,10 @@ export default function DashboardPage() {
               <p className="text-theme-fg-subtle text-sm py-4">{t(locale, 'common.loading')}</p>
             )}
             <AnimatePresence initial={false}>
-            {(() => {
-              const displayList = [
-                ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
-                  ? [{ id: '_pending', type: 'chat' as const, input: { prompt: pendingUserMessage } }]
-                  : []),
-                ...threadJobs.map((j) => ({ ...j, id: replaceMap[j.id] || j.id })),
-                ...(jobId &&
-                !threadJobs.some((j) => j.id === jobId) &&
-                effectiveThreadId === pendingJobThreadId
-                  ? [{ id: jobId, type: pendingJobType, input: lastSentPrompt ? { prompt: lastSentPrompt } : {} }]
-                  : []),
-              ];
-              const lastChatJobId = displayList.filter((j) => j.type === 'chat' && j.id !== '_pending').pop()?.id;
-              return displayList.map((job) => {
+            {chatRenderModel.displayList.map((job) => {
                 const promptForRegenerate = (job.input as { prompt?: string })?.prompt;
-                const isRegeneratedSlot = job.id !== '_pending' && Object.values(replaceMap).includes(job.id);
-                const isLastReply = job.id === lastChatJobId;
+                const isRegeneratedSlot = job.id !== '_pending' && chatRenderModel.regeneratedIds.has(job.id);
+                const isLastReply = job.id === chatRenderModel.lastChatJobId;
                 return (
                 <motion.div
                   key={job.id}
@@ -1514,26 +1477,25 @@ export default function DashboardPage() {
                     locale={locale}
                     dark
                     variant="chat"
-                    onNotFound={job.id === jobId ? () => { if (pendingJobType === 'video' && typeof window !== 'undefined') sessionStorage.removeItem('flipo5_video_pending'); setJobId(null); setPendingJobThreadId(null); } : undefined}
+                    onNotFound={job.id === jobId ? handleActiveJobNotFound : undefined}
                     onUseAsReference={addReferenceImage}
                     regenerateUsed={isRegeneratedSlot}
                     onRegenerate={
                       job.type === 'chat' && isLastReply && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
                         ? () => handleRegenerate(job.id, promptForRegenerate)
                         : job.type === 'image' && promptForRegenerate
-                          ? () => handleRegenerateImage(job.id, promptForRegenerate, job.thread_id ?? null)
+                          ? () => handleRegenerateImage(job.id, promptForRegenerate, 'thread_id' in job ? (job.thread_id ?? null) : null)
                           : job.type === 'video' && promptForRegenerate
-                            ? () => handleRegenerateVideo(job.id, promptForRegenerate, job.thread_id ?? null)
+                            ? () => handleRegenerateVideo(job.id, promptForRegenerate, 'thread_id' in job ? (job.thread_id ?? null) : null)
                             : undefined
                     }
-                    onRetry={(oldId, newId) => setReplaceMap((prev) => ({ ...prev, [oldId]: newId }))}
+                    onRetry={handleJobRetry}
                     onCancel={undefined}
                     onStartThreadFromText={handleStartThreadFromText}
                   />
                   )}
                 </motion.div>
-              ); });
-            })()}
+              ); })}
             </AnimatePresence>
             </div>
           </div>

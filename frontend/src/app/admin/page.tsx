@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { getAdminStats } from '@/lib/api';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 
 export default function AdminDashboardPage() {
   const { locale } = useLocale();
@@ -41,32 +43,26 @@ export default function AdminDashboardPage() {
       <h1 className="text-2xl font-semibold text-theme-fg mb-6">Dashboard</h1>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {cards.map(({ label, value }) => (
-          <div
-            key={label}
-            className="rounded-xl border border-theme-border bg-theme-bg-subtle p-4"
-          >
+          <Card key={label} className="p-4">
             <p className="text-sm text-theme-fg-muted mb-1">{label}</p>
             <p className="text-2xl font-semibold text-theme-fg">{value.toLocaleString()}</p>
-          </div>
+          </Card>
         ))}
       </div>
-      <div className="rounded-xl border border-theme-border bg-theme-bg-subtle p-4">
+      <Card className="p-4">
         <h2 className="text-lg font-medium text-theme-fg mb-3">Jobs by status</h2>
         <div className="flex flex-wrap gap-3">
           {Object.entries(stats.jobs_by_status).map(([status, count]) => (
-            <span
-              key={status}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-theme-bg-hover text-theme-fg text-sm"
-            >
+            <Badge key={status}>
               <span className="capitalize">{status}</span>
               <span className="font-medium">{count}</span>
-            </span>
+            </Badge>
           ))}
           {Object.keys(stats.jobs_by_status).length === 0 && (
             <p className="text-theme-fg-muted text-sm">{t(locale, 'admin.noData')}</p>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

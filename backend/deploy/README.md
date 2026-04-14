@@ -251,6 +251,24 @@ $env:DEPLOY_SERVER = "root@IP_SERVER"
 .\backend\deploy\deploy-hetzner.ps1
 ```
 
+### Notă pentru frontend după upgrade de dependențe
+
+Dacă ai făcut upgrade la `next`/dependințe frontend și build-ul pică cu erori ciudate din fișiere generate (ex. `.next/dev/types/...`), curăță cache-ul Next și rulează build din nou:
+
+```powershell
+cd frontend
+Remove-Item -Recurse -Force .next
+npm run build
+```
+
+Pe Linux/macOS:
+
+```bash
+cd frontend
+rm -rf .next
+npm run build
+```
+
 Sau cu parametri:
 
 ```powershell
