@@ -7,6 +7,7 @@ import { ImageViewModal } from './ImageViewModal';
 
 interface ImageGalleryProps {
   urls: string[];
+  jobId?: string | null;
   /** 'chat' = compact in chat bubble, 'full' = full width (e.g. job detail) */
   variant?: 'chat' | 'full';
   locale?: Locale;
@@ -53,7 +54,7 @@ function ImageOverlay({
   );
 }
 
-export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsReference }: ImageGalleryProps) {
+export function ImageGallery({ urls, jobId, variant = 'chat', locale = 'en', onUseAsReference }: ImageGalleryProps) {
   const [selected, setSelected] = useState(0);
   const [viewingUrl, setViewingUrl] = useState<string | null>(null);
   const maxW = variant === 'chat' ? 'max-w-[340px]' : '';
@@ -71,7 +72,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
           </div>
         </div>
         {viewingUrl && (
-          <ImageViewModal url={viewingUrl} onClose={() => setViewingUrl(null)} locale={locale} />
+          <ImageViewModal url={viewingUrl} jobId={jobId} onClose={() => setViewingUrl(null)} locale={locale} />
         )}
       </>
     );
@@ -107,7 +108,7 @@ export function ImageGallery({ urls, variant = 'chat', locale = 'en', onUseAsRef
         </div>
       </div>
       {viewingUrl && (
-        <ImageViewModal url={viewingUrl} onClose={() => setViewingUrl(null)} locale={locale} />
+        <ImageViewModal url={viewingUrl} jobId={jobId} onClose={() => setViewingUrl(null)} locale={locale} />
       )}
     </>
   );

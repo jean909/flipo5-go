@@ -56,6 +56,8 @@ type SubmitCtx = {
   clearVideoComposer: () => void;
   scheduleThreadRefresh: (tid: string | null) => void;
   formReset: () => void;
+  /** Subtle toast after prompt was queued successfully */
+  onSentToast?: () => void;
 };
 
 export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
@@ -142,6 +144,7 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
           ctx.clearAttachments();
           ctx.setReferenceImageUrls([]);
           ctx.scheduleThreadRefresh(tid);
+          ctx.onSentToast?.();
           return;
         }
         ctx.setError(ctx.t(ctx.locale, 'feedback.noPreviousImage') || 'No previous image to regenerate.');
@@ -198,6 +201,7 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
           ctx.setReferenceImageUrls([]);
           ctx.clearVideoComposer();
           ctx.scheduleThreadRefresh(tid);
+          ctx.onSentToast?.();
           return;
         }
         ctx.setError(ctx.t(ctx.locale, 'feedback.noPreviousVideo') || 'No previous video to regenerate.');
@@ -266,6 +270,7 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
     ctx.setHasStarted(true);
     ctx.setPrompt('');
     ctx.formReset();
+    ctx.onSentToast?.();
   } catch (err) {
     ctx.setPendingUserMessage('');
     ctx.setPendingUserMessageThreadId(null);

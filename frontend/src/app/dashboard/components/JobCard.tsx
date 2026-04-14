@@ -465,7 +465,7 @@ function JobCardInner({
     if (urls.length > 0) {
       return (
         <div className="flex flex-col items-start">
-          <ImageGallery urls={urls} variant="chat" locale={locale} onUseAsReference={onUseAsReference} />
+          <ImageGallery urls={urls} jobId={jobId} variant="chat" locale={locale} onUseAsReference={onUseAsReference} />
           <ResultActionsBar
             jobId={jobId}
             jobType="image"
@@ -564,7 +564,7 @@ function JobCardInner({
             />
           </div>
           {viewingVideoUrl && (
-            <ImageViewModal url={viewingVideoUrl} onClose={() => setViewingVideoUrl(null)} locale={locale} />
+            <ImageViewModal url={viewingVideoUrl} jobId={jobId} onClose={() => setViewingVideoUrl(null)} locale={locale} />
           )}
         </>
       );

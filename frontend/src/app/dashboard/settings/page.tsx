@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useLocale } from '@/app/components/LocaleContext';
+import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import { getMe, updateSettings, type User, type AIConfiguration } from '@/lib/api';
 import { Select } from '@/components/Select';
@@ -29,6 +30,7 @@ const MAX_USER_DETAILS_CHARS = 80;
 
 export default function SettingsPage() {
   const { locale, setLocale } = useLocale();
+  const { showToast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -71,6 +73,7 @@ export default function SettingsPage() {
       setUser(updated);
       syncFormFromUser(updated);
       setSaved(true);
+      showToast('toast.saved');
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t(locale, 'common.failed');

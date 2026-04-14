@@ -1,12 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
 import { createUpscale, listContent, uploadAttachments, getJob, type UpscaleAdvancedOptions, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { t } from '@/lib/i18n';
-import { JobCard } from '../components/JobCard';
+const JobCard = dynamic(
+  () => import('../components/JobCard').then((m) => ({ default: m.JobCard })),
+  {
+    ssr: false,
+    loading: () => <div className="mt-4 min-h-[120px] rounded-xl bg-theme-bg-subtle animate-pulse-subtle" aria-hidden />,
+  }
+);
 
 type Scale = 2 | 4;
 

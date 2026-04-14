@@ -6,13 +6,13 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
+import { useToast } from '@/app/components/ToastContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
 import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, type User, type Job, type Thread } from '@/lib/api';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
-import { JobCard } from './components/JobCard';
 import { ImageSettingsRow, type ImageSettings } from './components/ImageSettingsRow';
 import { VideoSettingsRow, type VideoSettings } from './components/VideoSettingsRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -21,6 +21,16 @@ import { useJobsInProgress } from './components/JobsInProgressContext';
 const PromptBuilderDialog = dynamic(
   () => import('./components/PromptBuilderDialog').then((m) => ({ default: m.PromptBuilderDialog })),
   { ssr: false }
+);
+
+const JobCard = dynamic(
+  () => import('./components/JobCard').then((m) => ({ default: m.JobCard })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="max-w-[min(85vw,680px)] rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-8 min-h-[100px] animate-pulse-subtle" aria-hidden />
+    ),
+  }
 );
 
 type AttachmentItem = { id: string; file: File; previewUrl: string };
@@ -34,6 +44,7 @@ function isProfileIncomplete(user: User | null): boolean {
 
 export default function DashboardPage() {
   const { locale } = useLocale();
+  const { showToast } = useToast();
   const { incognito, setIncognito, incognitoThreadId, setIncognitoThreadId } = useIncognito();
   const { addOptimisticJob } = useJobsInProgress();
   const searchParams = useSearchParams();
@@ -145,6 +156,18 @@ export default function DashboardPage() {
       return prev.filter((a) => a.id !== id);
     });
   }, []);
+
+  /** First slot in the round composer preview: URL reference or uploaded image (not chat docs-only branch uses same UI). */
+  const removeFirstComposerSlot = useCallback(() => {
+    const ref = referenceImageUrls[0];
+    if (ref) {
+      removeReferenceImage(ref);
+      return;
+    }
+    const first = attachments[0];
+    if (first && mode !== 'chat') removeAttachment(first.id);
+  }, [referenceImageUrls, attachments, mode, removeReferenceImage, removeAttachment]);
+
   const clearAttachments = useCallback(() => {
     setAttachments((prev) => {
       prev.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
@@ -629,6 +652,7 @@ export default function DashboardPage() {
         // Reset form to prevent browser auto-resubmission
         if (formRef.current) formRef.current.reset();
       },
+      onSentToast: () => showToast('toast.sent'),
     });
   }
   const inputCls = 'w-full rounded-xl border border-theme-border bg-theme-bg-subtle px-4 py-3 text-theme-fg placeholder:text-theme-fg-subtle focus:border-theme-border-strong focus:outline-none focus:ring-1 focus:ring-theme-border-hover';
@@ -692,22 +716,44 @@ export default function DashboardPage() {
         onDrop={onPromptDrop}
       >
         {showPaperclip && (mode !== 'video' || videoModel === '1') && (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`}
-            aria-label="Attach image"
-          >
-            {(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? (
-              (referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
-                <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
-              ) : (
-                <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
-              )
-            ) : (
-              <PaperclipIcon className="w-5 h-5" />
-            )}
-          </button>
+          (referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? (
+            <div className="relative shrink-0 group h-10 w-10">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 flex items-center justify-center rounded-full border border-theme-border bg-theme-bg-elevated p-0.5 overflow-hidden transition-colors hover:border-theme-border-hover"
+                aria-label="Attach image"
+              >
+                {(referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
+                  <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="h-full w-full object-cover" decoding="async" />
+                ) : (
+                  <DocumentIcon className="h-5 w-5 shrink-0 text-theme-fg-muted" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  removeFirstComposerSlot();
+                }}
+                className="absolute -right-0.5 -top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-theme-border-hover bg-theme-bg-overlay-strong text-theme-fg transition-opacity duration-150 hover:border-red-400/50 hover:bg-red-500/25 pointer-coarse:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
+                aria-label={t(locale, 'common.remove')}
+                title={t(locale, 'common.remove')}
+              >
+                <XIcon className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-tap shrink-0 p-2 text-theme-fg-muted transition-colors hover:text-theme-fg"
+              aria-label="Attach image"
+            >
+              <PaperclipIcon className="h-5 w-5" />
+            </button>
+          )
         )}
         {mode === 'video' && videoModel === '2' && (
           <>
@@ -808,16 +854,24 @@ export default function DashboardPage() {
             {t(locale, 'chat.dropFiles')}
           </span>
         )}
-        <input
-          type="text"
+        <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            if (e.shiftKey) return; // allow newline with Shift+Enter
+            if ((e.nativeEvent as KeyboardEvent).isComposing) return;
+            e.preventDefault();
+            if (loading) return;
+            formRef.current?.requestSubmit();
+          }}
           onPaste={(e) => {
             const items = e.clipboardData?.files;
             if (items) for (let i = 0; i < items.length; i++) addAttachment(items[i]);
           }}
           placeholder={!threadId ? getFriendlyPlaceholder(user?.full_name, locale) : t(locale, 'chat.placeholder')}
-          className={`flex-1 min-w-[120px] px-2 py-2.5 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none rounded-lg`}
+          rows={1}
+          className={`scrollbar-subtle flex-1 min-w-[120px] px-2 py-2.5 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none rounded-lg resize-none max-h-40 overflow-y-auto`}
           disabled={loading}
         />
         {(mode === 'image' || mode === 'video') && (
@@ -1208,17 +1262,39 @@ export default function DashboardPage() {
                 onDrop={onPromptDrop}
               >
                 {(mode === 'image' || (mode === 'video' && videoModel === '1') || mode === 'chat') && (
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className={`shrink-0 flex items-center justify-center transition-colors ${(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? 'p-0.5 rounded-full border border-theme-border overflow-hidden w-10 h-10' : 'p-2 text-theme-fg-muted hover:text-theme-fg'}`} aria-label="Attach image">
-                    {(referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? (
-                      (referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
-                        <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="w-full h-full object-cover" decoding="async" />
-                      ) : (
-                        <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
-                      )
-                    ) : (
-                      <PaperclipIcon className="w-5 h-5" />
-                    )}
-                  </button>
+                  (referenceImageUrls.length > 0 || (attachments.length > 0 && mode !== 'chat')) ? (
+                    <div className="relative shrink-0 group h-10 w-10">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="absolute inset-0 flex items-center justify-center rounded-full border border-theme-border bg-theme-bg-elevated p-0.5 overflow-hidden transition-colors hover:border-theme-border-hover"
+                        aria-label="Attach image"
+                      >
+                        {(referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
+                          <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="h-full w-full object-cover" decoding="async" />
+                        ) : (
+                          <DocumentIcon className="h-5 w-5 shrink-0 text-theme-fg-muted" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          removeFirstComposerSlot();
+                        }}
+                        className="absolute -right-0.5 -top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-theme-border-hover bg-theme-bg-overlay-strong text-theme-fg transition-opacity duration-150 hover:border-red-400/50 hover:bg-red-500/25 pointer-coarse:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
+                        aria-label={t(locale, 'common.remove')}
+                        title={t(locale, 'common.remove')}
+                      >
+                        <XIcon className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="btn-tap shrink-0 p-2 text-theme-fg-muted transition-colors hover:text-theme-fg" aria-label="Attach image">
+                      <PaperclipIcon className="h-5 w-5" />
+                    </button>
+                  )
                 )}
                 {mode === 'video' && videoModel === '2' && (
                   <>

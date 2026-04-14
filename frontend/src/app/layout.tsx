@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import { Syne, DM_Sans } from 'next/font/google';
 import './globals.css';
 import { LocaleProvider } from './components/LocaleContext';
+import { ToastProvider } from './components/ToastContext';
 import { IncognitoProvider } from './components/IncognitoContext';
-import { Preconnect } from './components/Preconnect';
 import { SITE_URL, SITE_NAME, DEFAULT_DESCRIPTION, absoluteUrl, DEFAULT_OG_IMAGE } from '@/lib/seo';
 
 const syne = Syne({ subsets: ['latin'], variable: '--font-syne', display: 'swap' });
@@ -61,18 +61,35 @@ export const viewport: Viewport = {
   viewportFit: 'cover', /* safe-area for notched devices */
 };
 
+function preconnectOrigin(raw: string | undefined): string | null {
+  const s = raw?.trim();
+  if (!s) return null;
+  try {
+    return new URL(s).origin;
+  } catch {
+    return null;
+  }
+}
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const apiOrigin = preconnectOrigin(process.env.NEXT_PUBLIC_API_URL);
+  const supabaseOrigin = preconnectOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
   return (
     <html lang="en" className={`${syne.variable} ${dmSans.variable}`} suppressHydrationWarning>
+      <head>
+        {apiOrigin ? <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" /> : null}
+        {supabaseOrigin ? <link rel="preconnect" href={supabaseOrigin} crossOrigin="anonymous" /> : null}
+      </head>
       <body className="min-h-screen antialiased font-sans touch-manipulation">
-        <Preconnect />
         <LocaleProvider>
-        <IncognitoProvider>{children}</IncognitoProvider>
-      </LocaleProvider>
+          <ToastProvider>
+            <IncognitoProvider>{children}</IncognitoProvider>
+          </ToastProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

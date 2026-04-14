@@ -47,15 +47,17 @@ type Server struct {
 	jwks                *keyfunc.JWKS
 	supabaseURL         string
 	supabaseServiceRole string
+	shareSigningSecret  string // HMAC for read-only job share links (use JWT_SECRET)
 }
 
 // NewServer builds the API server.
-func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg, modelText string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
+func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg, modelText string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole, shareSigningSecret string) *Server {
 	return &Server{
 		DB: db, Asynq: asynq, Store: store, Stream: streamSub, Cache: cache,
 		Repl: repl, ModelRemoveBg: modelRemoveBg, ModelText: modelText,
 		redisURL: redisURL, supabaseJWTSecret: supabaseJWTSecret, jwks: jwks,
 		supabaseURL: supabaseURL, supabaseServiceRole: supabaseServiceRole,
+		shareSigningSecret: shareSigningSecret,
 	}
 }
 
@@ -76,6 +78,13 @@ func (s *Server) Routes() http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimitByIP(120)) // Permissive for launch; lower later (e.g. 30)
 		r.Get("/api/check-email", s.checkEmail)
+	})
+	// Read-only share links (signed token; no Supabase session)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RateLimitByIP(180))
+		r.Get("/api/public/share/{token}", s.publicShare)
+		r.Get("/api/public/share/{token}/media", s.publicShareMedia)
+		r.Get("/api/public/share/{token}/proxy", s.publicShareProxy)
 	})
 
 	r.Route("/api", func(r chi.Router) {
@@ -148,6 +157,8 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/jobs/{id}/stream", s.jobStreamSSE)
 		r.Get("/download", s.downloadMedia)
 		r.Get("/media", s.serveMedia)
+		r.Post("/shares", s.createJobShare)
+		r.Delete("/shares/{id}", s.revokeJobShare)
 		// Admin CRM (requires is_admin = true)
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.RequireAdmin(s.DB))

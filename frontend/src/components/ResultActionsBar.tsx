@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import { downloadMediaUrl, setJobFeedback } from '@/lib/api';
@@ -41,6 +42,7 @@ export function ResultActionsBar({
   onStartThreadFromText,
   locale,
 }: ResultActionsBarProps) {
+  const { showToast } = useToast();
   const [rating, setRating] = useState<'like' | 'dislike' | null>(initialRating ?? null);
   const [copyDone, setCopyDone] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -73,6 +75,7 @@ export function ResultActionsBar({
     try {
       await navigator.clipboard.writeText(toCopy);
       setCopyDone(true);
+      showToast('toast.copied');
       setTimeout(() => setCopyDone(false), 1200);
     } catch {}
   };
@@ -87,6 +90,7 @@ export function ResultActionsBar({
       a.download = jobType === 'video' ? 'flipo5-video.mp4' : 'flipo5-image.png';
       a.click();
       URL.revokeObjectURL(a.href);
+      showToast('toast.downloaded');
     } catch {
       window.open(url, '_blank');
     } finally {

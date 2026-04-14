@@ -3,17 +3,17 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
-import { listContent, type Job } from '@/lib/api';
+import { getMediaDisplayUrl, getToken, listContent, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import { getOutputUrls } from '@/lib/jobOutput';
+import { getOutputRefs } from '@/lib/jobOutput';
 import { ImageViewModal } from '../components/ImageViewModal';
 import { buttonClassName } from '@/components/ui/Button';
 
-type MediaItem = Job & { mediaUrls: string[] };
+type MediaItem = Job & { mediaRefs: string[] };
 
 function extractMedia(job: Job): string[] {
   if (job.status !== 'completed') return [];
-  return getOutputUrls(job.output).filter((u) => typeof u === 'string' && u.startsWith('http'));
+  return getOutputRefs(job.output).filter((u) => typeof u === 'string' && u.length > 0);
 }
 
 export default function CollectionsContent() {
@@ -21,28 +21,38 @@ export default function CollectionsContent() {
   const galleryRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewing, setViewing] = useState<{ urls: string[]; type: string } | null>(null);
+  const [mediaToken, setMediaToken] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ urls: string[]; downloadUrls: string[]; type: string; jobId: string } | null>(null);
+
+  useEffect(() => {
+    getToken().then(setMediaToken);
+  }, []);
 
   const handleDeleteFromModal = useCallback((targetUrl: string) => {
     setItems((prev) =>
       prev
-        .map((item) => ({ ...item, mediaUrls: item.mediaUrls.filter((u) => u !== targetUrl) }))
-        .filter((item) => item.mediaUrls.length > 0)
+        .map((item) => ({ ...item, mediaRefs: item.mediaRefs.filter((u) => u !== targetUrl) }))
+        .filter((item) => item.mediaRefs.length > 0)
     );
     setViewing((prev) => {
       if (!prev) return prev;
-      const nextUrls = prev.urls.filter((u) => u !== targetUrl);
-      return nextUrls.length > 0 ? { ...prev, urls: nextUrls } : null;
+      const nextRaw = prev.downloadUrls.filter((u) => u !== targetUrl);
+      if (nextRaw.length === 0) return null;
+      return {
+        ...prev,
+        downloadUrls: nextRaw,
+        urls: nextRaw.map((u) => (u.startsWith('http') ? u : (mediaToken ? getMediaDisplayUrl(u, mediaToken) : ''))),
+      };
     });
-  }, []);
+  }, [mediaToken]);
 
   const fetchAll = useCallback(() => {
     setLoading(true);
     listContent({ page: 1, limit: 60 })
       .then((r) => {
         const mapped = (r.jobs ?? [])
-          .map((j) => ({ ...j, mediaUrls: extractMedia(j) }))
-          .filter((j) => j.mediaUrls.length > 0 && (j.type === 'image' || j.type === 'video' || j.type === 'upscale'));
+          .map((j) => ({ ...j, mediaRefs: extractMedia(j) }))
+          .filter((j) => j.mediaRefs.length > 0 && (j.type === 'image' || j.type === 'video' || j.type === 'upscale'));
         setItems(mapped);
       })
       .catch(() => setItems([]))
@@ -116,17 +126,25 @@ export default function CollectionsContent() {
             }}
           >
             {items.flatMap((job) =>
-              job.mediaUrls.map((url, idx) => (
+              job.mediaRefs.map((ref, idx) => (
                 <button
                   key={`${job.id}-${idx}`}
                   type="button"
-                  onClick={() => setViewing({ urls: job.mediaUrls, type: job.type })}
+                  onClick={() => {
+                    const raw = job.mediaRefs;
+                    setViewing({
+                      urls: raw.map((u) => (u.startsWith('http') ? u : (mediaToken ? getMediaDisplayUrl(u, mediaToken) : ''))),
+                      downloadUrls: raw,
+                      type: job.type,
+                      jobId: job.id,
+                    });
+                  }}
                   className="block w-full relative group overflow-hidden bg-theme-bg-elevated focus:outline-none focus-visible:ring-1 focus-visible:ring-theme-border-hover"
                   style={{ breakInside: 'avoid', marginBottom: '2px', display: 'block' }}
                 >
                   {job.type === 'video' ? (
                     <video
-                      src={url}
+                      src={ref.startsWith('http') ? ref : (mediaToken ? getMediaDisplayUrl(ref, mediaToken) : '')}
                       className="w-full block"
                       muted
                       preload="metadata"
@@ -134,7 +152,7 @@ export default function CollectionsContent() {
                     />
                   ) : (
                     <img
-                      src={url}
+                      src={ref.startsWith('http') ? ref : (mediaToken ? getMediaDisplayUrl(ref, mediaToken) : '')}
                       alt=""
                       className="w-full block"
                       loading="lazy"
@@ -163,6 +181,8 @@ export default function CollectionsContent() {
         <ImageViewModal
           url={viewing.urls[0]}
           urls={viewing.urls}
+          downloadUrls={viewing.downloadUrls}
+          jobId={viewing.jobId}
           onDelete={handleDeleteFromModal}
           onClose={() => setViewing(null)}
           locale={locale}

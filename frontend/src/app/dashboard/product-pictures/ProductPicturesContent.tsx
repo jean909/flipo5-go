@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocale } from '@/app/components/LocaleContext';
+import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import {
   uploadAttachments,
@@ -19,11 +20,14 @@ import {
   createProductSceneImproveJob,
   createImage,
   getJob,
+  createJobShare,
+  fetchBlobForJobRef,
   type Product,
   type ProductPhoto,
   type Job,
 } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
+import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
 
 const MIN_AVG_SCORE = 5;
 const MIN_DESCRIPTION_LENGTH_FOR_IMPROVE = 15;
@@ -67,6 +71,7 @@ function averageScore(photos: ProductPhoto[]): number | null {
 
 export default function ProductPicturesContent() {
   const { locale } = useLocale();
+  const { showToast } = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [productName, setProductName] = useState('');
   const [productCategory, setProductCategory] = useState('');
@@ -85,6 +90,9 @@ export default function ProductPicturesContent() {
   const [generateJobId, setGenerateJobId] = useState<string | null>(null);
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generatedUrls, setGeneratedUrls] = useState<string[]>([]);
+  const [shareJobId, setShareJobId] = useState<string | null>(null);
+  const [selectedGenerated, setSelectedGenerated] = useState<Set<number>>(() => new Set());
+  const [exportGenBusy, setExportGenBusy] = useState(false);
   const [error, setError] = useState('');
   const [improveDialogOpen, setImproveDialogOpen] = useState(false);
   const [improveProductUrl, setImproveProductUrl] = useState('');
@@ -102,6 +110,7 @@ export default function ProductPicturesContent() {
   const [editingProductDescription, setEditingProductDescription] = useState('');
   const [editingProductBrand, setEditingProductBrand] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState<'create' | 'edit' | null>(null);
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -161,6 +170,7 @@ export default function ProductPicturesContent() {
       setGeneratedJobs([]);
       setStep(2);
       loadProducts();
+      showToast('toast.created');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
     }
@@ -203,6 +213,7 @@ export default function ProductPicturesContent() {
         loadProduct(editingProductId);
       }
       setEditingProductId(null);
+      showToast('toast.saved');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
     }
@@ -221,6 +232,7 @@ export default function ProductPicturesContent() {
         setPhotos([]);
         setStep(1);
       }
+      showToast('toast.deleted');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -358,6 +370,7 @@ export default function ProductPicturesContent() {
     try {
       await deleteProductPhoto(productId, photoId);
       setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+      showToast('toast.deleted');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -409,6 +422,8 @@ export default function ProductPicturesContent() {
     setError('');
     setGenerateLoading(true);
     setGeneratedUrls([]);
+    setShareJobId(null);
+    setSelectedGenerated(new Set());
     try {
       const imageUrls = photos.map((p) => p.image_url);
       const { job_id } = await createImage({
@@ -434,6 +449,8 @@ export default function ProductPicturesContent() {
         if (cancelled) return;
         if (j?.status === 'completed') {
           setGeneratedUrls(getOutputUrls(j.output ?? {}));
+          setShareJobId(jobId);
+          setSelectedGenerated(new Set());
           setGenerateJobId(null);
           setGenerateLoading(false);
           if (productId) loadProduct(productId);
@@ -480,6 +497,20 @@ export default function ProductPicturesContent() {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products]);
+  const createCategorySuggestions = useMemo(() => {
+    const q = productCategory.trim().toLowerCase();
+    if (!q) return categorySuggestions.slice(0, 10);
+    return categorySuggestions
+      .filter((category) => category.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [categorySuggestions, productCategory]);
+  const editCategorySuggestions = useMemo(() => {
+    const q = editingProductCategory.trim().toLowerCase();
+    if (!q) return categorySuggestions.slice(0, 10);
+    return categorySuggestions
+      .filter((category) => category.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [categorySuggestions, editingProductCategory]);
 
   const getCategoryDisplay = useCallback((categoryKey: string) => {
     const normalized = categoryKey.trim().toLowerCase();
@@ -614,22 +645,40 @@ export default function ProductPicturesContent() {
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.category')}</label>
-                  <input
-                    type="text"
-                    list="product-category-suggestions"
-                    value={productCategory}
-                    onChange={(e) => setProductCategory(e.target.value)}
-                    disabled={improveLoading}
-                    placeholder={t(locale, 'productPictures.categoryNone')}
-                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
-                  />
-                  <datalist id="product-category-suggestions">
-                    {categorySuggestions.map((category) => (
-                      <option key={category} value={category}>
-                        {getCategoryDisplay(category)}
-                      </option>
-                    ))}
-                  </datalist>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={productCategory}
+                      onFocus={() => setCategoryMenuOpen('create')}
+                      onBlur={() => setTimeout(() => setCategoryMenuOpen((prev) => (prev === 'create' ? null : prev)), 120)}
+                      onChange={(e) => {
+                        setProductCategory(e.target.value);
+                        if (categoryMenuOpen !== 'create') setCategoryMenuOpen('create');
+                      }}
+                      disabled={improveLoading}
+                      placeholder={t(locale, 'productPictures.categoryNone')}
+                      className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
+                    />
+                    {categoryMenuOpen === 'create' && createCategorySuggestions.length > 0 && (
+                      <div className="absolute z-20 mt-1 w-full rounded-xl border border-theme-border-hover bg-theme-bg shadow-xl max-h-56 overflow-y-auto">
+                        {createCategorySuggestions.map((category) => (
+                          <button
+                            key={category}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setProductCategory(category);
+                              setCategoryMenuOpen(null);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-theme-bg-hover transition-colors"
+                          >
+                            <div className="text-sm text-theme-fg">{category}</div>
+                            <div className="text-xs text-theme-fg-muted">{getCategoryDisplay(category)}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.description')}</label>
@@ -688,20 +737,38 @@ export default function ProductPicturesContent() {
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.category')}</label>
-                  <input
-                    type="text"
-                    list="edit-product-category-suggestions"
-                    value={editingProductCategory}
-                    onChange={(e) => setEditingProductCategory(e.target.value)}
-                    className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
-                  />
-                  <datalist id="edit-product-category-suggestions">
-                    {categorySuggestions.map((category) => (
-                      <option key={category} value={category}>
-                        {getCategoryDisplay(category)}
-                      </option>
-                    ))}
-                  </datalist>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={editingProductCategory}
+                      onFocus={() => setCategoryMenuOpen('edit')}
+                      onBlur={() => setTimeout(() => setCategoryMenuOpen((prev) => (prev === 'edit' ? null : prev)), 120)}
+                      onChange={(e) => {
+                        setEditingProductCategory(e.target.value);
+                        if (categoryMenuOpen !== 'edit') setCategoryMenuOpen('edit');
+                      }}
+                      className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none"
+                    />
+                    {categoryMenuOpen === 'edit' && editCategorySuggestions.length > 0 && (
+                      <div className="absolute z-20 mt-1 w-full rounded-xl border border-theme-border-hover bg-theme-bg shadow-xl max-h-56 overflow-y-auto">
+                        {editCategorySuggestions.map((category) => (
+                          <button
+                            key={category}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setEditingProductCategory(category);
+                              setCategoryMenuOpen(null);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-theme-bg-hover transition-colors"
+                          >
+                            <div className="text-sm text-theme-fg">{category}</div>
+                            <div className="text-xs text-theme-fg-muted">{getCategoryDisplay(category)}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-theme-fg-muted mb-1">{t(locale, 'productPictures.description')}</label>
@@ -992,12 +1059,82 @@ export default function ProductPicturesContent() {
             {generatedUrls.length > 0 && (
               <div>
                 <h2 className="text-sm font-medium text-theme-fg-muted mb-2">{t(locale, 'productPictures.result')}</h2>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button
+                    type="button"
+                    disabled={exportGenBusy || selectedGenerated.size === 0}
+                    onClick={async () => {
+                      if (selectedGenerated.size === 0 || exportGenBusy) return;
+                      setExportGenBusy(true);
+                      try {
+                        const refs = generatedUrls.filter((_, i) => selectedGenerated.has(i));
+                        const entries: { name: string; blob: Blob }[] = [];
+                        let idx = 0;
+                        for (const ref of refs) {
+                          const blob = await fetchBlobForJobRef(ref);
+                          idx += 1;
+                          entries.push({ name: zipEntryName(idx, blob, ref), blob });
+                        }
+                        await zipBlobsAndDownload(entries, `flipo5-product-${new Date().toISOString().slice(0, 10)}`);
+                      } catch {
+                        showToast('productPictures.exportZipError');
+                      } finally {
+                        setExportGenBusy(false);
+                      }
+                    }}
+                    className="btn-tap px-3 py-2 rounded-xl text-sm font-medium border border-theme-border-hover bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover disabled:opacity-50"
+                  >
+                    {exportGenBusy ? t(locale, 'productPictures.exportZipBusy') : t(locale, 'productPictures.exportZip')}
+                  </button>
+                  {shareJobId ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const { path } = await createJobShare(shareJobId);
+                          await navigator.clipboard.writeText(`${typeof window !== 'undefined' ? window.location.origin : ''}${path}`);
+                          showToast('productPictures.clientLinkCopied');
+                        } catch {
+                          showToast('productPictures.clientLinkFailed');
+                        }
+                      }}
+                      className="btn-tap px-3 py-2 rounded-xl text-sm font-medium border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong"
+                    >
+                      {t(locale, 'productPictures.clientLink')}
+                    </button>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap gap-3">
-                  {generatedUrls.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block rounded-xl border border-theme-border overflow-hidden">
-                      <img src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url} alt="" className="w-full max-w-xs aspect-square object-cover" />
-                    </a>
-                  ))}
+                  {generatedUrls.map((url, i) => {
+                    const checked = selectedGenerated.has(i);
+                    return (
+                      <div key={i} className="relative rounded-xl border border-theme-border overflow-hidden">
+                        <label className="absolute top-2 left-2 z-10 flex items-center justify-center w-8 h-8 rounded-md bg-theme-bg-elevated/90 border border-theme-border cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-theme-accent"
+                            checked={checked}
+                            onChange={() => {
+                              setSelectedGenerated((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(i)) next.delete(i);
+                                else next.add(i);
+                                return next;
+                              });
+                            }}
+                          />
+                        </label>
+                        <a
+                          href={url.startsWith('http') ? url : (mediaToken ? getMediaDisplayUrl(url, mediaToken) : '#')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block"
+                        >
+                          <img src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url} alt="" className="w-full max-w-xs aspect-square object-cover" />
+                        </a>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

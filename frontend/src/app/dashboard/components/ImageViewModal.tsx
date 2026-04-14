@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
-import { downloadMediaUrl, createProject, addProjectItem } from '@/lib/api';
+import { downloadMediaUrl, fetchBlobForJobRef, createJobShare, createProject, addProjectItem } from '@/lib/api';
 import { VideoPlayer } from './VideoPlayer';
 
 function isVideoUrl(u: string) {
@@ -16,13 +17,16 @@ interface ImageViewModalProps {
   urls?: string[];
   /** When URLs need a proxy to display, pass raw URLs here for download. Same order as urls. */
   downloadUrls?: string[];
+  /** When set, user can copy a read-only client link (no login). */
+  jobId?: string | null;
   onDelete?: (url: string) => void | Promise<void>;
   onClose: () => void;
   locale?: Locale;
 }
 
-export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, locale = 'en' }: ImageViewModalProps) {
+export function ImageViewModal({ url, urls, downloadUrls, jobId, onDelete, onClose, locale = 'en' }: ImageViewModalProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const list = urls && urls.length > 1 ? urls : [url];
   const [idx, setIdx] = useState(() => Math.max(0, list.indexOf(url)));
   const safeIdx = Math.max(0, Math.min(idx, list.length - 1));
@@ -72,12 +76,16 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
   const handleSave = useCallback(async () => {
     try {
       let blob: Blob;
-      try {
-        blob = await downloadMediaUrl(downloadUrl);
-      } catch {
-        const res = await fetch(downloadUrl);
-        if (!res.ok) throw new Error('Fetch failed');
-        blob = await res.blob();
+      if (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://')) {
+        try {
+          blob = await downloadMediaUrl(downloadUrl);
+        } catch {
+          const res = await fetch(downloadUrl);
+          if (!res.ok) throw new Error('Fetch failed');
+          blob = await res.blob();
+        }
+      } else {
+        blob = await fetchBlobForJobRef(downloadUrl);
       }
       const ext = getExt(blob, downloadUrl);
       const a = document.createElement('a');
@@ -90,22 +98,41 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
         document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
       }, 100);
+      showToast('toast.downloaded');
     } catch (_) {}
-  }, [downloadUrl]);
+  }, [downloadUrl, showToast]);
 
   const handleShare = useCallback(async () => {
     try {
-      const res = await fetch(currentUrl);
-      const blob = await res.blob();
-      const ext = getExt(blob, currentUrl);
+      let blob: Blob;
+      if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
+        const res = await fetch(currentUrl);
+        blob = await res.blob();
+      } else {
+        blob = await fetchBlobForJobRef(downloadUrl);
+      }
+      const ext = getExt(blob, downloadUrl);
       const file = new File([blob], `flipo5.${ext}`, { type: blob.type });
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Flipo5' });
       } else {
         await navigator.clipboard.writeText(currentUrl);
+        showToast('toast.copied');
       }
     } catch (_) {}
-  }, [currentUrl]);
+  }, [currentUrl, downloadUrl, showToast]);
+
+  const handleClientLink = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const { path } = await createJobShare(jobId);
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      await navigator.clipboard.writeText(`${origin}${path}`);
+      showToast('share.clientLinkCopied');
+    } catch (_) {
+      showToast('share.clientLinkFailed');
+    }
+  }, [jobId, showToast]);
 
   const handleEditInStudio = useCallback(async () => {
     if (editLoading) return;
@@ -125,11 +152,11 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
     if (!onDelete || deleteLoading) return;
     setDeleteLoading(true);
     try {
-      await onDelete(currentUrl);
+      await onDelete(downloadUrl);
     } finally {
       setDeleteLoading(false);
     }
-  }, [onDelete, currentUrl, deleteLoading]);
+  }, [onDelete, downloadUrl, deleteLoading]);
 
   return (
     <div
@@ -192,6 +219,16 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
               <ShareIcon className="w-4 h-4" />
               {t(locale, 'image.share')}
             </button>
+            {jobId ? (
+              <button
+                type="button"
+                onClick={handleClientLink}
+                className="px-4 py-2.5 min-h-[44px] rounded-lg bg-theme-accent-muted text-theme-accent hover:bg-theme-accent-hover text-sm font-medium transition-colors flex items-center gap-2 touch-manipulation"
+              >
+                <LinkIcon className="w-4 h-4" />
+                {t(locale, 'share.clientLink')}
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="rounded-xl overflow-hidden bg-theme-bg-overlay flex-1 min-h-0 flex items-center justify-center relative">
@@ -260,6 +297,14 @@ function ShareIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+    </svg>
+  );
+}
+
+function LinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m4.95-4.95 1.757-1.757a4.5 4.5 0 016.364 6.364l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757" />
     </svg>
   );
 }

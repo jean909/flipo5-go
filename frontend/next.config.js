@@ -7,7 +7,7 @@ const nextConfig = {
     remotePatterns: [{ protocol: 'https', hostname: 'images.unsplash.com', pathname: '/**' }],
   },
   experimental: {
-    optimizePackageImports: ['framer-motion', 'react-markdown'],
+    optimizePackageImports: ['framer-motion', 'react-markdown', '@supabase/supabase-js', 'remark-gfm'],
   },
   compress: true,
   async rewrites() {
