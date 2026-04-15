@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
@@ -20,7 +21,6 @@ import {
   createProductSceneImproveJob,
   createImage,
   getJob,
-  createJobShare,
   fetchBlobForJobRef,
   type Product,
   type ProductPhoto,
@@ -28,6 +28,7 @@ import {
 } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
+import { useJobsInProgress } from '../components/JobsInProgressContext';
 
 const MIN_AVG_SCORE = 5;
 const MIN_DESCRIPTION_LENGTH_FOR_IMPROVE = 15;
@@ -72,6 +73,7 @@ function averageScore(photos: ProductPhoto[]): number | null {
 export default function ProductPicturesContent() {
   const { locale } = useLocale();
   const { showToast } = useToast();
+  const { addOptimisticJob, removeOptimisticJob } = useJobsInProgress();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [productName, setProductName] = useState('');
   const [productCategory, setProductCategory] = useState('');
@@ -90,9 +92,9 @@ export default function ProductPicturesContent() {
   const [generateJobId, setGenerateJobId] = useState<string | null>(null);
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generatedUrls, setGeneratedUrls] = useState<string[]>([]);
-  const [shareJobId, setShareJobId] = useState<string | null>(null);
   const [selectedGenerated, setSelectedGenerated] = useState<Set<number>>(() => new Set());
   const [exportGenBusy, setExportGenBusy] = useState(false);
+  const exportGenInFlightRef = useRef(false);
   const [error, setError] = useState('');
   const [improveDialogOpen, setImproveDialogOpen] = useState(false);
   const [improveProductUrl, setImproveProductUrl] = useState('');
@@ -422,7 +424,6 @@ export default function ProductPicturesContent() {
     setError('');
     setGenerateLoading(true);
     setGeneratedUrls([]);
-    setShareJobId(null);
     setSelectedGenerated(new Set());
     try {
       const imageUrls = photos.map((p) => p.image_url);
@@ -449,7 +450,6 @@ export default function ProductPicturesContent() {
         if (cancelled) return;
         if (j?.status === 'completed') {
           setGeneratedUrls(getOutputUrls(j.output ?? {}));
-          setShareJobId(jobId);
           setSelectedGenerated(new Set());
           setGenerateJobId(null);
           setGenerateLoading(false);
@@ -1064,8 +1064,13 @@ export default function ProductPicturesContent() {
                     type="button"
                     disabled={exportGenBusy || selectedGenerated.size === 0}
                     onClick={async () => {
-                      if (selectedGenerated.size === 0 || exportGenBusy) return;
-                      setExportGenBusy(true);
+                      if (selectedGenerated.size === 0 || exportGenInFlightRef.current) return;
+                      exportGenInFlightRef.current = true;
+                      const localZipJobId = `zip-product-${Date.now()}`;
+                      addOptimisticJob({ id: localZipJobId, type: 'zip', thread_id: null });
+                      flushSync(() => {
+                        setExportGenBusy(true);
+                      });
                       try {
                         const refs = generatedUrls.filter((_, i) => selectedGenerated.has(i));
                         const entries: { name: string; blob: Blob }[] = [];
@@ -1079,6 +1084,8 @@ export default function ProductPicturesContent() {
                       } catch {
                         showToast('productPictures.exportZipError');
                       } finally {
+                        removeOptimisticJob(localZipJobId);
+                        exportGenInFlightRef.current = false;
                         setExportGenBusy(false);
                       }
                     }}
@@ -1086,23 +1093,6 @@ export default function ProductPicturesContent() {
                   >
                     {exportGenBusy ? t(locale, 'productPictures.exportZipBusy') : t(locale, 'productPictures.exportZip')}
                   </button>
-                  {shareJobId ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const { path } = await createJobShare(shareJobId);
-                          await navigator.clipboard.writeText(`${typeof window !== 'undefined' ? window.location.origin : ''}${path}`);
-                          showToast('productPictures.clientLinkCopied');
-                        } catch {
-                          showToast('productPictures.clientLinkFailed');
-                        }
-                      }}
-                      className="btn-tap px-3 py-2 rounded-xl text-sm font-medium border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong"
-                    >
-                      {t(locale, 'productPictures.clientLink')}
-                    </button>
-                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {generatedUrls.map((url, i) => {

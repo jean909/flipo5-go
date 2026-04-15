@@ -19,7 +19,8 @@ export async function zipBlobsAndDownload(entries: { name: string; blob: Blob }[
   for (const e of entries) {
     zip.file(e.name, e.blob);
   }
-  const blob = await zip.generateAsync({ type: 'blob' });
+  // Media is already compressed; DEFLATE would block the main thread for a long time on many files.
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = zipBaseName.endsWith('.zip') ? zipBaseName : `${zipBaseName}.zip`;

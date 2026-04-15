@@ -22,7 +22,7 @@ export default function CollectionsContent() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [mediaToken, setMediaToken] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<{ urls: string[]; downloadUrls: string[]; type: string; jobId: string } | null>(null);
+  const [viewing, setViewing] = useState<{ urls: string[]; downloadUrls: string[]; type: string } | null>(null);
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -136,7 +136,6 @@ export default function CollectionsContent() {
                       urls: raw.map((u) => (u.startsWith('http') ? u : (mediaToken ? getMediaDisplayUrl(u, mediaToken) : ''))),
                       downloadUrls: raw,
                       type: job.type,
-                      jobId: job.id,
                     });
                   }}
                   className="block w-full relative group overflow-hidden bg-theme-bg-elevated focus:outline-none focus-visible:ring-1 focus-visible:ring-theme-border-hover"
@@ -182,7 +181,6 @@ export default function CollectionsContent() {
           url={viewing.urls[0]}
           urls={viewing.urls}
           downloadUrls={viewing.downloadUrls}
-          jobId={viewing.jobId}
           onDelete={handleDeleteFromModal}
           onClose={() => setViewing(null)}
           locale={locale}

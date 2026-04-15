@@ -398,6 +398,7 @@ export function JobsInProgressButton() {
     if (type === 'chat') return t(locale, 'jobs.type.chat');
     if (type === 'image') return t(locale, 'jobs.type.image');
     if (type === 'video') return t(locale, 'jobs.type.video');
+    if (type === 'zip') return t(locale, 'jobs.type.zip');
     if (type === 'upscale') return t(locale, 'jobs.type.upscale');
     if (type === 'seo') return t(locale, 'jobs.type.seo');
     if (type === 'outline') return t(locale, 'jobs.type.outline');
@@ -415,6 +416,10 @@ export function JobsInProgressButton() {
 
   const goToJob = (job: Job) => {
     setOpen(false);
+    if (job.type === 'zip') {
+      router.push('/dashboard/content');
+      return;
+    }
     if (job.thread_id) {
       router.push(`/dashboard?thread=${job.thread_id}`);
     } else {
@@ -528,6 +533,8 @@ export function JobsInProgressButton() {
                         <span className="shrink-0 w-8 h-8 rounded-lg bg-theme-bg-hover flex items-center justify-center">
                           {job.type === 'video' ? (
                             <VideoIcon className="w-4 h-4 text-theme-accent" />
+                          ) : job.type === 'zip' ? (
+                            <ZipIcon className="w-4 h-4 text-theme-accent" />
                           ) : (
                             <ImageIcon className="w-4 h-4 text-theme-accent" />
                           )}
@@ -696,6 +703,15 @@ function XIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function ZipIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h7.5L18 9v10.5A1.5 1.5 0 0 1 16.5 21h-9A1.5 1.5 0 0 1 6 19.5V4.5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5V9H18M10.5 8.25h3m-3 2.25h3m-3 2.25h3m-1.5 2.25h.008v.008h-.008v-.008z" />
     </svg>
   );
 }

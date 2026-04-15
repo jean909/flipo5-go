@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -13,6 +14,7 @@ import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
 import { ImageViewModal } from '../components/ImageViewModal';
 import { Input } from '@/components/ui/Input';
 import { buttonClassName } from '@/components/ui/Button';
+import { useJobsInProgress } from '../components/JobsInProgressContext';
 
 type ContentJob = Job & { outputRefs: string[] };
 
@@ -43,6 +45,7 @@ function displayForRef(ref: string, mediaToken: string | null): string {
 export default function ContentPage() {
   const { locale } = useLocale();
   const { showToast } = useToast();
+  const { addOptimisticJob, removeOptimisticJob } = useJobsInProgress();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [items, setItems] = useState<ContentJob[]>([]);
@@ -53,12 +56,12 @@ export default function ContentPage() {
   const mediaTokenRef = useRef<string | null>(null);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(() => new Set());
   const [exportBusy, setExportBusy] = useState(false);
+  const exportInFlightRef = useRef(false);
 
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [viewingMedia, setViewingMedia] = useState<{
     urls: string[];
     downloadUrls: string[];
-    jobId: string;
   } | null>(null);
 
   const typeFilter = (searchParams.get('type') || '') as 'image' | 'video' | '';
@@ -91,8 +94,13 @@ export default function ContentPage() {
   const clearSelection = useCallback(() => setSelectedJobIds(new Set()), []);
 
   const handleExportZip = useCallback(async () => {
-    if (selectedJobIds.size === 0 || exportBusy) return;
-    setExportBusy(true);
+    if (selectedJobIds.size === 0 || exportInFlightRef.current) return;
+    exportInFlightRef.current = true;
+    const localZipJobId = `zip-content-${Date.now()}`;
+    addOptimisticJob({ id: localZipJobId, type: 'zip', thread_id: null });
+    flushSync(() => {
+      setExportBusy(true);
+    });
     try {
       const entries: { name: string; blob: Blob }[] = [];
       let idx = 0;
@@ -112,9 +120,11 @@ export default function ContentPage() {
     } catch {
       showToast('content.exportZipError');
     } finally {
+      removeOptimisticJob(localZipJobId);
+      exportInFlightRef.current = false;
       setExportBusy(false);
     }
-  }, [items, selectedJobIds, exportBusy, showToast]);
+  }, [items, selectedJobIds, showToast, addOptimisticJob, removeOptimisticJob]);
 
   const handleDeleteFromModal = useCallback((targetRef: string) => {
     setItems((prev) =>
@@ -128,7 +138,6 @@ export default function ContentPage() {
       if (nextRaw.length === 0) return null;
       const tok = mediaTokenRef.current;
       return {
-        jobId: prev.jobId,
         downloadUrls: nextRaw,
         urls: nextRaw.map((r) => displayForRef(r, tok)),
       };
@@ -355,7 +364,6 @@ export default function ContentPage() {
                           setViewingMedia({
                             urls: display,
                             downloadUrls: raw,
-                            jobId: job.id,
                           });
                         }}
                         className="btn-tap w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover group"
@@ -447,7 +455,6 @@ export default function ContentPage() {
           url={viewingMedia.urls[0]}
           urls={viewingMedia.urls.length > 1 ? viewingMedia.urls : undefined}
           downloadUrls={viewingMedia.downloadUrls}
-          jobId={viewingMedia.jobId}
           onDelete={handleDeleteFromModal}
           onClose={() => setViewingMedia(null)}
           locale={locale}

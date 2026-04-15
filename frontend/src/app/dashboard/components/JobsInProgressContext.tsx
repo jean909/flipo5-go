@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-type OptimisticJob = { id: string; type: 'image' | 'video'; thread_id?: string | null };
+type OptimisticJob = { id: string; type: 'image' | 'video' | 'zip'; thread_id?: string | null };
 
 const JobsInProgressContext = createContext<{
   optimisticJobs: OptimisticJob[];
