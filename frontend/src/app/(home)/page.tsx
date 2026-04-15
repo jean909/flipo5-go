@@ -314,6 +314,12 @@ export default function Home() {
             <ArrowIcon />
           </Link>
         </motion.section>
+
+        <footer className="border-t border-white/10 px-4 py-6 text-center text-xs text-neutral-400">
+          <Link href="/cookie-policy" className="hover:text-white underline-offset-2 hover:underline">
+            Cookie & Privacy Policy
+          </Link>
+        </footer>
       </main>
     </div>
   );

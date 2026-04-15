@@ -1,4 +1,4 @@
-import { getIntentFromPrompt, isRegenerateKeyword } from '@/lib/promptIntent';
+import { extractImageInputsFromJobInput, getIntentFromPrompt, isRegenerateKeyword } from '@/lib/promptIntent';
 
 type SubmitCtx = {
   prompt: string;
@@ -50,7 +50,7 @@ type SubmitCtx = {
   routerReplace: (href: string) => void;
   refreshThread: () => void;
   addOptimisticJob: (job: { id: string; type: 'image' | 'video'; thread_id: string | null }) => void;
-  handleRegenerateImage: (oldJobId: string, prompt: string, jobThreadId: string | null) => Promise<void>;
+  handleRegenerateImage: (oldJobId: string, prompt: string, jobThreadId: string | null, imageInput?: string[]) => Promise<void>;
   handleRegenerateVideo: (oldJobId: string, prompt: string, jobThreadId: string | null) => Promise<void>;
   clearAttachments: () => void;
   clearVideoComposer: () => void;
@@ -65,7 +65,13 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
   if (!trimmed && ctx.attachments.length === 0) return;
 
   ctx.isSubmittingRef.current = true;
-  const effectiveMode: 'chat' | 'image' | 'video' = ctx.mode === 'chat' ? (getIntentFromPrompt(trimmed) ?? 'chat') : ctx.mode;
+  const hasImageAttachment =
+    ctx.referenceImageUrls.length > 0 || ctx.attachments.some((a) => a.file.type.startsWith('image/'));
+  const hasVideoAttachment = !!ctx.videoFile || ctx.attachments.some((a) => a.file.type.startsWith('video/'));
+  const effectiveMode: 'chat' | 'image' | 'video' =
+    ctx.mode === 'chat'
+      ? (getIntentFromPrompt(trimmed, { hasImageAttachment, hasVideoAttachment }) ?? 'chat')
+      : ctx.mode;
   const requestKey = `${effectiveMode}-${trimmed}-${JSON.stringify({
     attachments: ctx.attachments.map((a) => a.file.name),
     imageSettings: effectiveMode === 'image' ? ctx.imageSettings : undefined,
@@ -136,8 +142,9 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
         const promptToUse = lastImageJob ? (lastImageJob.input as { prompt?: string })?.prompt : (ctx.pendingJobType === 'image' && ctx.effectiveThreadId === ctx.pendingJobThreadId && ctx.jobId ? ctx.lastSentPrompt : null);
         const jobIdToReplace = lastImageJob?.id ?? (ctx.pendingJobType === 'image' && ctx.effectiveThreadId === ctx.pendingJobThreadId ? ctx.jobId : null);
         const threadIdForJob = lastImageJob && 'thread_id' in lastImageJob ? (lastImageJob.thread_id ?? null) : (ctx.effectiveThreadId ?? null);
+        const imageInputForRegenerate = extractImageInputsFromJobInput(lastImageJob?.input);
         if (jobIdToReplace && promptToUse) {
-          await ctx.handleRegenerateImage(jobIdToReplace, promptToUse, threadIdForJob);
+          await ctx.handleRegenerateImage(jobIdToReplace, promptToUse, threadIdForJob, imageInputForRegenerate);
           ctx.setHasStarted(true);
           ctx.setPrompt('');
           ctx.formReset();

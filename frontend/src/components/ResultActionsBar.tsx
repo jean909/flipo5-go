@@ -179,7 +179,8 @@ function ThreadIcon({ className }: { className?: string }) {
 function CopyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={iconStroke}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.369.022.739.112 1.087.32 1.563.501 2.458 2.06 2.458 3.69v6.018A2.25 2.25 0 0 1 13.5 15.75h-3a2.25 2.25 0 0 1-2.25-2.25V6.257c0-1.63.895-3.189 2.458-3.69A2.25 2.25 0 0 0 10.5 2.25H7.5a2.25 2.25 0 0 0-2.166 1.638M15.666 3.888v6.018a2.25 2.25 0 0 1-2.25 2.25H7.5a2.25 2.25 0 0 1-2.25-2.25V3.888m9.416 0h.008Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v2.25A2.25 2.25 0 0 1 13.5 21.75h-7.5a2.25 2.25 0 0 1-2.25-2.25v-9A2.25 2.25 0 0 1 6 8.25h2.25" />
+      <rect x="8.25" y="2.25" width="12" height="12" rx="2.25" ry="2.25" />
     </svg>
   );
 }

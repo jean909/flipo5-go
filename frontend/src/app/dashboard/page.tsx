@@ -11,6 +11,7 @@ import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
 import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, type User, type Job, type Thread } from '@/lib/api';
+import { extractImageInputsFromJobInput } from '@/lib/promptIntent';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ImageSettingsRow, type ImageSettings } from './components/ImageSettingsRow';
@@ -424,7 +425,7 @@ export default function DashboardPage() {
   }, [effectiveThreadId]);
 
   // Regenerate image: re-run same prompt as new image job
-  const handleRegenerateImage = useCallback(async (oldJobId: string, prompt: string, jobThreadId: string | null) => {
+  const handleRegenerateImage = useCallback(async (oldJobId: string, prompt: string, jobThreadId: string | null, imageInput?: string[]) => {
     const tid = jobThreadId ?? effectiveThreadId;
     try {
       const res = await createImage({
@@ -433,6 +434,7 @@ export default function DashboardPage() {
         incognito,
         size: imageSettings.size,
         aspectRatio: imageSettings.aspectRatio,
+        imageInput,
         maxImages: 4,
       });
       setReplaceMap((prev) => ({ ...prev, [oldJobId]: res.job_id }));
@@ -1560,7 +1562,13 @@ export default function DashboardPage() {
                       job.type === 'chat' && isLastReply && promptForRegenerate && effectiveThreadId && !isRegeneratedSlot
                         ? () => handleRegenerate(job.id, promptForRegenerate)
                         : job.type === 'image' && promptForRegenerate
-                          ? () => handleRegenerateImage(job.id, promptForRegenerate, 'thread_id' in job ? (job.thread_id ?? null) : null)
+                          ? () =>
+                              handleRegenerateImage(
+                                job.id,
+                                promptForRegenerate,
+                                'thread_id' in job ? (job.thread_id ?? null) : null,
+                                extractImageInputsFromJobInput(job.input)
+                              )
                           : job.type === 'video' && promptForRegenerate
                             ? () => handleRegenerateVideo(job.id, promptForRegenerate, 'thread_id' in job ? (job.thread_id ?? null) : null)
                             : undefined

@@ -1065,6 +1065,11 @@ export default function ProductPicturesContent() {
                     disabled={exportGenBusy || selectedGenerated.size === 0}
                     onClick={async () => {
                       if (selectedGenerated.size === 0 || exportGenInFlightRef.current) return;
+                      const refs = generatedUrls.filter((_, i) => selectedGenerated.has(i));
+                      if (refs.length === 0) {
+                        showToast('productPictures.exportZipError');
+                        return;
+                      }
                       exportGenInFlightRef.current = true;
                       const localZipJobId = `zip-product-${Date.now()}`;
                       addOptimisticJob({ id: localZipJobId, type: 'zip', thread_id: null });
@@ -1072,15 +1077,26 @@ export default function ProductPicturesContent() {
                         setExportGenBusy(true);
                       });
                       try {
-                        const refs = generatedUrls.filter((_, i) => selectedGenerated.has(i));
                         const entries: { name: string; blob: Blob }[] = [];
                         let idx = 0;
+                        let failedCount = 0;
                         for (const ref of refs) {
-                          const blob = await fetchBlobForJobRef(ref);
-                          idx += 1;
-                          entries.push({ name: zipEntryName(idx, blob, ref), blob });
+                          try {
+                            const blob = await fetchBlobForJobRef(ref);
+                            idx += 1;
+                            entries.push({ name: zipEntryName(idx, blob, ref), blob });
+                          } catch {
+                            failedCount += 1;
+                          }
+                        }
+                        if (entries.length === 0) {
+                          showToast('productPictures.exportZipError');
+                          return;
                         }
                         await zipBlobsAndDownload(entries, `flipo5-product-${new Date().toISOString().slice(0, 10)}`);
+                        if (failedCount > 0) {
+                          showToast('productPictures.exportZipError');
+                        }
                       } catch {
                         showToast('productPictures.exportZipError');
                       } finally {

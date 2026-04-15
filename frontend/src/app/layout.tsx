@@ -4,6 +4,7 @@ import './globals.css';
 import { LocaleProvider } from './components/LocaleContext';
 import { ToastProvider } from './components/ToastContext';
 import { IncognitoProvider } from './components/IncognitoContext';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { SITE_URL, SITE_NAME, DEFAULT_DESCRIPTION, absoluteUrl, DEFAULT_OG_IMAGE } from '@/lib/seo';
 
 const syne = Syne({ subsets: ['latin'], variable: '--font-syne', display: 'swap' });
@@ -87,7 +88,10 @@ export default function RootLayout({
       <body className="min-h-screen antialiased font-sans touch-manipulation">
         <LocaleProvider>
           <ToastProvider>
-            <IncognitoProvider>{children}</IncognitoProvider>
+            <IncognitoProvider>
+              {children}
+              <CookieConsentBanner />
+            </IncognitoProvider>
           </ToastProvider>
         </LocaleProvider>
       </body>

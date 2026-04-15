@@ -95,6 +95,13 @@ export default function ContentPage() {
 
   const handleExportZip = useCallback(async () => {
     if (selectedJobIds.size === 0 || exportInFlightRef.current) return;
+    const selectedRefs = items
+      .filter((job) => selectedJobIds.has(job.id))
+      .flatMap((job) => job.outputRefs);
+    if (selectedRefs.length === 0) {
+      showToast('content.exportZipError');
+      return;
+    }
     exportInFlightRef.current = true;
     const localZipJobId = `zip-content-${Date.now()}`;
     addOptimisticJob({ id: localZipJobId, type: 'zip', thread_id: null });
@@ -104,12 +111,14 @@ export default function ContentPage() {
     try {
       const entries: { name: string; blob: Blob }[] = [];
       let idx = 0;
-      for (const job of items) {
-        if (!selectedJobIds.has(job.id)) continue;
-        for (const ref of job.outputRefs) {
+      let failedCount = 0;
+      for (const ref of selectedRefs) {
+        try {
           const blob = await fetchBlobForJobRef(ref);
           idx += 1;
           entries.push({ name: zipEntryName(idx, blob, ref), blob });
+        } catch {
+          failedCount += 1;
         }
       }
       if (entries.length === 0) {
@@ -117,6 +126,9 @@ export default function ContentPage() {
         return;
       }
       await zipBlobsAndDownload(entries, `flipo5-content-${new Date().toISOString().slice(0, 10)}`);
+      if (failedCount > 0) {
+        showToast('content.exportZipError');
+      }
     } catch {
       showToast('content.exportZipError');
     } finally {

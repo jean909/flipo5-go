@@ -522,7 +522,34 @@ export function JobsInProgressButton() {
                 <p className="p-4 text-sm text-theme-fg-subtle">{t(locale, 'jobsInProgress.empty')}</p>
               ) : (
                 <>
-                  {pendingJobs.map((job) => (
+                  {pendingJobs.map((job) =>
+                    job.type === 'zip' ? (
+                      <div
+                        key={job.id}
+                        className="w-full px-3 py-2.5 flex flex-col gap-2 text-left border-b border-theme-border-subtle"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 w-8 h-8 rounded-lg bg-theme-bg-hover flex items-center justify-center">
+                            <ZipIcon className="w-4 h-4 text-theme-accent" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-sm font-medium text-theme-fg">{typeT(job.type)}</span>
+                            <span className="text-xs text-theme-fg-subtle ml-1.5">{statusT(job.status)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 min-w-[60px] rounded-full bg-theme-bg-hover overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-theme-accent/80 transition-[width] duration-500 ease-out"
+                              style={{ width: `${getProgressForJob(job)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-theme-fg-subtle tabular-nums shrink-0 w-8">
+                            {getProgressForJob(job)}%
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
                     <button
                       key={job.id}
                       type="button"
@@ -560,7 +587,8 @@ export function JobsInProgressButton() {
                         <p className="text-xs text-theme-fg-muted">{t(locale, 'jobsInProgress.videoDelay')}</p>
                       )}
                     </button>
-                  ))}
+                    )
+                  )}
                   {dedupeById(completedToasts).map((toast) => (
                     <div
                       key={toast.id}
