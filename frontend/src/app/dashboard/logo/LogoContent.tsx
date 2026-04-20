@@ -316,7 +316,6 @@ export default function LogoContent() {
   const [primaryColor, setPrimaryColor] = useState('');
   const [secondaryColor, setSecondaryColor] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [outputFormat, setOutputFormat] = useState<'png' | 'jpg'>('png');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
@@ -393,7 +392,6 @@ export default function LogoContent() {
         primary_color: primaryColor || undefined,
         secondary_color: secondaryColor || undefined,
         aspect_ratio: aspectRatio,
-        output_format: outputFormat,
       });
       setJobId(job_id);
       pollJob(job_id);
@@ -555,18 +553,6 @@ export default function LogoContent() {
                 {ASPECT_RATIOS.map((r) => (
                   <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-theme-fg-muted mb-1.5">{t(locale, 'logo.outputFormat')}</label>
-              <select
-                value={outputFormat}
-                onChange={(e) => setOutputFormat(e.target.value as 'png' | 'jpg')}
-                className="select-theme px-3 py-2 rounded-lg border border-theme-border bg-theme-bg text-theme-fg text-sm focus:outline-none focus:border-theme-border-hover"
-                disabled={loading}
-              >
-                <option value="png">PNG</option>
-                <option value="jpg">JPG</option>
               </select>
             </div>
           </div>

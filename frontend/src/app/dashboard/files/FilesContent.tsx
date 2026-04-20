@@ -783,6 +783,7 @@ export default function FilesContent() {
           urls={imageModal.displayUrls}
           downloadUrls={imageModal.downloadUrls}
           onClose={() => setImageModal(null)}
+          enableSvgExport={!!viewingLogo}
           locale={locale}
         />
       )}

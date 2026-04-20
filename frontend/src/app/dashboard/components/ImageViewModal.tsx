@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
-import { downloadMediaUrl, fetchBlobForJobRef, createProject, addProjectItem } from '@/lib/api';
+import { downloadMediaUrl, fetchBlobForJobRef, createProject, addProjectItem, vectorizeImage } from '@/lib/api';
 import { VideoPlayer } from './VideoPlayer';
 
 function isVideoUrl(u: string) {
@@ -19,10 +19,12 @@ interface ImageViewModalProps {
   downloadUrls?: string[];
   onDelete?: (url: string) => void | Promise<void>;
   onClose: () => void;
+  /** Show an extra "SVG" button that vectorizes the current image server-side. Useful for logos. */
+  enableSvgExport?: boolean;
   locale?: Locale;
 }
 
-export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, locale = 'en' }: ImageViewModalProps) {
+export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, enableSvgExport, locale = 'en' }: ImageViewModalProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const list = urls && urls.length > 1 ? urls : [url];
@@ -36,6 +38,7 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
   const [editLoading, setEditLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [svgLoading, setSvgLoading] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [nativeShareBusy, setNativeShareBusy] = useState(false);
   const shareWrapRef = useRef<HTMLDivElement>(null);
@@ -170,6 +173,29 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
     }
   }, [buildBlobForShare, downloadUrl, nativeShareBusy, shareLink, showToast]);
 
+  const handleSvgExport = useCallback(async () => {
+    if (svgLoading) return;
+    setSvgLoading(true);
+    try {
+      const blob = await vectorizeImage(downloadUrl, 'color');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `flipo5-${Date.now()}.svg`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }, 100);
+      showToast('toast.downloaded');
+    } catch (_) {
+      showToast('common.failed');
+    } finally {
+      setSvgLoading(false);
+    }
+  }, [downloadUrl, showToast, svgLoading]);
+
   const handleCopyShareLink = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(shareLink);
@@ -270,6 +296,18 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, loc
             >
               {saveLoading ? <SpinnerIcon className="w-4 h-4" /> : <DownloadIcon className="w-4 h-4" />}
             </button>
+            {enableSvgExport && !isVideo && (
+              <button
+                type="button"
+                onClick={handleSvgExport}
+                disabled={svgLoading}
+                className="min-h-[44px] px-3 rounded-full bg-theme-bg-hover-strong hover:bg-theme-bg-hover-stronger text-theme-fg transition-colors flex items-center justify-center gap-1.5 text-xs font-semibold touch-manipulation disabled:opacity-60"
+                aria-label={t(locale, 'image.downloadSvg')}
+                title={t(locale, 'image.downloadSvg')}
+              >
+                {svgLoading ? <SpinnerIcon className="w-4 h-4" /> : <span>SVG</span>}
+              </button>
+            )}
             <div className="relative" ref={shareWrapRef}>
               <button
                 type="button"
