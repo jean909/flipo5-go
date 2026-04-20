@@ -245,13 +245,11 @@ func (db *DB) UpdateUserSettings(ctx context.Context, id uuid.UUID, dataRetentio
 	if aiConfig != nil {
 		b, _ := json.Marshal(aiConfig)
 		res, err := db.Pool.Exec(ctx, `UPDATE users SET ai_configuration = $1, ai_config_updated_at = NOW(), updated_at = NOW()
-			WHERE id = $2 AND (ai_config_updated_at IS NULL OR ai_config_updated_at < NOW() - INTERVAL '24 hours')`, b, id)
+			WHERE id = $2`, b, id)
 		if err != nil {
 			return err
 		}
-		if res.RowsAffected() == 0 {
-			return ErrAIConfigCooldown
-		}
+		_ = res
 	}
 	return nil
 }

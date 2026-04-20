@@ -319,7 +319,7 @@ func (s *Server) checkEmail(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"exists": exists})
 }
 
-var validStyles = map[string]bool{"friendly": true, "direct": true, "logical": true, "brief": true, "detailed": true}
+var validStyles = map[string]bool{"balanced": true, "friendly": true, "direct": true, "logical": true, "brief": true, "detailed": true}
 var validLangs = map[string]bool{"browser": true, "en": true, "de": true, "ro": true, "fr": true, "es": true, "it": true}
 
 func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
