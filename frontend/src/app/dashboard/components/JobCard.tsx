@@ -42,6 +42,25 @@ const markdownComponents = {
   ),
   tr: ({ children }: { children?: React.ReactNode }) => <tr className="even:bg-theme-bg-subtle">{children}</tr>,
   tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <pre className="my-3 w-full max-w-full overflow-x-auto rounded-lg border border-theme-border bg-theme-bg-elevated p-3 text-[13px] leading-snug text-theme-fg scrollbar-subtle">
+      {children}
+    </pre>
+  ),
+  code: ({ inline, className, children }: { inline?: boolean; className?: string; children?: React.ReactNode }) => {
+    if (inline) {
+      return (
+        <code className="px-1.5 py-0.5 rounded bg-theme-bg-hover text-theme-fg text-[13px] font-mono break-words">
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className={`font-mono whitespace-pre ${className ?? ''}`}>
+        {children}
+      </code>
+    );
+  },
 };
 
 function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
