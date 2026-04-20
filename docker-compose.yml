@@ -9,6 +9,17 @@ services:
     volumes:
       - redis_data:/data
 
+  vectorizer:
+    build:
+      context: ./services/vectorizer
+      dockerfile: Dockerfile
+    image: flipo5-vectorizer:latest
+    container_name: flipo5-vectorizer
+    restart: unless-stopped
+    # not exposed publicly; only reachable on the internal docker network
+    expose:
+      - "8081"
+
   api:
     build:
       context: ./backend
@@ -18,6 +29,7 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+      - vectorizer
     ports:
       - "8080:8080"
     env_file:
@@ -25,6 +37,7 @@ services:
     environment:
       - PORT=8080
       - REDIS_URL=redis://redis:6379
+      - VECTORIZER_URL=http://vectorizer:8081
 
 volumes:
   redis_data:

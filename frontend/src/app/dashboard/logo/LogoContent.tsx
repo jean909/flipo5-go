@@ -4,11 +4,9 @@ import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t, type Locale } from '@/lib/i18n';
-import { createLogoJob, getJob, getToken, getMediaDisplayUrl, downloadMediaUrl, listContent, type Job } from '@/lib/api';
+import { createLogoJob, getJob, getToken, getMediaDisplayUrl, downloadMediaUrl, vectorizeImage, listContent, type Job } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const VECTORIZER_URL = 'https://www.vectorizer.io/';
 
 const ASPECT_RATIOS = [
   { value: '1:1', label: '1:1' },
@@ -240,11 +238,17 @@ function SvgExportDialog({
   open,
   onClose,
   onDownloadPng,
+  onDownloadSvg,
+  loading,
+  error,
   locale,
 }: {
   open: SvgExportDialog;
   onClose: () => void;
   onDownloadPng: () => void;
+  onDownloadSvg: (mode: 'color' | 'binary') => void;
+  loading: boolean;
+  error: string | null;
   locale: Locale;
 }) {
   if (!open) return null;
@@ -255,7 +259,7 @@ function SvgExportDialog({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-        onClick={onClose}
+        onClick={() => { if (!loading) onClose(); }}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
@@ -267,13 +271,33 @@ function SvgExportDialog({
           <h3 className="text-base font-semibold text-theme-fg mb-2">{t(locale, 'logo.svgDialogTitle')}</h3>
           <p className="text-sm text-theme-fg-muted mb-4">{t(locale, 'logo.svgDialogBody')}</p>
           <div className="flex flex-col gap-2">
-            <button type="button" onClick={() => { onDownloadPng(); onClose(); }} className="btn-tap w-full py-2.5 rounded-xl border border-theme-border bg-theme-bg-hover text-theme-fg text-sm font-medium">
-              {t(locale, 'logo.downloadPng')} →
+            <button
+              type="button"
+              onClick={() => onDownloadSvg('color')}
+              disabled={loading}
+              className="btn-tap w-full py-2.5 rounded-xl border border-theme-accent bg-theme-accent/15 text-theme-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {loading && <span className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />}
+              {t(locale, 'logo.downloadSvgColor')}
             </button>
-            <a href={VECTORIZER_URL} target="_blank" rel="noopener noreferrer" className="btn-tap w-full py-2.5 rounded-xl border border-theme-accent bg-theme-accent/15 text-theme-accent text-sm font-medium text-center">
-              {t(locale, 'logo.openVectorizer')}
-            </a>
-            <button type="button" onClick={onClose} className="py-2 text-sm text-theme-fg-muted hover:text-theme-fg">
+            <button
+              type="button"
+              onClick={() => onDownloadSvg('binary')}
+              disabled={loading}
+              className="btn-tap w-full py-2.5 rounded-xl border border-theme-border bg-theme-bg-hover text-theme-fg text-sm font-medium disabled:opacity-60"
+            >
+              {t(locale, 'logo.downloadSvgBinary')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { onDownloadPng(); onClose(); }}
+              disabled={loading}
+              className="btn-tap w-full py-2 rounded-xl border border-theme-border text-theme-fg-muted text-sm disabled:opacity-60"
+            >
+              {t(locale, 'logo.downloadPng')}
+            </button>
+            {error && <p className="text-xs text-theme-danger">{error}</p>}
+            <button type="button" onClick={onClose} disabled={loading} className="py-2 text-sm text-theme-fg-muted hover:text-theme-fg disabled:opacity-60">
               {t(locale, 'common.close')}
             </button>
           </div>
@@ -300,6 +324,8 @@ export default function LogoContent() {
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [pickerDialog, setPickerDialog] = useState<PickerDialog>(null);
   const [svgExportDialog, setSvgExportDialog] = useState<SvgExportDialog>(null);
+  const [svgExporting, setSvgExporting] = useState(false);
+  const [svgExportError, setSvgExportError] = useState<string | null>(null);
   const [latestLogos, setLatestLogos] = useState<Job[]>([]);
   const [latestLoading, setLatestLoading] = useState(false);
 
@@ -391,9 +417,30 @@ export default function LogoContent() {
     }
   };
 
-  const openSvgExport = (index: number, url: string) => setSvgExportDialog({ index, url });
+  const openSvgExport = (index: number, url: string) => {
+    setSvgExportError(null);
+    setSvgExportDialog({ index, url });
+  };
   const handleSvgDialogDownloadPng = () => {
     if (svgExportDialog) handleDownload(svgExportDialog.url, 'png', svgExportDialog.index);
+  };
+  const handleSvgDialogDownloadSvg = async (mode: 'color' | 'binary') => {
+    if (!svgExportDialog || svgExporting) return;
+    setSvgExporting(true);
+    setSvgExportError(null);
+    try {
+      const blob = await vectorizeImage(svgExportDialog.url, mode);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `logo-variant-${svgExportDialog.index + 1}.svg`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setSvgExportDialog(null);
+    } catch (err) {
+      setSvgExportError(err instanceof Error ? err.message : 'Vectorize failed');
+    } finally {
+      setSvgExporting(false);
+    }
   };
 
   const choiceLabel = (current: string, options: { value: string; label: string }[]) => {
@@ -659,8 +706,11 @@ export default function LogoContent() {
 
       <SvgExportDialog
         open={svgExportDialog}
-        onClose={() => setSvgExportDialog(null)}
+        onClose={() => { setSvgExportDialog(null); setSvgExportError(null); }}
         onDownloadPng={handleSvgDialogDownloadPng}
+        onDownloadSvg={handleSvgDialogDownloadSvg}
+        loading={svgExporting}
+        error={svgExportError}
         locale={locale}
       />
     </div>

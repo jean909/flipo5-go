@@ -31,6 +31,20 @@ npm install
 npm run dev
 ```
 
+If you just upgraded Next.js or dependencies and see odd type errors from generated files (for example under `.next/dev/types`), clear Next cache once and run again:
+
+```bash
+rm -rf .next
+npm run build
+```
+
+On Windows PowerShell:
+
+```powershell
+Remove-Item -Recurse -Force .next
+npm run build
+```
+
 - App: `http://localhost:3000`.
 - Login with any email (no password in MVP); then use Chat / Image / Video.
 

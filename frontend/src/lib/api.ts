@@ -72,6 +72,34 @@ export async function downloadMediaUrl(imageUrl: string): Promise<Blob> {
   return res.blob();
 }
 
+/** Convert a raster image (PNG/JPG/WebP) to SVG via the backend vectorizer service. */
+export async function vectorizeImage(
+  imageUrl: string,
+  mode: 'color' | 'binary' = 'color',
+): Promise<Blob> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/vectorize`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ url: imageUrl, mode }),
+  });
+  if (!res.ok) {
+    let msg = 'Vectorize failed';
+    try {
+      const j = await res.json();
+      if (typeof (j as { error?: string }).error === 'string') msg = (j as { error: string }).error;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+  return res.blob();
+}
+
 /** Fetch one output ref: https via download proxy, or `uploads/...` via /api/media. */
 export async function fetchBlobForJobRef(ref: string): Promise<Blob> {
   const token = await getToken();

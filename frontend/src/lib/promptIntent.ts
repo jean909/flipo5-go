@@ -66,49 +66,39 @@ const REGENERATE_KEYWORDS = [
 
  
 
-const ANALYZE_WORDS = [
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
+/**
+ * Build a single word-boundary regex from a list of needles.
+ * Uses lookarounds on [a-z0-9] so we don't match "ad" inside "already"
+ * but still match multi-word phrases like "what do you see".
+ */
+function buildBoundaryRegex(needles: readonly string[]): RegExp {
+  const parts = needles.map((n) => escapeRegExp(n.toLowerCase()));
+  return new RegExp(`(?<![a-z0-9])(?:${parts.join('|')})(?![a-z0-9])`, 'i');
+}
+
+const ANALYZE_RE = buildBoundaryRegex([
   'analyze', 'analyse', 'describe', 'explain', 'identify', 'compare', 'what do you see', 'what is in',
-
   'analysiere', 'beschreibe', 'erklaere', 'erklare', 'identifiziere', 'vergleiche', 'was siehst', 'was ist in', 'zeige mir',
-
-] as const;
-
- 
-
-const GENERATE_VERBS = [
-
+]);
+const GENERATE_RE = buildBoundaryRegex([
   'create', 'generate', 'make', 'draw', 'render', 'design',
-
   'erstelle', 'generiere', 'mach', 'zeichne', 'render', 'kreiere', 'visualisiere', 'vizualize', 'vizualise',
-
-] as const;
-
- 
-
-const IMAGE_WORDS = [
-
+]);
+const IMAGE_RE = buildBoundaryRegex([
   'image', 'picture', 'photo', 'drawing', 'blueprint', 'sketch', 'illustration', 'line art', 'scenery',
-
   'bild', 'foto', 'zeichnung', 'skizze', 'illustration', 'schwarz-weiss', 'schwarz-weiß', 'aufnahme', 'szene', 'studie', 'rendering', 'mockup', 'produktfoto', 'freisteller', 'thumbnail', 'banner', 'poster', 'cover', 'portrait', 'headshot', 'titelbild',
-
-] as const;
-
- 
-
-const VIDEO_WORDS = [
-
+]);
+const VIDEO_RE = buildBoundaryRegex([
   'video', 'clip', 'animation', 'movie', 'reel', 'cinematic',
   'film', 'sequenz', 'footage', 'short', 'commercial', 'ad', 'promo', 'trailer', 'loop', 'timelapse', 'slow motion', 'panning', 'camera move', 'kamerafahrt', 'produktvideo',
+]);
 
-] as const;
-
- 
-
-function includesAny(haystack: string, needles: readonly string[]): boolean {
-
-  return needles.some((n) => haystack.includes(n));
-
+function matchesWord(haystack: string, re: RegExp): boolean {
+  return re.test(haystack);
 }
 
  
@@ -145,11 +135,11 @@ export function getIntentFromPrompt(text: string, hints: IntentHints = {}): Prom
 
  
 
-  if (includesAny(lower, ANALYZE_WORDS) || lower.includes('?')) chatScore += 4;
+  if (matchesWord(lower, ANALYZE_RE) || lower.includes('?')) chatScore += 4;
 
  
 
-  const hasGenerateVerb = includesAny(lower, GENERATE_VERBS);
+  const hasGenerateVerb = matchesWord(lower, GENERATE_RE);
 
   if (hasGenerateVerb) {
 
@@ -159,9 +149,9 @@ export function getIntentFromPrompt(text: string, hints: IntentHints = {}): Prom
 
   }
 
-  if (includesAny(lower, IMAGE_WORDS)) imageScore += 3;
+  if (matchesWord(lower, IMAGE_RE)) imageScore += 3;
 
-  if (includesAny(lower, VIDEO_WORDS)) videoScore += 3;
+  if (matchesWord(lower, VIDEO_RE)) videoScore += 3;
 
  
 
@@ -169,7 +159,7 @@ export function getIntentFromPrompt(text: string, hints: IntentHints = {}): Prom
 
     imageScore += 1;
 
-    if (includesAny(lower, ANALYZE_WORDS)) chatScore += 2;
+    if (matchesWord(lower, ANALYZE_RE)) chatScore += 2;
 
   }
 

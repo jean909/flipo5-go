@@ -97,7 +97,9 @@ Așteaptă câteva secunde. Verifică că rulează:
 docker compose ps
 ```
 
-Ar trebui să vezi containerele `flipo5-api` și `flipo5-redis` cu status „Up”.
+Ar trebui să vezi containerele `flipo5-api`, `flipo5-redis` și `flipo5-vectorizer` cu status „Up”.
+
+> `flipo5-vectorizer` este un serviciu Rust (VTracer) expus **doar** în rețeaua internă Docker, pe portul `8081`. API-ul îl apelează la `http://vectorizer:8081` pentru conversia PNG→SVG (folosit de butonul „Export SVG” din Logo). Nu are nevoie de env vars. Primul build durează ~3-5 minute (compilare Rust), apoi este cache-uit.
 
 ---
 
@@ -304,6 +306,17 @@ Nu e nevoie să dai manual comenzi pe server pentru deploy ulterior – scriptul
    docker compose up -d
    ```
 3. Verificare: `docker compose logs api --tail 30` (caută „migrate: ok”).
+
+
+# int main ()
+
+{ cout<< " Acessta este un nou limbaj de programare"
+   cin>>a>>20;
+   cout<<a  - 20 >>
+
+>>}
+
+
 
 **Pe server: „git pull” spune „Already up to date” dar vrei codul nou din git**
 

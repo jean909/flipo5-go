@@ -970,13 +970,15 @@ export default function ProductPicturesContent() {
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={t(locale, 'productPictures.scenePlaceholder')}
                   disabled={generateLoading || sceneImproveLoading}
-                  className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-4 py-2.5 focus:outline-none disabled:opacity-70"
+                  className={`w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm pl-4 py-2.5 focus:outline-none disabled:opacity-70 ${
+                    canShowSceneImproveHint && !sceneImproveLoading && !generateLoading ? 'pr-24' : 'pr-4'
+                  }`}
                 />
                 {canShowSceneImproveHint && !sceneImproveLoading && !generateLoading && (
                   <button
                     type="button"
                     onClick={handleOpenSceneImproveDialog}
-                    className="absolute right-2 bottom-2 text-xs font-semibold text-white rounded-md px-2.5 py-1 bg-theme-accent/90 hover:bg-theme-accent transition-colors shadow-sm"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-white rounded-md px-2.5 py-1 bg-theme-accent hover:bg-theme-accent-hover transition-colors shadow-sm"
                   >
                     {t(locale, 'productPictures.improve')}
                   </button>
