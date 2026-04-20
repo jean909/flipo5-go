@@ -8,12 +8,15 @@ import { getMe, updateSettings, type User, type AIConfiguration } from '@/lib/ap
 import { Select } from '@/components/Select';
 
 const AI_STYLES = [
+  { value: 'balanced', labelKey: 'settings.aiStyleBalanced' },
   { value: 'friendly', labelKey: 'settings.aiStyleFriendly' },
   { value: 'direct', labelKey: 'settings.aiStyleDirect' },
   { value: 'logical', labelKey: 'settings.aiStyleLogical' },
   { value: 'brief', labelKey: 'settings.aiStyleBrief' },
   { value: 'detailed', labelKey: 'settings.aiStyleDetailed' },
 ] as const;
+
+const DEFAULT_AI_STYLE = 'balanced';
 
 const AI_LANG_VALUES = ['browser', 'en', 'de', 'ro', 'fr', 'es', 'it'] as const;
 const AI_LANG_LABELS: Record<string, string> = {
@@ -42,9 +45,9 @@ export default function SettingsPage() {
   const [userDetails, setUserDetails] = useState('');
 
   function syncFormFromUser(u: User) {
-    setDataRetention(u.data_retention_accepted ?? null);
+    setDataRetention(u.data_retention_accepted ?? true);
     const cfg = u.ai_configuration ?? {};
-    setAiStyle((cfg.style as string) || '');
+    setAiStyle((cfg.style as string) || DEFAULT_AI_STYLE);
     setAiLang((cfg.primary_language as string) || 'browser');
     setUserDetails((cfg.user_details as string) || '');
   }
@@ -134,11 +137,14 @@ export default function SettingsPage() {
           <div>
             <label className="block text-sm text-theme-fg-muted mb-2">{t(locale, 'settings.aiStyle')}</label>
             <Select
-              value={aiStyle}
-              options={[
-                { value: '', label: t(locale, 'common.none') },
-                ...AI_STYLES.map((s) => ({ value: s.value, label: t(locale, s.labelKey) })),
-              ]}
+              value={aiStyle || DEFAULT_AI_STYLE}
+              options={AI_STYLES.map((s) => ({
+                value: s.value,
+                label:
+                  s.value === DEFAULT_AI_STYLE
+                    ? `${t(locale, s.labelKey)} (${t(locale, 'common.default')})`
+                    : t(locale, s.labelKey),
+              }))}
               onChange={setAiStyle}
             />
           </div>
