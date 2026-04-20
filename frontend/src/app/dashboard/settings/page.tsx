@@ -65,13 +65,15 @@ export default function SettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const aiConfig: Partial<AIConfiguration> = {};
-      if (aiStyle) aiConfig.style = aiStyle;
-      if (aiLang) aiConfig.primary_language = aiLang;
-      if (userDetails.trim()) aiConfig.user_details = userDetails.trim();
+      // Always send the full ai_configuration so clearing a field actually persists.
+      const aiConfig: Partial<AIConfiguration> = {
+        style: aiStyle || DEFAULT_AI_STYLE,
+        primary_language: aiLang || 'browser',
+        user_details: userDetails.trim(),
+      };
       const updated = await updateSettings({
-        data_retention_accepted: dataRetention ?? undefined,
-        ai_configuration: Object.keys(aiConfig).length ? aiConfig : undefined,
+        data_retention_accepted: dataRetention ?? true,
+        ai_configuration: aiConfig,
       });
       setUser(updated);
       syncFormFromUser(updated);
@@ -105,27 +107,47 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-6 mb-4 md:mb-6">
         <h2 className="text-sm font-medium text-theme-fg-muted uppercase tracking-wider mb-2">{t(locale, 'settings.dataRetention')}</h2>
         <p className="text-sm text-theme-fg-subtle mb-4">{t(locale, 'settings.dataRetentionDesc')}</p>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="retention"
-              checked={dataRetention === true}
-              onChange={() => setDataRetention(true)}
-              className="w-4 h-4 accent-white"
-            />
-            <span className="text-theme-fg-muted">{t(locale, 'settings.dataRetentionAccept')}</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="retention"
-              checked={dataRetention === false}
-              onChange={() => setDataRetention(false)}
-              className="w-4 h-4 accent-white"
-            />
-            <span className="text-theme-fg-muted">{t(locale, 'settings.dataRetentionDecline')}</span>
-          </label>
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={dataRetention === true}
+            onClick={() => setDataRetention(true)}
+            className={`group flex items-center gap-3 flex-1 min-h-[44px] px-4 py-3 rounded-xl border transition-colors text-left ${
+              dataRetention === true
+                ? 'border-theme-accent bg-theme-accent/15 text-theme-accent'
+                : 'border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg hover:border-theme-border-hover hover:bg-theme-bg-hover'
+            }`}
+          >
+            <span
+              className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                dataRetention === true ? 'border-theme-accent' : 'border-theme-border-hover group-hover:border-theme-border-strong'
+              }`}
+            >
+              {dataRetention === true && <span className="w-2.5 h-2.5 rounded-full bg-theme-accent" />}
+            </span>
+            <span className="text-sm font-medium">{t(locale, 'settings.dataRetentionAccept')}</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={dataRetention === false}
+            onClick={() => setDataRetention(false)}
+            className={`group flex items-center gap-3 flex-1 min-h-[44px] px-4 py-3 rounded-xl border transition-colors text-left ${
+              dataRetention === false
+                ? 'border-theme-accent bg-theme-accent/15 text-theme-accent'
+                : 'border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg hover:border-theme-border-hover hover:bg-theme-bg-hover'
+            }`}
+          >
+            <span
+              className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                dataRetention === false ? 'border-theme-accent' : 'border-theme-border-hover group-hover:border-theme-border-strong'
+              }`}
+            >
+              {dataRetention === false && <span className="w-2.5 h-2.5 rounded-full bg-theme-accent" />}
+            </span>
+            <span className="text-sm font-medium">{t(locale, 'settings.dataRetentionDecline')}</span>
+          </button>
         </div>
       </section>
 

@@ -594,6 +594,21 @@ export default function DashboardPage() {
     return null;
   }
 
+  const focusPromptInput = () => {
+    // Scope to the currently-mounted form so we don't pick a stale field.
+    const el =
+      formRef.current?.querySelector<HTMLTextAreaElement | HTMLInputElement>('[data-prompt="true"]')
+      ?? formRef.current?.querySelector<HTMLTextAreaElement | HTMLInputElement>('textarea, input[type="text"]');
+    if (!el) return;
+    requestAnimationFrame(() => {
+      try {
+        el.focus({ preventScroll: true });
+      } catch {
+        el.focus();
+      }
+    });
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isSubmittingRef.current) return;
@@ -654,8 +669,12 @@ export default function DashboardPage() {
         // Reset form to prevent browser auto-resubmission
         if (formRef.current) formRef.current.reset();
       },
-      onSentToast: () => showToast('toast.sent'),
+      onSentToast: () => {
+        showToast('toast.sent');
+        focusPromptInput();
+      },
     });
+    focusPromptInput();
   }
   const inputCls = 'w-full rounded-xl border border-theme-border bg-theme-bg-subtle px-4 py-3 text-theme-fg placeholder:text-theme-fg-subtle focus:border-theme-border-strong focus:outline-none focus:ring-1 focus:ring-theme-border-hover';
   const labelCls = 'block text-sm font-medium text-theme-fg-muted mb-1';
@@ -857,6 +876,7 @@ export default function DashboardPage() {
           </span>
         )}
         <textarea
+          data-prompt="true"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
@@ -1373,6 +1393,7 @@ export default function DashboardPage() {
                   </span>
                 )}
                 <input
+                  data-prompt="true"
                   type="text"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
