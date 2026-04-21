@@ -68,7 +68,7 @@ export default function DashboardLayoutClient({
         <Sidebar />
       )}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 relative">
-        {!pathname.startsWith('/dashboard/studio') && (
+        {!pathname.startsWith('/dashboard/studio') && !/^\/dashboard\/projects\/[^/]+/.test(pathname) && (
         <div className="fixed z-10 flex items-center gap-2 right-4 top-4 left-4 md:left-auto [top:max(1rem,env(safe-area-inset-top))] [right:max(1rem,env(safe-area-inset-right))] [left:max(1rem,env(safe-area-inset-left))]">
           {isMobile && (
             <button
@@ -130,7 +130,13 @@ export default function DashboardLayoutClient({
           <JobsInProgressButton />
         </div>
         )}
-        <div className={!pathname.startsWith('/dashboard/studio') ? 'pt-[max(3.5rem,calc(2rem+env(safe-area-inset-top)))] pr-4 sm:pr-24 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pb-0 flex-1 flex flex-col min-h-0 min-w-0' : 'flex-1 flex flex-col min-h-0 min-w-0'}>
+        <div
+          className={
+            pathname.startsWith('/dashboard/studio') || /^\/dashboard\/projects\/[^/]+/.test(pathname)
+              ? 'flex-1 flex flex-col min-h-0 min-w-0'
+              : 'pt-[max(3.5rem,calc(2rem+env(safe-area-inset-top)))] pr-4 sm:pr-24 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pb-0 flex-1 flex flex-col min-h-0 min-w-0'
+          }
+        >
           {!pathname.startsWith('/dashboard/studio') && pathname === '/dashboard' && (
             <div className="shrink-0 px-4 sm:px-6 pt-4 pb-2">
               <Link

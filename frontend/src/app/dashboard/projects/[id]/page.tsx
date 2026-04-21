@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
@@ -13,73 +14,181 @@ import {
   uploadAndAttachChatProjectFiles,
   deleteChatProjectFile,
   createChat,
+  getThread,
   type ChatProject,
   type ChatProjectFile,
   type Thread,
+  type Job,
 } from '@/lib/api';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
+const JobCard = dynamic(
+  () => import('../../components/JobCard').then((m) => ({ default: m.JobCard })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="max-w-[min(85vw,680px)] rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-8 min-h-[100px] animate-pulse-subtle" aria-hidden />
+    ),
+  },
+);
+
+type DisplayJob = Job | { id: '_pending'; type: 'chat'; status: 'pending'; input: { prompt: string }; output: null; error: null; user_id: string; thread_id: string | null; cost_cents: 0; created_at: string; updated_at: string };
+
 export default function ChatProjectDetailPage() {
   const params = useParams<{ id: string }>();
-  const id = params?.id ?? '';
+  const projectId = params?.id ?? '';
   const router = useRouter();
   const { locale } = useLocale();
   const { showToast } = useToast();
 
+  // Project meta
   const [project, setProject] = useState<ChatProject | null>(null);
   const [files, setFiles] = useState<ChatProjectFile[]>([]);
-  const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [editingInstructions, setEditingInstructions] = useState(false);
-  const [draftInstructions, setDraftInstructions] = useState('');
+  // Edit name + instructions + delete
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [draftInstructions, setDraftInstructions] = useState('');
   const [savingMeta, setSavingMeta] = useState(false);
-
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showInstructionsDialog, setShowInstructionsDialog] = useState(false);
   const [showSourcesDialog, setShowSourcesDialog] = useState(false);
-
-  const [prompt, setPrompt] = useState('');
-  const [sending, setSending] = useState(false);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    setError(null);
+  // Chat state — a project has ONE conversation. We always use the most recent thread linked to it.
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  const [threadJobs, setThreadJobs] = useState<Job[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [pendingUserMessage, setPendingUserMessage] = useState<string>('');
+  const [prompt, setPrompt] = useState('');
+  const [sending, setSending] = useState(false);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  // Load project meta + files. Also auto-pick the single thread of this project.
+  const loadProjectMeta = useCallback(async () => {
+    if (!projectId) return;
     try {
-      const r = await getChatProject(id);
+      const r = await getChatProject(projectId);
       setProject(r.project);
       setFiles(r.files ?? []);
-      setThreads(r.threads ?? []);
       setDraftInstructions(r.project.instructions ?? '');
       setDraftName(r.project.name ?? '');
+      // A project is ONE conversation: use the most recent thread linked to it, if any.
+      const threads = r.threads ?? [];
+      if (threads.length > 0) {
+        setCurrentThreadId((prev) => prev ?? threads[0].id);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
-    } finally {
-      setLoading(false);
     }
-  }, [id]);
+  }, [projectId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setLoading(true);
+    loadProjectMeta().finally(() => setLoading(false));
+  }, [loadProjectMeta]);
 
+  // Load thread jobs when currentThreadId changes
+  useEffect(() => {
+    if (!currentThreadId) {
+      setThreadJobs([]);
+      setActiveJobId(null);
+      setPendingUserMessage('');
+      return;
+    }
+    let cancelled = false;
+    setThreadLoading(true);
+    getThread(currentThreadId)
+      .then((r) => {
+        if (cancelled) return;
+        setThreadJobs(r.jobs ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setThreadJobs([]);
+      })
+      .finally(() => {
+        if (!cancelled) setThreadLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentThreadId]);
+
+  // Refresh thread list (left sidebar) when an active job lands
+  const refreshThread = useCallback(() => {
+    if (!currentThreadId) return;
+    getThread(currentThreadId)
+      .then((r) => setThreadJobs(r.jobs ?? []))
+      .catch(() => {});
+  }, [currentThreadId]);
+
+  // Light polling while a job is pending and not yet in threadJobs
+  useEffect(() => {
+    if (!activeJobId) return;
+    if (threadJobs.some((j) => j.id === activeJobId)) {
+      setActiveJobId(null);
+      setPendingUserMessage('');
+      // Refresh meta so left list updates thread counts
+      loadProjectMeta();
+      return;
+    }
+    const iv = setInterval(() => {
+      refreshThread();
+    }, 1500);
+    return () => clearInterval(iv);
+  }, [activeJobId, threadJobs, refreshThread, loadProjectMeta]);
+
+  // Auto-scroll chat to bottom on new content
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    });
+  }, [threadJobs.length, pendingUserMessage, currentThreadId]);
+
+  // Display list with optimistic pending user message
+  const displayList = useMemo<DisplayJob[]>(() => {
+    const list: DisplayJob[] = [...threadJobs];
+    if (
+      pendingUserMessage &&
+      !list.some(
+        (j) =>
+          j.type === 'chat' &&
+          (j.input as { prompt?: string })?.prompt === pendingUserMessage,
+      )
+    ) {
+      list.push({
+        id: '_pending',
+        type: 'chat',
+        status: 'pending',
+        input: { prompt: pendingUserMessage },
+        output: null,
+        error: null,
+        user_id: '',
+        thread_id: currentThreadId,
+        cost_cents: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+    return list;
+  }, [threadJobs, pendingUserMessage, currentThreadId]);
+
+  // ----- Project meta actions -----
   const saveInstructions = async () => {
     if (!project) return;
     setSavingMeta(true);
     try {
       const updated = await updateChatProject(project.id, { instructions: draftInstructions.trim() });
       setProject(updated);
-      setEditingInstructions(false);
       setShowInstructionsDialog(false);
       showToast('toast.saved');
     } catch (e) {
@@ -138,23 +247,34 @@ export default function ChatProjectDetailPage() {
     }
   };
 
-  const sendNewChat = async (text: string) => {
-    if (!project || sending) return;
-    const msg = text.trim();
-    if (!msg) return;
+  // ----- Chat send -----
+  const handleSend = async () => {
+    const msg = prompt.trim();
+    if (!project || !msg || sending) return;
     setSending(true);
+    setError(null);
+    setPendingUserMessage(msg);
+    setPrompt('');
     try {
-      const res = await createChat(msg, undefined, undefined, false, undefined, project.id);
-      router.push(`/dashboard?thread=${res.thread_id ?? ''}`);
+      const res = await createChat(
+        msg,
+        undefined,
+        currentThreadId ?? undefined,
+        false,
+        undefined,
+        currentThreadId ? undefined : project.id, // attach project only when creating the first thread
+      );
+      setActiveJobId(res.job_id);
+      if (res.thread_id && res.thread_id !== currentThreadId) {
+        setCurrentThreadId(res.thread_id);
+      }
     } catch (e) {
+      setPendingUserMessage('');
       setError(e instanceof Error ? e.message : 'Failed');
+    } finally {
       setSending(false);
+      requestAnimationFrame(() => composerRef.current?.focus());
     }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await sendNewChat(prompt);
   };
 
   if (loading) {
@@ -172,11 +292,13 @@ export default function ChatProjectDetailPage() {
     );
   }
 
+  const hasMessages = displayList.length > 0;
+
   return (
     <div className="flex-1 min-h-0 flex overflow-hidden">
-      {/* Project sidebar (collapsible) */}
+      {/* Project sidebar */}
       {sidebarCollapsed ? (
-        <div className="shrink-0 border-r border-theme-border bg-theme-bg-subtle flex flex-col items-center py-3 gap-2 w-12">
+        <div className="shrink-0 border-r border-theme-border bg-theme-bg flex flex-col items-center py-3 gap-2 w-12">
           <button
             type="button"
             onClick={() => setSidebarCollapsed(false)}
@@ -188,7 +310,7 @@ export default function ChatProjectDetailPage() {
           </button>
         </div>
       ) : (
-        <aside className="shrink-0 w-72 border-r border-theme-border bg-theme-bg-subtle/40 flex flex-col min-h-0">
+        <aside className="shrink-0 w-72 border-r border-theme-border bg-theme-bg flex flex-col min-h-0">
           {/* Header */}
           <div className="px-3 py-3 border-b border-theme-border flex items-center justify-between gap-2 min-h-[52px]">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -245,7 +367,6 @@ export default function ChatProjectDetailPage() {
               type="button"
               onClick={() => {
                 setDraftInstructions(project.instructions);
-                setEditingInstructions(true);
                 setShowInstructionsDialog(true);
               }}
               className="w-full text-left rounded-xl border border-theme-border bg-theme-bg p-3 hover:bg-theme-bg-hover transition-colors"
@@ -278,71 +399,84 @@ export default function ChatProjectDetailPage() {
               </div>
             </button>
 
-            {/* Conversations */}
-            <div className="pt-3">
-              <p className="px-1 mb-1 text-[10px] font-semibold uppercase tracking-widest text-theme-fg-subtle">
-                {t(locale, 'chatProjects.conversations')}
-              </p>
-              {threads.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-theme-border bg-theme-bg p-4 text-center">
-                  <ChatIcon className="w-5 h-5 mx-auto text-theme-fg-subtle mb-1" />
-                  <p className="text-xs text-theme-fg-subtle">{t(locale, 'chatProjects.conversationsEmpty')}</p>
-                </div>
-              ) : (
-                <ul className="flex flex-col gap-0.5">
-                  {threads.map((thr) => (
-                    <li key={thr.id}>
-                      <Link
-                        href={`/dashboard?thread=${thr.id}`}
-                        className="block px-3 py-2 rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors truncate"
-                      >
-                        {thr.title || t(locale, 'chatProjects.untitledThread')}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
           </div>
         </aside>
       )}
 
-      {/* Right: empty state + composer */}
+      {/* Right: chat */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle flex items-center justify-center px-4">
-          <div className="max-w-md text-center">
-            <h2 className="font-display text-xl font-bold text-theme-fg mb-2">
-              {t(locale, 'chatProjects.startConversation')}
-            </h2>
-            <p className="text-sm text-theme-fg-muted mb-6">
-              {t(locale, 'chatProjects.startConversationSub')}
-            </p>
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => composerRef.current?.focus()}
-                className="btn-tap px-4 py-2 rounded-full text-sm font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
-              >
-                {t(locale, 'chatProjects.askQuestion')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPrompt(t(locale, 'chatProjects.helpPrefill'));
-                  composerRef.current?.focus();
-                }}
-                className="btn-tap px-4 py-2 rounded-full text-sm font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
-              >
-                {t(locale, 'chatProjects.helpTask')}
-              </button>
+        <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle">
+          {!hasMessages ? (
+            <div className="h-full flex items-center justify-center px-4">
+              <div className="max-w-md text-center">
+                <h2 className="font-display text-xl font-bold text-theme-fg mb-2">
+                  {t(locale, 'chatProjects.startConversation')}
+                </h2>
+                <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'chatProjects.startConversationSub')}</p>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => composerRef.current?.focus()}
+                    className="btn-tap px-4 py-2 rounded-full text-sm font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
+                  >
+                    {t(locale, 'chatProjects.askQuestion')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrompt(t(locale, 'chatProjects.helpPrefill'));
+                      composerRef.current?.focus();
+                    }}
+                    className="btn-tap px-4 py-2 rounded-full text-sm font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
+                  >
+                    {t(locale, 'chatProjects.helpTask')}
+                  </button>
+                </div>
+                {error && <p className="text-sm text-theme-danger mt-4">{error}</p>}
+              </div>
             </div>
-            {error && <p className="text-sm text-theme-danger mt-4">{error}</p>}
-          </div>
+          ) : (
+            <div className="w-full max-w-2xl mx-auto px-4 py-4 flex flex-col gap-3">
+              {threadLoading && <p className="text-sm text-theme-fg-subtle">{t(locale, 'common.loading')}</p>}
+              <AnimatePresence initial={false}>
+                {displayList.map((job) => {
+                  const userPrompt = (job.input as { prompt?: string })?.prompt;
+                  return (
+                    <motion.div
+                      key={job.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                      className="flex flex-col gap-2"
+                    >
+                      {userPrompt && (
+                        <div className="flex justify-end">
+                          <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
+                            {userPrompt}
+                          </div>
+                        </div>
+                      )}
+                      {job.id !== '_pending' && (
+                        <JobCard jobId={job.id} locale={locale} dark variant="chat" />
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+              {error && <p className="text-sm text-theme-danger">{error}</p>}
+            </div>
+          )}
         </div>
 
         {/* Composer */}
-        <form onSubmit={handleSubmit} className="shrink-0 border-t border-theme-border bg-theme-bg p-3">
-          <div className="max-w-3xl mx-auto rounded-xl border border-theme-border bg-theme-bg-subtle flex items-end gap-2 px-3 py-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSend();
+          }}
+          className="shrink-0 border-t border-theme-border bg-theme-bg p-3"
+        >
+          <div className="max-w-2xl mx-auto rounded-xl border border-theme-border bg-theme-bg-subtle flex items-end gap-2 px-3 py-2">
             <textarea
               ref={composerRef}
               value={prompt}
@@ -352,7 +486,7 @@ export default function ChatProjectDetailPage() {
                 if (e.shiftKey) return;
                 if ((e.nativeEvent as KeyboardEvent).isComposing) return;
                 e.preventDefault();
-                if (!sending) sendNewChat(prompt);
+                if (!sending) handleSend();
               }}
               placeholder={t(locale, 'chatProjects.composerPlaceholder')}
               rows={1}
