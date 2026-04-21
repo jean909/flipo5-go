@@ -145,6 +145,16 @@ func (s *Server) Routes() http.Handler {
 			r.Patch("/{id}", s.updateProject)
 			r.Delete("/{id}", s.deleteProject)
 		})
+		r.Route("/chat-projects", func(r chi.Router) {
+			r.Get("/", s.listChatProjects)
+			r.Post("/", s.createChatProject)
+			r.Get("/{id}", s.getChatProject)
+			r.Patch("/{id}", s.updateChatProject)
+			r.Delete("/{id}", s.deleteChatProject)
+			r.Get("/{id}/files", s.listChatProjectFiles)
+			r.Post("/{id}/files", s.addChatProjectFile)
+			r.Delete("/files/{fileId}", s.deleteChatProjectFile)
+		})
 		r.Get("/jobs/{id}/stream", s.jobStreamSSE)
 		r.Get("/download", s.downloadMedia)
 		r.Get("/media", s.serveMedia)
@@ -402,6 +412,7 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		AttachmentContentTypes []string `json:"attachment_content_types,omitempty"` // e.g. "image/jpeg", "application/pdf" – only image/* are sent to Replicate
 		ThreadID               string   `json:"thread_id,omitempty"`
 		Incognito              bool     `json:"incognito,omitempty"`
+		ChatProjectID          string   `json:"chat_project_id,omitempty"` // optional: bind new thread to a chat project
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -409,6 +420,15 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
+	// Resolve chat project (if any) — only valid for non-incognito threads.
+	var chatProjectID *uuid.UUID
+	if !req.Incognito && strings.TrimSpace(req.ChatProjectID) != "" {
+		if pid, err := uuid.Parse(req.ChatProjectID); err == nil {
+			if p, _ := s.DB.GetChatProject(ctx, pid, userID); p != nil {
+				chatProjectID = &pid
+			}
+		}
+	}
 	var threadID *uuid.UUID
 	if !req.Incognito && req.ThreadID != "" {
 		if id, err := uuid.Parse(req.ThreadID); err == nil {
@@ -428,6 +448,9 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		threadID = &id
+		if chatProjectID != nil {
+			_ = s.DB.AssignThreadToChatProject(ctx, id, userID, *chatProjectID)
+		}
 	}
 	if req.Incognito && threadID == nil {
 		id, err := s.DB.CreateThread(ctx, userID, true)

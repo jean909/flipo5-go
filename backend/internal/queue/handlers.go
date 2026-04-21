@@ -228,6 +228,39 @@ Voice and style:
 		}
 	}
 
+	// Apply chat project (Grok-style projects): prepend custom instructions and list source files.
+	if job.ThreadID != nil {
+		if pid, _ := h.DB.GetThreadProjectID(ctx, *job.ThreadID); pid != nil {
+			if proj, _ := h.DB.GetChatProject(ctx, *pid, job.UserID); proj != nil {
+				if strings.TrimSpace(proj.Instructions) != "" {
+					system += "\n\nProject instructions (apply to every reply in this conversation): " + strings.TrimSpace(proj.Instructions)
+				}
+				if files, _ := h.DB.ListChatProjectFiles(ctx, *pid, job.UserID); len(files) > 0 {
+					var b strings.Builder
+					b.WriteString("\n\nProject reference files (use them as context when relevant):")
+					for _, f := range files {
+						name := f.FileName
+						if name == "" {
+							name = "file"
+						}
+						b.WriteString("\n- ")
+						b.WriteString(name)
+						if f.ContentType != "" {
+							b.WriteString(" (")
+							b.WriteString(f.ContentType)
+							b.WriteString(")")
+						}
+						if f.FileURL != "" {
+							b.WriteString(": ")
+							b.WriteString(f.FileURL)
+						}
+					}
+					system += b.String()
+				}
+			}
+		}
+	}
+
 	// Conversation context: previous exchanges in this thread (so AI remembers follow-ups)
 	contextBlock := buildChatContext(h.DB, ctx, job.ThreadID, job.UserID, p.JobID)
 	prompt := system + "\n\n"
