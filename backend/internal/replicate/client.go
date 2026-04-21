@@ -4,12 +4,32 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	repgo "github.com/replicate/replicate-go"
 )
+
+// isTransientPredictionError returns true for network-level errors that are safe to retry
+// (e.g. "unexpected EOF", connection reset, timeout while dialing Replicate API).
+// We deliberately do NOT retry on 4xx/5xx returned by Replicate — those come through
+// as structured errors that usually indicate a bad input and shouldn't be re-sent.
+func isTransientPredictionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "tls handshake timeout") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "temporary failure")
+}
 
 const maxScanTokenSize = 4 * 1024 * 1024 // 4MB - Replicate can send long chunks, default 64KB causes truncation
 
@@ -46,8 +66,28 @@ func (c *Client) CancelPrediction(ctx context.Context, id string) error {
 }
 
 // CreatePredictionWithStream creates a prediction with stream=true and returns the prediction (with URLs.Stream).
+// Transparent retry (x2) on transient network errors like "unexpected EOF".
 func (c *Client) CreatePredictionWithStream(ctx context.Context, identifier string, input repgo.PredictionInput) (*repgo.Prediction, error) {
-	return c.client.CreatePrediction(ctx, identifier, input, nil, true)
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		pred, err := c.client.CreatePrediction(ctx, identifier, input, nil, true)
+		if err == nil {
+			return pred, nil
+		}
+		lastErr = err
+		if !isTransientPredictionError(err) || attempt == maxAttempts {
+			return nil, err
+		}
+		backoff := time.Duration(attempt*500) * time.Millisecond
+		log.Printf("replicate CreatePrediction transient error (attempt %d/%d): %v — retrying in %s", attempt, maxAttempts, err, backoff)
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, lastErr
 }
 
 // StreamOutput connects to the Replicate stream URL and calls onOutput for each "output" event and onDone on "done".

@@ -62,8 +62,15 @@ func (db *DB) ListThreads(ctx context.Context, userID uuid.UUID, limit int, arch
 	if archived {
 		archivedCond = "archived_at IS NOT NULL"
 	}
+	// Threads bound to a chat project are excluded — they live inside their project only.
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, user_id, COALESCE(title, ''), archived_at, created_at::text, updated_at::text FROM threads WHERE user_id = $1 AND (ephemeral IS NOT TRUE) AND `+archivedCond+` ORDER BY updated_at DESC LIMIT $2`,
+		`SELECT id, user_id, COALESCE(title, ''), archived_at, created_at::text, updated_at::text
+		 FROM threads
+		 WHERE user_id = $1
+		   AND (ephemeral IS NOT TRUE)
+		   AND chat_project_id IS NULL
+		   AND `+archivedCond+`
+		 ORDER BY updated_at DESC LIMIT $2`,
 		userID, limit)
 	if err != nil {
 		return nil, err
