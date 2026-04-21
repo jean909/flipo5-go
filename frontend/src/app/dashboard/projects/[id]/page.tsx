@@ -12,6 +12,7 @@ import {
   deleteChatProject,
   uploadAndAttachChatProjectFiles,
   deleteChatProjectFile,
+  createChat,
   type ChatProject,
   type ChatProjectFile,
   type Thread,
@@ -41,6 +42,14 @@ export default function ChatProjectDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showInstructionsDialog, setShowInstructionsDialog] = useState(false);
+  const [showSourcesDialog, setShowSourcesDialog] = useState(false);
+
+  const [prompt, setPrompt] = useState('');
+  const [sending, setSending] = useState(false);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -71,6 +80,7 @@ export default function ChatProjectDetailPage() {
       const updated = await updateChatProject(project.id, { instructions: draftInstructions.trim() });
       setProject(updated);
       setEditingInstructions(false);
+      setShowInstructionsDialog(false);
       showToast('toast.saved');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
@@ -128,13 +138,23 @@ export default function ChatProjectDetailPage() {
     }
   };
 
-  const startNewChat = (preset?: string) => {
-    if (!project) return;
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('flipo5_pending_chat_project', project.id);
-      if (preset) sessionStorage.setItem('flipo5_pending_chat_prefill', preset);
+  const sendNewChat = async (text: string) => {
+    if (!project || sending) return;
+    const msg = text.trim();
+    if (!msg) return;
+    setSending(true);
+    try {
+      const res = await createChat(msg, undefined, undefined, false, undefined, project.id);
+      router.push(`/dashboard?thread=${res.thread_id ?? ''}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+      setSending(false);
     }
-    router.push('/dashboard?new=1');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendNewChat(prompt);
   };
 
   if (loading) {
@@ -153,227 +173,346 @@ export default function ChatProjectDetailPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle p-4 md:p-6">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <Link href="/dashboard/projects" className="text-sm text-theme-fg-muted hover:text-theme-fg">
-            ← {t(locale, 'nav.projects')}
-          </Link>
+    <div className="flex-1 min-h-0 flex overflow-hidden">
+      {/* Project sidebar (collapsible) */}
+      {sidebarCollapsed ? (
+        <div className="shrink-0 border-r border-theme-border bg-theme-bg-subtle flex flex-col items-center py-3 gap-2 w-12">
           <button
             type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="text-xs text-theme-fg-subtle hover:text-theme-danger"
+            onClick={() => setSidebarCollapsed(false)}
+            className="p-2 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
+            aria-label={t(locale, 'chatProjects.expandSidebar')}
+            title={project.name}
           >
-            {t(locale, 'common.delete')}
+            <PanelOpenIcon className="w-5 h-5" />
           </button>
         </div>
-
-        {editingName ? (
-          <div className="flex items-center gap-2 mb-1">
-            <input
-              autoFocus
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveName();
-                if (e.key === 'Escape') {
-                  setDraftName(project.name);
-                  setEditingName(false);
-                }
-              }}
-              className="flex-1 rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg text-lg font-semibold px-3 py-2 focus:outline-none focus:border-theme-border-hover"
-            />
-            <button
-              type="button"
-              onClick={saveName}
-              disabled={savingMeta || !draftName.trim()}
-              className="btn-tap px-3 py-2 rounded-xl text-sm font-semibold bg-white text-black disabled:opacity-50"
-            >
-              {t(locale, 'common.save')}
-            </button>
-          </div>
-        ) : (
-          <h1
-            className="font-display text-2xl font-bold text-theme-fg mb-1 cursor-text"
-            onClick={() => setEditingName(true)}
-            title={t(locale, 'common.edit')}
-          >
-            {project.name}
-          </h1>
-        )}
-
-        <p className="text-xs text-theme-fg-subtle mb-6">
-          {t(locale, 'chatProjects.statThreads').replace('{n}', String(project.thread_count))}
-          {' · '}
-          {t(locale, 'chatProjects.statFiles').replace('{n}', String(project.file_count))}
-        </p>
-
-        {error && <p className="text-sm text-theme-danger mb-3">{error}</p>}
-
-        {/* Instructions card */}
-        <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5 mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold text-theme-fg flex items-center gap-2">
-              <CardIcon className="w-4 h-4 text-theme-accent" />
-              {t(locale, 'chatProjects.instructions')}
-            </h2>
-            {!editingInstructions ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setDraftInstructions(project.instructions);
-                  setEditingInstructions(true);
-                }}
-                className="btn-tap px-3 py-1.5 rounded-lg text-xs font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
-              >
-                {t(locale, 'common.edit')}
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraftInstructions(project.instructions);
-                    setEditingInstructions(false);
+      ) : (
+        <aside className="shrink-0 w-72 border-r border-theme-border bg-theme-bg-subtle/40 flex flex-col min-h-0">
+          {/* Header */}
+          <div className="px-3 py-3 border-b border-theme-border flex items-center justify-between gap-2 min-h-[52px]">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <ProjectIcon className="w-4 h-4 shrink-0 text-theme-accent" />
+              {editingName ? (
+                <input
+                  autoFocus
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    if (e.key === 'Escape') {
+                      setDraftName(project.name);
+                      setEditingName(false);
+                    }
                   }}
-                  className="btn-tap px-3 py-1.5 rounded-lg text-xs font-medium border border-theme-border text-theme-fg-muted hover:text-theme-fg"
-                >
-                  {t(locale, 'common.cancel')}
-                </button>
+                  className="flex-1 min-w-0 rounded-md border border-theme-border-hover bg-theme-bg text-theme-fg text-sm font-semibold px-2 py-1 focus:outline-none"
+                />
+              ) : (
                 <button
                   type="button"
-                  onClick={saveInstructions}
-                  disabled={savingMeta}
-                  className="btn-tap px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-black disabled:opacity-50"
+                  onClick={() => setEditingName(true)}
+                  className="flex-1 min-w-0 text-left text-sm font-semibold text-theme-fg truncate hover:text-theme-accent"
+                  title={t(locale, 'common.edit')}
                 >
-                  {t(locale, 'common.save')}
+                  {project.name}
                 </button>
-              </div>
-            )}
-          </div>
-          {editingInstructions ? (
-            <textarea
-              value={draftInstructions}
-              onChange={(e) => setDraftInstructions(e.target.value.slice(0, 4000))}
-              rows={6}
-              placeholder={t(locale, 'chatProjects.instructionsPlaceholder')}
-              className="w-full rounded-xl border border-theme-border bg-theme-bg text-theme-fg text-sm px-3 py-2.5 focus:outline-none focus:border-theme-border-hover resize-none scrollbar-subtle"
-            />
-          ) : project.instructions ? (
-            <p className="text-sm text-theme-fg/90 whitespace-pre-wrap leading-relaxed">{project.instructions}</p>
-          ) : (
-            <p className="text-sm text-theme-fg-subtle italic">{t(locale, 'chatProjects.instructionsEmpty')}</p>
-          )}
-        </section>
-
-        {/* Sources card */}
-        <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-theme-fg flex items-center gap-2">
-              <FolderIcon className="w-4 h-4 text-theme-accent" />
-              {t(locale, 'chatProjects.sources')}
-            </h2>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="btn-tap min-h-9 min-w-9 rounded-lg border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 flex items-center justify-center"
-              aria-label={t(locale, 'chatProjects.addFiles')}
+              onClick={() => setConfirmDelete(true)}
+              className="p-1.5 rounded-md text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover"
+              aria-label={t(locale, 'common.delete')}
+              title={t(locale, 'common.delete')}
             >
-              {uploading ? (
-                <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-              ) : (
-                <PlusIcon className="w-4 h-4" />
-              )}
+              <TrashIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              className="p-1.5 rounded-md text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover"
+              aria-label={t(locale, 'chatProjects.collapseSidebar')}
+              title={t(locale, 'chatProjects.collapseSidebar')}
+            >
+              <PanelCloseIcon className="w-4 h-4" />
             </button>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf,.txt,.doc,.docx,.csv"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              handleFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-          {files.length === 0 ? (
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleFiles(e.dataTransfer.files);
-              }}
-              className="rounded-xl border-2 border-dashed border-theme-border p-6 text-center text-sm text-theme-fg-subtle"
-            >
-              {t(locale, 'chatProjects.sourcesEmpty')}
-            </div>
-          ) : (
-            <ul className="rounded-xl border border-theme-border divide-y divide-theme-border bg-theme-bg">
-              {files.map((f) => (
-                <li key={f.id} className="flex items-center gap-2 px-3 py-2">
-                  <FileSmallIcon className="w-4 h-4 shrink-0 text-theme-fg-subtle" />
-                  <span className="text-sm text-theme-fg truncate flex-1">{f.file_name || 'file'}</span>
-                  {f.size_bytes ? (
-                    <span className="text-xs text-theme-fg-subtle shrink-0">{Math.round(f.size_bytes / 1024)} KB</span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => removeFile(f.id)}
-                    className="p-1 rounded-md text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover"
-                    aria-label={t(locale, 'common.remove')}
-                  >
-                    <XIcon className="w-3.5 h-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
 
-        {/* Conversations + CTA */}
-        <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-theme-fg flex items-center gap-2">
-              <ChatIcon className="w-4 h-4 text-theme-accent" />
-              {t(locale, 'chatProjects.conversations')}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle p-3 space-y-2">
+            {/* Instructions card */}
+            <button
+              type="button"
+              onClick={() => {
+                setDraftInstructions(project.instructions);
+                setEditingInstructions(true);
+                setShowInstructionsDialog(true);
+              }}
+              className="w-full text-left rounded-xl border border-theme-border bg-theme-bg p-3 hover:bg-theme-bg-hover transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <CardIcon className="w-4 h-4 text-theme-accent shrink-0" />
+                <span className="text-sm font-semibold text-theme-fg">{t(locale, 'chatProjects.instructions')}</span>
+              </div>
+              <p className="text-xs text-theme-fg-muted line-clamp-2">
+                {project.instructions || t(locale, 'chatProjects.instructionsHint')}
+              </p>
+            </button>
+
+            {/* Sources card */}
+            <button
+              type="button"
+              onClick={() => setShowSourcesDialog(true)}
+              className="w-full text-left rounded-xl border border-theme-border bg-theme-bg p-3 hover:bg-theme-bg-hover transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <DatabaseIcon className="w-4 h-4 text-theme-accent shrink-0" />
+                <span className="text-sm font-semibold text-theme-fg">{t(locale, 'chatProjects.sources')}</span>
+              </div>
+              <p className="text-xs text-theme-fg-muted">{t(locale, 'chatProjects.sourcesHint')}</p>
+              <div className="mt-2 flex items-center gap-2 text-[11px] text-theme-fg-subtle">
+                <FolderIcon className="w-3.5 h-3.5" />
+                <span>{t(locale, 'chatProjects.ownFiles')}</span>
+                <span className="ml-auto">{files.length}</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </div>
+            </button>
+
+            {/* Conversations */}
+            <div className="pt-3">
+              <p className="px-1 mb-1 text-[10px] font-semibold uppercase tracking-widest text-theme-fg-subtle">
+                {t(locale, 'chatProjects.conversations')}
+              </p>
+              {threads.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-theme-border bg-theme-bg p-4 text-center">
+                  <ChatIcon className="w-5 h-5 mx-auto text-theme-fg-subtle mb-1" />
+                  <p className="text-xs text-theme-fg-subtle">{t(locale, 'chatProjects.conversationsEmpty')}</p>
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-0.5">
+                  {threads.map((thr) => (
+                    <li key={thr.id}>
+                      <Link
+                        href={`/dashboard?thread=${thr.id}`}
+                        className="block px-3 py-2 rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors truncate"
+                      >
+                        {thr.title || t(locale, 'chatProjects.untitledThread')}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* Right: empty state + composer */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle flex items-center justify-center px-4">
+          <div className="max-w-md text-center">
+            <h2 className="font-display text-xl font-bold text-theme-fg mb-2">
+              {t(locale, 'chatProjects.startConversation')}
             </h2>
-            <div className="flex items-center gap-2">
+            <p className="text-sm text-theme-fg-muted mb-6">
+              {t(locale, 'chatProjects.startConversationSub')}
+            </p>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
               <button
                 type="button"
-                onClick={() => startNewChat()}
-                className="btn-tap px-3 py-1.5 rounded-lg text-xs font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
+                onClick={() => composerRef.current?.focus()}
+                className="btn-tap px-4 py-2 rounded-full text-sm font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
               >
                 {t(locale, 'chatProjects.askQuestion')}
               </button>
               <button
                 type="button"
-                onClick={() => startNewChat(t(locale, 'chatProjects.helpPrefill'))}
-                className="btn-tap px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-black"
+                onClick={() => {
+                  setPrompt(t(locale, 'chatProjects.helpPrefill'));
+                  composerRef.current?.focus();
+                }}
+                className="btn-tap px-4 py-2 rounded-full text-sm font-medium border border-theme-border bg-theme-bg text-theme-fg hover:bg-theme-bg-hover"
               >
                 {t(locale, 'chatProjects.helpTask')}
               </button>
             </div>
+            {error && <p className="text-sm text-theme-danger mt-4">{error}</p>}
           </div>
-          {threads.length === 0 ? (
-            <p className="text-sm text-theme-fg-subtle py-4 text-center italic">{t(locale, 'chatProjects.conversationsEmpty')}</p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {threads.map((thr) => (
-                <li key={thr.id}>
-                  <Link
-                    href={`/dashboard?thread=${thr.id}`}
-                    className="block px-3 py-2 rounded-lg text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors truncate"
-                  >
-                    {thr.title || t(locale, 'chatProjects.untitledThread')}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        </div>
+
+        {/* Composer */}
+        <form onSubmit={handleSubmit} className="shrink-0 border-t border-theme-border bg-theme-bg p-3">
+          <div className="max-w-3xl mx-auto rounded-xl border border-theme-border bg-theme-bg-subtle flex items-end gap-2 px-3 py-2">
+            <textarea
+              ref={composerRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                if (e.shiftKey) return;
+                if ((e.nativeEvent as KeyboardEvent).isComposing) return;
+                e.preventDefault();
+                if (!sending) sendNewChat(prompt);
+              }}
+              placeholder={t(locale, 'chatProjects.composerPlaceholder')}
+              rows={1}
+              disabled={sending}
+              className="flex-1 min-w-0 px-1 py-2 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none resize-none max-h-40 scrollbar-subtle disabled:opacity-60"
+            />
+            <button
+              type="submit"
+              disabled={sending || !prompt.trim()}
+              className="shrink-0 min-h-9 min-w-9 rounded-full bg-white text-black hover:bg-neutral-200 transition-colors flex items-center justify-center disabled:opacity-40"
+              aria-label={t(locale, 'chatProjects.send')}
+              title={t(locale, 'chatProjects.send')}
+            >
+              {sending ? (
+                <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              ) : (
+                <ArrowUpIcon className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+        </form>
       </div>
+
+      {/* Instructions dialog */}
+      {showInstructionsDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={() => !savingMeta && setShowInstructionsDialog(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-2xl border border-theme-border bg-theme-bg shadow-xl"
+          >
+            <div className="px-5 py-4 border-b border-theme-border flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-theme-fg">{t(locale, 'chatProjects.instructions')}</h3>
+              <button
+                type="button"
+                onClick={() => !savingMeta && setShowInstructionsDialog(false)}
+                className="p-2 -m-2 rounded-lg text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
+              >
+                <XIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <textarea
+                value={draftInstructions}
+                onChange={(e) => setDraftInstructions(e.target.value.slice(0, 4000))}
+                rows={8}
+                placeholder={t(locale, 'chatProjects.instructionsPlaceholder')}
+                className="w-full rounded-xl border border-theme-border bg-theme-bg-subtle text-theme-fg text-sm px-3 py-2.5 focus:outline-none focus:border-theme-border-hover resize-none scrollbar-subtle"
+              />
+              <p className="text-xs text-theme-fg-subtle mt-1">{draftInstructions.length} / 4000</p>
+            </div>
+            <div className="px-5 py-4 border-t border-theme-border flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftInstructions(project.instructions);
+                  setShowInstructionsDialog(false);
+                }}
+                className="btn-tap px-4 py-2 rounded-xl text-sm font-medium border border-theme-border text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
+              >
+                {t(locale, 'common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={saveInstructions}
+                disabled={savingMeta}
+                className="btn-tap px-4 py-2 rounded-xl text-sm font-semibold bg-white text-black disabled:opacity-50"
+              >
+                {savingMeta ? t(locale, 'common.saving') : t(locale, 'common.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sources dialog */}
+      {showSourcesDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={() => setShowSourcesDialog(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-theme-border bg-theme-bg shadow-xl"
+          >
+            <div className="px-5 py-4 border-b border-theme-border flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-theme-fg">{t(locale, 'chatProjects.sources')}</h3>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="btn-tap min-h-9 min-w-9 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong disabled:opacity-50 flex items-center justify-center"
+                  aria-label={t(locale, 'chatProjects.addFiles')}
+                >
+                  {uploading ? (
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                  ) : (
+                    <PlusIcon className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSourcesDialog(false)}
+                  className="p-2 -m-2 rounded-lg text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
+                >
+                  <XIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf,.txt,.doc,.docx,.csv"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  handleFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              {files.length === 0 ? (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleFiles(e.dataTransfer.files);
+                  }}
+                  className="rounded-xl border-2 border-dashed border-theme-border p-6 text-center text-sm text-theme-fg-subtle"
+                >
+                  {t(locale, 'chatProjects.sourcesEmpty')}
+                </div>
+              ) : (
+                <ul className="rounded-xl border border-theme-border divide-y divide-theme-border bg-theme-bg-subtle">
+                  {files.map((f) => (
+                    <li key={f.id} className="flex items-center gap-2 px-3 py-2">
+                      <FileSmallIcon className="w-4 h-4 shrink-0 text-theme-fg-subtle" />
+                      <span className="text-sm text-theme-fg truncate flex-1">{f.file_name || 'file'}</span>
+                      {f.size_bytes ? (
+                        <span className="text-xs text-theme-fg-subtle shrink-0">{Math.round(f.size_bytes / 1024)} KB</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => removeFile(f.id)}
+                        className="p-1 rounded-md text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover"
+                        aria-label={t(locale, 'common.remove')}
+                      >
+                        <XIcon className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={confirmDelete}
@@ -409,7 +548,15 @@ function PlusIcon({ className }: { className?: string }) {
 function CardIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026M3.75 9.776A2.25 2.25 0 001.5 12.026v6.224a2.25 2.25 0 002.25 2.25h16.5a2.25 2.25 0 002.25-2.25v-6.224a2.25 2.25 0 00-2.25-2.25M3.75 9.776V6A2.25 2.25 0 016 3.75h12A2.25 2.25 0 0120.25 6v3.776" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+    </svg>
+  );
+}
+function DatabaseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <ellipse cx="12" cy="6" rx="8" ry="3" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6m-16 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
     </svg>
   );
 }
@@ -431,6 +578,50 @@ function FileSmallIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5A3.375 3.375 0 0010.125 2.25H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  );
+}
+function ProjectIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+    </svg>
+  );
+}
+function PanelCloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2" />
+      <path strokeLinecap="round" d="M9 4.5v15M14 9l-3 3 3 3" />
+    </svg>
+  );
+}
+function PanelOpenIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2" />
+      <path strokeLinecap="round" d="M9 4.5v15M11 9l3 3-3 3" />
+    </svg>
+  );
+}
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0V4.875c0-1.035-.84-1.875-1.875-1.875h-3.75c-1.035 0-1.875.84-1.875 1.875v.518" />
+    </svg>
+  );
+}
+function ChevronRight({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+function ArrowUpIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7m0 0l7 7m-7-7v18" />
     </svg>
   );
 }
