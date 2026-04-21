@@ -112,21 +112,6 @@ export default function DashboardLayoutClient({
               {t(locale, 'nav.new')}
             </span>
           </Link>
-          <Link
-            href="/dashboard/jobs"
-            className={`relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full backdrop-blur-sm border transition-all group ${
-              pathname.startsWith('/dashboard/jobs')
-                ? 'bg-theme-bg-hover-strong text-theme-fg border-theme-border-strong hover:bg-theme-bg-hover'
-                : 'bg-theme-bg-hover text-theme-fg/80 border-theme-border hover:bg-theme-bg-hover-strong hover:text-theme-fg hover:border-theme-border-hover'
-            }`}
-            title={t(locale, 'nav.history')}
-            aria-label={t(locale, 'nav.history')}
-          >
-            <HistoryIcon className="h-5 w-5" />
-            <span className="absolute right-full mr-2 px-2.5 py-1.5 rounded-lg bg-theme-bg-elevated border border-theme-border text-xs font-medium text-theme-fg opacity-0 pointer-events-none whitespace-nowrap transition-opacity group-hover:opacity-100">
-              {t(locale, 'nav.history')}
-            </span>
-          </Link>
           <JobsInProgressButton />
         </div>
         )}
@@ -164,14 +149,6 @@ function NewIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
-function HistoryIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 109-9v4m0 0L9 4m3 3l3-3M12 7v5l3 2" />
     </svg>
   );
 }

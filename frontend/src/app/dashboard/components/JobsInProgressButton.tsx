@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
@@ -681,6 +682,15 @@ export function JobsInProgressButton() {
                 </>
               )}
             </div>
+            {totalCount > 0 && (
+              <Link
+                href="/dashboard/jobs"
+                onClick={() => setOpen(false)}
+                className="block px-3 py-2 text-center text-xs italic text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover transition-colors border-t border-theme-border-subtle"
+              >
+                {t(locale, 'jobsInProgress.seeAllHistory')}
+              </Link>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
