@@ -7,10 +7,11 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { getMe, isAdminUser, listThreads, patchThread, ThreadActionError, type User, type Thread } from '@/lib/api';
+import { getMe, isAdminUser, listThreads, listChatProjects, patchThread, ThreadActionError, type User, type Thread, type ChatProject } from '@/lib/api';
 import { ArchivedDialog } from '@/components/ArchivedDialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ThreadItem } from './ThreadItem';
+import { CreateChatProjectDialog } from './CreateChatProjectDialog';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type SidebarProps = {
@@ -33,6 +34,10 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
   const [pendingDeleteThread, setPendingDeleteThread] = useState<Thread | null>(null);
   const [showArchivedDialog, setShowArchivedDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [chatProjects, setChatProjects] = useState<ChatProject[]>([]);
+  const [chatProjectsLoading, setChatProjectsLoading] = useState(false);
+  const [showCreateProject, setShowCreateProject] = useState(false);
 
   const effectiveCollapsed = overlay ? false : collapsed;
 
@@ -57,6 +62,19 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
     return () => m.removeEventListener('change', onMatch);
   }, [overlay]);
 
+  const refreshChatProjects = () => {
+    setChatProjectsLoading(true);
+    listChatProjects()
+      .then((p) => setChatProjects(p))
+      .catch(() => setChatProjects([]))
+      .finally(() => setChatProjectsLoading(false));
+  };
+
+  useEffect(() => {
+    if (effectiveCollapsed) return;
+    refreshChatProjects();
+  }, [effectiveCollapsed, pathname]);
+
   useEffect(() => {
     if (!sessionsExpanded || effectiveCollapsed) return;
     let cancelled = false;
@@ -76,10 +94,8 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
     router.push('/start');
   }
 
-  const showJobsNav = user && isAdminUser(user);
   const nav = [
     { href: '/dashboard', labelKey: 'nav.dashboard', icon: DashboardIcon },
-    ...(showJobsNav ? [{ href: '/dashboard/jobs', labelKey: 'nav.jobs', icon: JobsIcon }] : []),
     { href: '/dashboard/content', labelKey: 'nav.content', icon: ContentIcon },
     { href: '/dashboard/studio', labelKey: 'nav.studio', icon: StudioIcon },
     { href: '/dashboard/upscaling', labelKey: 'nav.upscaling', icon: UpscaleIcon },
@@ -254,6 +270,72 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
             title={t(locale, 'nav.sessions')}
           >
             <SessionsIcon className="w-5 h-5 shrink-0" />
+          </Link>
+        )}
+
+        {/* Chat Projects (Grok-style) */}
+        {!effectiveCollapsed && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setProjectsExpanded((v) => !v)}
+              className="w-full px-3 mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-theme-fg-subtle hover:text-theme-fg-muted"
+            >
+              <span>{t(locale, 'nav.projects')}</span>
+              <svg className={`w-3 h-3 transition-transform ${projectsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {projectsExpanded && (
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateProject(true)}
+                  className="flex items-center gap-3 px-3 py-2 min-h-[40px] rounded-md text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg transition-colors"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                  </svg>
+                  <span className="truncate">{t(locale, 'chatProjects.newProject')}</span>
+                </button>
+                {chatProjectsLoading && chatProjects.length === 0 && (
+                  <p className="px-3 py-1 text-xs text-theme-fg-subtle">{t(locale, 'common.loading')}</p>
+                )}
+                {chatProjects.slice(0, 8).map((p) => {
+                  const active = pathname === `/dashboard/projects/${p.id}`;
+                  return (
+                    <Link
+                      key={p.id}
+                      href={`/dashboard/projects/${p.id}`}
+                      className={`flex items-center gap-3 px-3 py-2 min-h-[40px] rounded-md text-sm min-w-0 ${
+                        active ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'
+                      }`}
+                      title={p.name}
+                    >
+                      <ProjectsIcon className="w-4 h-4 shrink-0 text-theme-accent" />
+                      <span className="truncate">{p.name}</span>
+                    </Link>
+                  );
+                })}
+                {chatProjects.length > 8 && (
+                  <Link
+                    href="/dashboard/projects"
+                    className="px-3 py-1 text-xs text-theme-fg-subtle hover:text-theme-fg transition-colors"
+                  >
+                    {t(locale, 'chatProjects.viewAll')} →
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {effectiveCollapsed && (
+          <Link
+            href="/dashboard/projects"
+            className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/projects') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`}
+            title={t(locale, 'nav.projects')}
+          >
+            <ProjectsIcon className="w-5 h-5 shrink-0" />
           </Link>
         )}
 
@@ -474,6 +556,14 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
         profileLabel={t(locale, 'thread.myProfile')}
         onClose={() => setShowArchivedDialog(false)}
       />
+      <CreateChatProjectDialog
+        open={showCreateProject}
+        onClose={() => setShowCreateProject(false)}
+        onCreated={(p) => {
+          refreshChatProjects();
+          router.push(`/dashboard/projects/${p.id}`);
+        }}
+      />
     </>
   );
 
@@ -521,6 +611,14 @@ function JobsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+    </svg>
+  );
+}
+
+function ProjectsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
     </svg>
   );
 }

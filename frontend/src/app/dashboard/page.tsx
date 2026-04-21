@@ -478,6 +478,17 @@ export default function DashboardPage() {
     }
   }, [effectiveThreadId, incognito, videoModel, videoSettings.duration, videoSettings.aspectRatio, videoSettings.resolution, refreshThread]);
 
+  // Pre-fill prompt from session (e.g. quick action from a chat project)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pf = sessionStorage.getItem('flipo5_pending_chat_prefill');
+    if (pf && !prompt) {
+      setPrompt(pf);
+    }
+    // Note: pending_chat_project is consumed at submit time, not here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Apply ref URLs from session (e.g. "Start new chat with this" from another page)
   useEffect(() => {
     const raw = typeof window !== 'undefined' ? sessionStorage.getItem('flipo5_ref_urls') : null;
@@ -669,9 +680,14 @@ export default function DashboardPage() {
         // Reset form to prevent browser auto-resubmission
         if (formRef.current) formRef.current.reset();
       },
+      pendingChatProjectId: typeof window !== 'undefined' ? sessionStorage.getItem('flipo5_pending_chat_project') : null,
       onSentToast: () => {
         showToast('toast.sent');
         focusPromptInput();
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('flipo5_pending_chat_project');
+          sessionStorage.removeItem('flipo5_pending_chat_prefill');
+        }
       },
     });
     focusPromptInput();

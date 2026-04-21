@@ -43,7 +43,8 @@ type SubmitCtx = {
   setReferenceImageUrls: (v: string[]) => void;
 
   uploadAttachments: (files: File[]) => Promise<string[]>;
-  createChat: (msg: string, urls?: string[], threadId?: string, incognito?: boolean, types?: string[]) => Promise<{ job_id: string; thread_id?: string | null }>;
+  createChat: (msg: string, urls?: string[], threadId?: string, incognito?: boolean, types?: string[], chatProjectId?: string) => Promise<{ job_id: string; thread_id?: string | null }>;
+  pendingChatProjectId?: string | null;
   createImage: (payload: any) => Promise<{ job_id: string; thread_id?: string | null }>;
   createVideo: (payload: any) => Promise<{ job_id: string; thread_id?: string | null }>;
   getThread: (id: string) => Promise<{ thread?: any; jobs?: any[] }>;
@@ -118,7 +119,16 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
       let attachmentUrls: string[] = [];
       const attachmentContentTypes = ctx.attachments.map((a) => a.file.type);
       if (ctx.attachments.length > 0) attachmentUrls = await ctx.uploadAttachments(ctx.attachments.map((a) => a.file));
-      const res = await ctx.createChat(msg, attachmentUrls.length ? attachmentUrls : undefined, useNormalSession ? undefined : tid ?? undefined, effectiveIncognito, attachmentUrls.length ? attachmentContentTypes : undefined);
+      // For brand-new chats only, attach the pending chat project (set when navigating from a project page).
+      const chatProjectIdForCreation = !tid && !effectiveIncognito ? ctx.pendingChatProjectId ?? undefined : undefined;
+      const res = await ctx.createChat(
+        msg,
+        attachmentUrls.length ? attachmentUrls : undefined,
+        useNormalSession ? undefined : tid ?? undefined,
+        effectiveIncognito,
+        attachmentUrls.length ? attachmentContentTypes : undefined,
+        chatProjectIdForCreation || undefined,
+      );
       ctx.setPendingUserMessage('');
       ctx.setPendingUserMessageThreadId(null);
       ctx.setJobId(res.job_id);

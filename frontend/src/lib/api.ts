@@ -341,17 +341,19 @@ export async function createChat(
   attachmentUrls?: string[],
   threadId?: string,
   incognito?: boolean,
-  attachmentContentTypes?: string[]
+  attachmentContentTypes?: string[],
+  chatProjectId?: string
 ): Promise<{ job_id: string; thread_id?: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const body: { prompt: string; attachment_urls?: string[]; attachment_content_types?: string[]; thread_id?: string; incognito?: boolean } = { prompt };
+  const body: { prompt: string; attachment_urls?: string[]; attachment_content_types?: string[]; thread_id?: string; incognito?: boolean; chat_project_id?: string } = { prompt };
   if (attachmentUrls?.length) {
     body.attachment_urls = attachmentUrls;
     if (attachmentContentTypes?.length) body.attachment_content_types = attachmentContentTypes;
   }
   if (threadId) body.thread_id = threadId;
   if (incognito) body.incognito = true;
+  if (chatProjectId) body.chat_project_id = chatProjectId;
   const res = await fetch(`${API_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -1338,4 +1340,126 @@ export async function removeProjectItemBackground(projectId: string, itemId: str
   } finally {
     clearTimeout(t);
   }
+}
+
+// ----- Chat projects (Grok-style projects: instructions + reference files + threads) -----
+
+export interface ChatProject {
+  id: string;
+  user_id: string;
+  name: string;
+  instructions: string;
+  thread_count: number;
+  file_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatProjectFile {
+  id: string;
+  project_id: string;
+  file_url: string;
+  file_name: string;
+  content_type: string;
+  size_bytes?: number | null;
+  created_at: string;
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  return { Authorization: `Bearer ${token}` };
+}
+
+export async function listChatProjects(): Promise<ChatProject[]> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/chat-projects`, { headers });
+  if (!res.ok) throw new Error('Failed to load projects');
+  const data = (await res.json()) as { projects?: ChatProject[] };
+  return data.projects ?? [];
+}
+
+export async function getChatProject(id: string): Promise<{ project: ChatProject; files: ChatProjectFile[]; threads: Thread[] }> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/chat-projects/${id}`, { headers });
+  if (!res.ok) throw new Error('Failed to load project');
+  return res.json();
+}
+
+export async function createChatProject(name: string, instructions = ''): Promise<ChatProject> {
+  const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+  const res = await fetch(`${API_URL}/api/chat-projects`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name, instructions }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(err.error || 'Failed to create project');
+  }
+  const data = (await res.json()) as { project: ChatProject };
+  return data.project;
+}
+
+export async function updateChatProject(id: string, patch: { name?: string; instructions?: string }): Promise<ChatProject> {
+  const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+  const res = await fetch(`${API_URL}/api/chat-projects/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error('Failed to update project');
+  const data = (await res.json()) as { project: ChatProject };
+  return data.project;
+}
+
+export async function deleteChatProject(id: string): Promise<void> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/chat-projects/${id}`, { method: 'DELETE', headers });
+  if (!res.ok) throw new Error('Failed to delete project');
+}
+
+export async function addChatProjectFile(
+  id: string,
+  file: { fileUrl: string; fileName: string; contentType: string; sizeBytes?: number },
+): Promise<ChatProjectFile> {
+  const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+  const res = await fetch(`${API_URL}/api/chat-projects/${id}/files`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      file_url: file.fileUrl,
+      file_name: file.fileName,
+      content_type: file.contentType,
+      size_bytes: file.sizeBytes,
+    }),
+  });
+  if (!res.ok) throw new Error('Failed to add file');
+  const data = (await res.json()) as { file: ChatProjectFile };
+  return data.file;
+}
+
+export async function deleteChatProjectFile(fileId: string): Promise<void> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/chat-projects/files/${fileId}`, { method: 'DELETE', headers });
+  if (!res.ok) throw new Error('Failed to delete file');
+}
+
+/** Convenience: upload files via /api/upload then attach them to the project. */
+export async function uploadAndAttachChatProjectFiles(projectId: string, files: File[]): Promise<ChatProjectFile[]> {
+  if (files.length === 0) return [];
+  const urls = await uploadAttachments(files);
+  const out: ChatProjectFile[] = [];
+  for (let i = 0; i < urls.length; i++) {
+    const f = files[i];
+    out.push(
+      await addChatProjectFile(projectId, {
+        fileUrl: urls[i],
+        fileName: f.name,
+        contentType: f.type || '',
+        sizeBytes: f.size,
+      }),
+    );
+  }
+  return out;
 }
