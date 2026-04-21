@@ -61,6 +61,31 @@ const maxRecentFullExchanges = 2 // last N: full user+assistant for "explică ma
 const maxUserQuestionLen = 120   // truncate very long user prompts in topics list
 const maxRecentOutputLen = 800   // truncate assistant in recent exchanges (enough for follow-up)
 
+// isSupportedMediaType returns true for MIME types that we are willing to forward to Replicate.
+// Gemini-class models accept images, PDFs, audio and video natively, so we allow the
+// common content types a user would attach. Other office formats still fail at the
+// model level — if a mime type isn't listed here we skip it so we do not burn a request.
+func isSupportedMediaType(ct string) bool {
+	ct = strings.ToLower(strings.TrimSpace(ct))
+	if ct == "" {
+		return true // unknown type — let the model decide
+	}
+	if strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "audio/") || strings.HasPrefix(ct, "video/") {
+		return true
+	}
+	switch ct {
+	case "application/pdf",
+		"text/plain",
+		"text/markdown",
+		"text/csv",
+		"application/json",
+		"application/xml",
+		"text/html":
+		return true
+	}
+	return false
+}
+
 // buildChatContext: older exchanges = user questions only; last 2 = full. Saves tokens, keeps context.
 func buildChatContext(db *store.DB, ctx context.Context, threadID *uuid.UUID, userID, currentJobID uuid.UUID) string {
 	if threadID == nil {
@@ -228,7 +253,12 @@ Voice and style:
 		}
 	}
 
-	// Apply chat project (Grok-style projects): prepend custom instructions and list source files.
+	// Apply chat project (Grok-style projects): prepend custom instructions and
+	// forward reference files. Gemini accepts images, PDFs and many other media
+	// types directly on the `images` input field, so we pass anything that's not
+	// clearly unsupported and list each file by name in the system prompt so the
+	// model knows which blob corresponds to which reference.
+	var projectMediaURLs []string
 	if job.ThreadID != nil {
 		if pid, _ := h.DB.GetThreadProjectID(ctx, *job.ThreadID); pid != nil {
 			if proj, _ := h.DB.GetChatProject(ctx, *pid, job.UserID); proj != nil {
@@ -237,8 +267,12 @@ Voice and style:
 				}
 				if files, _ := h.DB.ListChatProjectFiles(ctx, *pid, job.UserID); len(files) > 0 {
 					var b strings.Builder
-					b.WriteString("\n\nProject reference files (use them as context when relevant):")
+					b.WriteString("\n\nProject reference files attached to this conversation (read them as context whenever relevant, and remember them across turns):")
 					for _, f := range files {
+						fileURL := f.FileURL
+						if strings.HasPrefix(fileURL, "uploads/") && h.Store != nil {
+							fileURL = h.Store.URL(fileURL)
+						}
 						name := f.FileName
 						if name == "" {
 							name = "file"
@@ -250,9 +284,8 @@ Voice and style:
 							b.WriteString(f.ContentType)
 							b.WriteString(")")
 						}
-						if f.FileURL != "" {
-							b.WriteString(": ")
-							b.WriteString(f.FileURL)
+						if fileURL != "" {
+							projectMediaURLs = append(projectMediaURLs, fileURL)
 						}
 					}
 					system += b.String()
@@ -276,31 +309,28 @@ Voice and style:
 	if len(job.Input) > 0 {
 		_ = json.Unmarshal(job.Input, &jobInput)
 	}
+	// Gemini on Replicate accepts images, PDFs, audio and video on the `images` input.
+	// Forward everything except clearly unsupported types so the model can actually
+	// look at project files and per-message attachments.
+	media := make([]string, 0, len(projectMediaURLs)+4)
+	media = append(media, projectMediaURLs...)
 	if urls, ok := jobInput["attachment_urls"].([]interface{}); ok && len(urls) > 0 {
 		types, _ := jobInput["attachment_content_types"].([]interface{})
-		images := make([]string, 0, len(urls))
-		hasNonImage := false
 		for i, u := range urls {
 			urlStr, ok := u.(string)
 			if !ok || urlStr == "" {
 				continue
 			}
-			// Only send image URLs to Replicate (vision models). PDFs/docs cause E006 "invalid input".
 			if i < len(types) {
-				if t, ok := types[i].(string); ok && !strings.HasPrefix(t, "image/") {
-					hasNonImage = true
+				if ct, ok := types[i].(string); ok && !isSupportedMediaType(ct) {
 					continue
 				}
 			}
-			images = append(images, urlStr)
+			media = append(media, urlStr)
 		}
-		if len(images) > 0 {
-			input["images"] = images
-		}
-		if hasNonImage {
-			// So the model can tell the user we can't read PDFs/docs yet
-			input["prompt"] = prompt + "\n\n[The user attached document file(s) (e.g. PDF) which cannot be analyzed. Suggest they paste the relevant text or upload an image/screenshot of the page.]"
-		}
+	}
+	if len(media) > 0 {
+		input["images"] = media
 	}
 	// Prefer streaming: create prediction with stream, then consume stream and update job output per chunk
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, model, input)
