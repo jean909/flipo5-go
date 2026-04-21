@@ -359,6 +359,12 @@ export default function DashboardPage() {
       setThreadData(null);
       setThreadJobs([]);
       setReplaceMap({});
+      setPendingUserMessage('');
+      setPendingUserMessageThreadId(null);
+      // Fall back to the dashboard landing view — otherwise hasStarted stays true
+      // and the chat UI keeps rendering even though no thread is selected.
+      setHasStarted(false);
+      setPrompt('');
     }
   }, [urlThreadId, incognito, incognitoThreadId, router]);
 
