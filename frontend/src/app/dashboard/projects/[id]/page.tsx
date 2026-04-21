@@ -59,6 +59,17 @@ export default function ChatProjectDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const m = window.matchMedia('(max-width: 767px)');
+    setIsMobile(m.matches);
+    const onMatch = () => setIsMobile(m.matches);
+    m.addEventListener('change', onMatch);
+    return () => m.removeEventListener('change', onMatch);
+  }, []);
 
   // Chat state — a project has ONE conversation. We always use the most recent thread linked to it.
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
@@ -294,23 +305,14 @@ export default function ChatProjectDetailPage() {
 
   const hasMessages = displayList.length > 0;
 
-  return (
-    <div className="flex-1 min-h-0 flex overflow-hidden">
-      {/* Project sidebar */}
-      {sidebarCollapsed ? (
-        <div className="shrink-0 border-r border-theme-border bg-theme-bg flex flex-col items-center py-3 gap-2 w-12">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed(false)}
-            className="p-2 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
-            aria-label={t(locale, 'chatProjects.expandSidebar')}
-            title={project.name}
-          >
-            <PanelOpenIcon className="w-5 h-5" />
-          </button>
-        </div>
-      ) : (
-        <aside className="shrink-0 w-72 border-r border-theme-border bg-theme-bg flex flex-col min-h-0">
+  const sidebarContent = (
+    <aside
+      className={
+        isMobile
+          ? 'w-72 max-w-[85vw] h-full border-r border-theme-border bg-theme-bg flex flex-col min-h-0'
+          : 'shrink-0 w-72 border-r border-theme-border bg-theme-bg flex flex-col min-h-0'
+      }
+    >
           {/* Header */}
           <div className="px-3 py-3 border-b border-theme-border flex items-center justify-between gap-2 min-h-[52px]">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -352,7 +354,10 @@ export default function ChatProjectDetailPage() {
             </button>
             <button
               type="button"
-              onClick={() => setSidebarCollapsed(true)}
+              onClick={() => {
+                if (isMobile) setMobileSidebarOpen(false);
+                else setSidebarCollapsed(true);
+              }}
               className="p-1.5 rounded-md text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover"
               aria-label={t(locale, 'chatProjects.collapseSidebar')}
               title={t(locale, 'chatProjects.collapseSidebar')}
@@ -368,6 +373,7 @@ export default function ChatProjectDetailPage() {
               onClick={() => {
                 setDraftInstructions(project.instructions);
                 setShowInstructionsDialog(true);
+                if (isMobile) setMobileSidebarOpen(false);
               }}
               className="w-full text-left rounded-xl border border-theme-border bg-theme-bg p-3 hover:bg-theme-bg-hover transition-colors"
             >
@@ -383,7 +389,10 @@ export default function ChatProjectDetailPage() {
             {/* Sources card */}
             <button
               type="button"
-              onClick={() => setShowSourcesDialog(true)}
+              onClick={() => {
+                setShowSourcesDialog(true);
+                if (isMobile) setMobileSidebarOpen(false);
+              }}
               className="w-full text-left rounded-xl border border-theme-border bg-theme-bg p-3 hover:bg-theme-bg-hover transition-colors"
             >
               <div className="flex items-center gap-2 mb-1">
@@ -400,11 +409,77 @@ export default function ChatProjectDetailPage() {
             </button>
 
           </div>
-        </aside>
+    </aside>
+  );
+
+  return (
+    <div className="flex-1 min-h-0 flex overflow-hidden relative">
+      {/* Desktop: inline sidebar (collapsible) */}
+      {!isMobile && (
+        sidebarCollapsed ? (
+          <div className="shrink-0 border-r border-theme-border bg-theme-bg flex flex-col items-center py-3 gap-2 w-12">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              className="p-2 rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
+              aria-label={t(locale, 'chatProjects.expandSidebar')}
+              title={project.name}
+            >
+              <PanelOpenIcon className="w-5 h-5" />
+            </button>
+          </div>
+        ) : (
+          sidebarContent
+        )
       )}
+
+      {/* Mobile: sidebar as overlay drawer with slide animation */}
+      <AnimatePresence>
+        {isMobile && mobileSidebarOpen && (
+          <motion.div
+            key="project-mobile-drawer"
+            className="fixed inset-0 z-40 flex md:hidden"
+            aria-modal="true"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <div className="absolute inset-0 bg-black/60" onClick={() => setMobileSidebarOpen(false)} />
+            <motion.div
+              className="relative h-full"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', stiffness: 320, damping: 36 }}
+            >
+              {sidebarContent}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Right: chat */}
       <div className="flex-1 min-w-0 flex flex-col">
+        {isMobile && (
+          <div
+            className="shrink-0 flex items-center gap-2 px-3 border-b border-theme-border bg-theme-bg"
+            style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))', paddingBottom: '0.5rem' }}
+          >
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="min-h-[44px] min-w-[44px] rounded-md text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover flex items-center justify-center touch-manipulation"
+              aria-label={t(locale, 'chatProjects.expandSidebar')}
+            >
+              <MenuIcon className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <ProjectIcon className="w-4 h-4 shrink-0 text-theme-accent" />
+              <span className="truncate text-sm font-semibold text-theme-fg">{project.name}</span>
+            </div>
+          </div>
+        )}
         <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle">
           {!hasMessages ? (
             <div className="h-full flex items-center justify-center px-4">
@@ -474,7 +549,8 @@ export default function ChatProjectDetailPage() {
             e.preventDefault();
             handleSend();
           }}
-          className="shrink-0 border-t border-theme-border bg-theme-bg p-3"
+          className="shrink-0 border-t border-theme-border bg-theme-bg px-3 pt-3"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
         >
           <div className="max-w-2xl mx-auto rounded-xl border border-theme-border bg-theme-bg-subtle flex items-end gap-2 px-3 py-2">
             <textarea
@@ -491,7 +567,9 @@ export default function ChatProjectDetailPage() {
               placeholder={t(locale, 'chatProjects.composerPlaceholder')}
               rows={1}
               disabled={sending}
-              className="flex-1 min-w-0 px-1 py-2 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none resize-none max-h-40 scrollbar-subtle disabled:opacity-60"
+              inputMode="text"
+              autoComplete="off"
+              className="flex-1 min-w-0 px-1 py-2 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none resize-none max-h-40 scrollbar-subtle disabled:opacity-60 text-base md:text-sm"
             />
             <button
               type="submit"
@@ -756,6 +834,13 @@ function ArrowUpIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7m0 0l7 7m-7-7v18" />
+    </svg>
+  );
+}
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
     </svg>
   );
 }

@@ -915,7 +915,8 @@ export default function DashboardPage() {
           }}
           placeholder={!threadId ? getFriendlyPlaceholder(user?.full_name, locale) : t(locale, 'chat.placeholder')}
           rows={1}
-          className={`scrollbar-subtle flex-1 min-w-[120px] px-2 py-2.5 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none rounded-lg resize-none max-h-40 overflow-y-auto`}
+          autoComplete="off"
+          className={`scrollbar-subtle flex-1 min-w-[120px] px-2 py-2.5 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none rounded-lg resize-none max-h-40 overflow-y-auto text-base md:text-sm`}
           disabled={loading}
         />
         {(mode === 'image' || mode === 'video') && (
@@ -1424,7 +1425,8 @@ export default function DashboardPage() {
                     if (items) for (let i = 0; i < items.length; i++) addAttachment(items[i]);
                   }}
                   placeholder={getFriendlyPlaceholder(user?.full_name, locale)}
-                  className="flex-1 min-w-[120px] px-2 py-2.5 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none rounded-lg"
+                  autoComplete="off"
+                  className="flex-1 min-w-[120px] px-2 py-2.5 bg-transparent text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none rounded-lg text-base md:text-sm"
                   disabled={loading}
                 />
                 {(mode === 'image' || mode === 'video') && (

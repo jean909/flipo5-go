@@ -31,18 +31,19 @@ export default function ProjectsPage() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0 flex-1">
             <h1 className="font-display text-2xl font-bold text-theme-fg">{t(locale, 'projects.title')}</h1>
             <p className="text-sm text-theme-fg-muted mt-1">{t(locale, 'chatProjects.listSub')}</p>
           </div>
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="btn-tap px-4 py-2 rounded-xl text-sm font-semibold bg-white text-black flex items-center gap-2"
+            className="btn-tap shrink-0 min-h-[44px] px-3 sm:px-4 rounded-xl text-sm font-semibold bg-white text-black flex items-center gap-2 touch-manipulation"
+            aria-label={t(locale, 'chatProjects.newProject')}
           >
             <PlusIcon className="w-4 h-4" />
-            {t(locale, 'chatProjects.newProject')}
+            <span className="hidden sm:inline">{t(locale, 'chatProjects.newProject')}</span>
           </button>
         </div>
 
