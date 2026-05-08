@@ -902,10 +902,13 @@ func (s *Server) createLogo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createAudio(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt       string `json:"prompt"`
-		Instrumental bool   `json:"instrumental"`
-		AudioMode    string `json:"audio_mode,omitempty"` // "music" | "vocal"
-		NumVariants  int    `json:"num_variants,omitempty"`
+		Prompt            string `json:"prompt"`
+		Instrumental      bool   `json:"instrumental"`
+		ForceInstrumental *bool  `json:"force_instrumental,omitempty"`
+		AudioMode         string `json:"audio_mode,omitempty"` // "music" | "vocal"
+		NumVariants       int    `json:"num_variants,omitempty"`
+		OutputFormat      string `json:"output_format,omitempty"`
+		MusicLengthMs     int    `json:"music_length_ms,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -922,8 +925,30 @@ func (s *Server) createAudio(w http.ResponseWriter, r *http.Request) {
 	if req.AudioMode == "vocal" {
 		req.Instrumental = false
 	}
+	if req.ForceInstrumental != nil {
+		req.Instrumental = *req.ForceInstrumental
+	}
+	if req.AudioMode == "vocal" {
+		req.Instrumental = false
+	}
 	if req.NumVariants < 1 || req.NumVariants > 4 {
 		req.NumVariants = 1
+	}
+	switch req.OutputFormat {
+	case "", "mp3_standard", "mp3_high_quality", "wav_16khz", "wav_22khz", "wav_24khz", "wav_cd_quality":
+		if strings.TrimSpace(req.OutputFormat) == "" {
+			req.OutputFormat = "mp3_standard"
+		}
+	default:
+		http.Error(w, `{"error":"invalid output_format"}`, http.StatusBadRequest)
+		return
+	}
+	if req.MusicLengthMs == 0 {
+		req.MusicLengthMs = 10000
+	}
+	if req.MusicLengthMs < 5000 || req.MusicLengthMs > 300000 {
+		http.Error(w, `{"error":"music_length_ms must be between 5000 and 300000"}`, http.StatusBadRequest)
+		return
 	}
 	userID, _ := middleware.UserID(r.Context())
 	if userID == uuid.Nil {
@@ -932,10 +957,13 @@ func (s *Server) createAudio(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	input := map[string]interface{}{
-		"prompt":       strings.TrimSpace(req.Prompt),
-		"instrumental": req.Instrumental,
-		"audio_mode":   req.AudioMode,
-		"num_variants": req.NumVariants,
+		"prompt":             strings.TrimSpace(req.Prompt),
+		"instrumental":       req.Instrumental,
+		"force_instrumental": req.Instrumental,
+		"audio_mode":         req.AudioMode,
+		"num_variants":       req.NumVariants,
+		"output_format":      req.OutputFormat,
+		"music_length_ms":    req.MusicLengthMs,
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "audio", input, nil)
 	if err != nil {

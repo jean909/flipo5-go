@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	repgo "github.com/replicate/replicate-go"
 	"flipo5/backend/internal/cache"
 	"flipo5/backend/internal/config"
 	"flipo5/backend/internal/replicate"
-	"flipo5/backend/internal/stream"
 	"flipo5/backend/internal/storage"
 	"flipo5/backend/internal/store"
+	"flipo5/backend/internal/stream"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	repgo "github.com/replicate/replicate-go"
 )
 
 // ErrMsgServerUnavailable is shown to users when job times out (5 min)
@@ -56,11 +56,10 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 
 // Context strategy (research-based): user questions = topic anchor; full assistant replies = token-heavy.
 // We send: (1) list of user questions = what was discussed; (2) last 2 full exchanges = immediate follow-up.
-const maxUserQuestions = 12       // older: only user prompts (topics)
+const maxUserQuestions = 12      // older: only user prompts (topics)
 const maxRecentFullExchanges = 2 // last N: full user+assistant for "explică mai simplu" etc
 const maxUserQuestionLen = 120   // truncate very long user prompts in topics list
 const maxRecentOutputLen = 800   // truncate assistant in recent exchanges (enough for follow-up)
-
 
 // buildChatContext: older exchanges = user questions only; last 2 = full. Saves tokens, keeps context.
 func buildChatContext(db *store.DB, ctx context.Context, threadID *uuid.UUID, userID, currentJobID uuid.UUID) string {
@@ -148,7 +147,7 @@ type Handlers struct {
 	Store  *storage.Store
 	Asynq  *asynq.Client
 	Stream *stream.Publisher // Redis pub/sub for real-time SSE
-	Cache  *cache.Redis     // for cache invalidation when jobs complete
+	Cache  *cache.Redis      // for cache invalidation when jobs complete
 }
 
 func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
@@ -509,15 +508,15 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
-		if h.Stream != nil {
-			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
-			// Also publish to user-specific channel for streamAllJobs
-			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
-				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
-				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, p.JobID.String(), job.Type)
-				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
-			}
+	if h.Stream != nil {
+		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
+		// Also publish to user-specific channel for streamAllJobs
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, p.JobID.String(), job.Type)
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
 		}
+	}
 	if h.Repl == nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
 		return nil
@@ -567,13 +566,13 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 				guidance = v
 			}
 			input := repgo.PredictionInput{
-				"image":          imageURL,
-				"mask":           maskURL,
-				"prompt":         prompt,
-				"steps":          steps,
-				"guidance":       guidance,
-				"output_format":  "jpg",
-				"safety_tolerance": 2,
+				"image":             imageURL,
+				"mask":              maskURL,
+				"prompt":            prompt,
+				"steps":             steps,
+				"guidance":          guidance,
+				"output_format":     "jpg",
+				"safety_tolerance":  2,
 				"prompt_upsampling": false,
 			}
 			out, err := h.Repl.Run(ctx, model, input)
@@ -860,6 +859,9 @@ func (h *Handlers) AudioHandler(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 	instrumental, _ := jobInput["instrumental"].(bool)
+	if v, ok := jobInput["force_instrumental"].(bool); ok {
+		instrumental = v
+	}
 	audioMode, _ := jobInput["audio_mode"].(string)
 	audioMode = strings.ToLower(strings.TrimSpace(audioMode))
 	if audioMode != "vocal" {
@@ -875,10 +877,25 @@ func (h *Handlers) AudioHandler(ctx context.Context, t *asynq.Task) error {
 			numVariants = n
 		}
 	}
+	outputFormat, _ := jobInput["output_format"].(string)
+	switch outputFormat {
+	case "mp3_standard", "mp3_high_quality", "wav_16khz", "wav_22khz", "wav_24khz", "wav_cd_quality":
+	default:
+		outputFormat = "mp3_standard"
+	}
+	musicLengthMs := 10000
+	if v, ok := jobInput["music_length_ms"].(float64); ok {
+		n := int(v)
+		if n >= 5000 && n <= 300000 {
+			musicLengthMs = n
+		}
+	}
 
 	replInput := repgo.PredictionInput{
-		"prompt":       prompt,
-		"instrumental": instrumental,
+		"prompt":             prompt,
+		"force_instrumental": instrumental,
+		"music_length_ms":    musicLengthMs,
+		"output_format":      outputFormat,
 	}
 
 	var urls []string
@@ -940,15 +957,15 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
-		if h.Stream != nil {
-			_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
-			// Also publish to user-specific channel for streamAllJobs
-			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
-				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
-				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, p.JobID.String(), job.Type)
-				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
-			}
+	if h.Stream != nil {
+		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"running"}`, false)
+		// Also publish to user-specific channel for streamAllJobs
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, p.JobID.String(), job.Type)
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
 		}
+	}
 	if h.Repl == nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
 		if h.Stream != nil {
@@ -1113,11 +1130,11 @@ func (h *Handlers) UpscaleHandler(ctx context.Context, t *asynq.Task) error {
 		faceStrength = v
 	}
 	input := repgo.PredictionInput{
-		"image":            imageURL,
-		"enhance_model":    enhanceModel,
-		"output_format":    outputFormat,
-		"upscale_factor":   upscaleFactor,
-		"face_enhancement": faceEnhancement,
+		"image":             imageURL,
+		"enhance_model":     enhanceModel,
+		"output_format":     outputFormat,
+		"upscale_factor":    upscaleFactor,
+		"face_enhancement":  faceEnhancement,
 		"subject_detection": subjectDetection,
 	}
 	if faceEnhancement {
