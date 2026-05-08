@@ -125,9 +125,24 @@ func extFromContentType(contentType, jobType, fallbackURL string) string {
 		return ".mp4"
 	case strings.HasPrefix(contentType, "video/webm"):
 		return ".webm"
+	case strings.HasPrefix(contentType, "audio/mpeg"):
+		return ".mp3"
+	case strings.HasPrefix(contentType, "audio/mp3"):
+		return ".mp3"
+	case strings.HasPrefix(contentType, "audio/wav"):
+		return ".wav"
+	case strings.HasPrefix(contentType, "audio/x-wav"):
+		return ".wav"
+	case strings.HasPrefix(contentType, "audio/mp4"):
+		return ".m4a"
+	case strings.HasPrefix(contentType, "audio/ogg"):
+		return ".ogg"
 	}
 	if jobType == "video" {
 		return ".mp4"
+	}
+	if jobType == "audio" {
+		return ".mp3"
 	}
 	return ".png"
 }

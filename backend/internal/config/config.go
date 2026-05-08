@@ -37,6 +37,7 @@ type Config struct {
 	ModelFluxFill  string // black-forest-labs/flux-fill-pro for Edit using Brush (inpainting)
 	ModelVideo     string
 	ModelVideo2    string // kwaivgi/kling-v2.5-turbo-pro (start_image, end_image)
+	ModelAudio     string // suno audio generation model
 	ModelRemoveBg  string // bria/remove-background for studio remove background
 	ModelUpscale   string // topazlabs/image-upscale for upscaling
 
@@ -69,6 +70,7 @@ func Load() *Config {
 		ModelFluxFill:   getEnv("REPLICATE_MODEL_FLUX_FILL", "black-forest-labs/flux-fill-pro"),
 		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
 		ModelVideo2:    getEnv("REPLICATE_MODEL_VIDEO_2", "kwaivgi/kling-v2.5-turbo-pro"),
+		ModelAudio:     getEnv("REPLICATE_MODEL_AUDIO", "suno-ai/bark"),
 		ModelRemoveBg:  getEnv("REPLICATE_MODEL_REMOVE_BG", "bria/remove-background"),
 		ModelUpscale:   getEnv("REPLICATE_MODEL_UPSCALE", "topazlabs/image-upscale"),
 		CORSOrigins:    strings.TrimSpace(getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),

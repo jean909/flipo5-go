@@ -17,6 +17,7 @@ const (
 	TypeOutline           = "outline"
 	TypeTranslate         = "translate"
 	TypeLogo              = "logo"
+	TypeAudio             = "audio"
 	TypeProductScore        = "product_score"
 	TypeProductDescription   = "product_description"
 	TypeProductSceneImprove  = "product_scene_improve"
@@ -123,6 +124,18 @@ func NewLogoTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeLogo, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
+}
+
+type AudioPayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewAudioTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(AudioPayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeAudio, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
 }
 
 type ProductScorePayload struct {

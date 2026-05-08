@@ -49,7 +49,7 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 		_ = h.Cache.Delete(ctx, keys...)
 	}
 	// Invalidate content cache if job produces media content
-	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" {
+	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" || job.Type == "audio" {
 		_ = h.Cache.DeleteByPrefix(ctx, "content:"+job.UserID.String()+":")
 	}
 }
@@ -821,6 +821,116 @@ func (h *Handlers) LogoHandler(ctx context.Context, t *asynq.Task) error {
 		h.invalidateJobCaches(ctx, job)
 	}
 	go mirrorMediaToR2(h, p.JobID, outNormalized, "image")
+	return nil
+}
+
+func (h *Handlers) AudioHandler(ctx context.Context, t *asynq.Task) error {
+	var p AudioPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err
+	}
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "running", nil, "", 0, "")
+	if h.Stream != nil {
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"running","type":"audio"}`, p.JobID.String()))
+		}
+	}
+	if h.Repl == nil {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Replicate not configured", 0, "")
+		return nil
+	}
+	model := h.Cfg.ModelAudio
+	if model == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Audio model not configured", 0, "")
+		return nil
+	}
+	job, err := h.DB.GetJob(ctx, p.JobID)
+	if err != nil || job == nil {
+		return nil
+	}
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	prompt, _ := jobInput["prompt"].(string)
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "prompt required", 0, "")
+		return nil
+	}
+	instrumental, _ := jobInput["instrumental"].(bool)
+	audioMode, _ := jobInput["audio_mode"].(string)
+	audioMode = strings.ToLower(strings.TrimSpace(audioMode))
+	if audioMode != "vocal" {
+		audioMode = "music"
+	}
+	if audioMode == "vocal" {
+		instrumental = false
+	}
+	numVariants := 1
+	if v, ok := jobInput["num_variants"].(float64); ok {
+		n := int(v)
+		if n >= 1 && n <= 4 {
+			numVariants = n
+		}
+	}
+
+	replInput := repgo.PredictionInput{
+		"prompt":       prompt,
+		"instrumental": instrumental,
+	}
+
+	var urls []string
+	for i := 0; i < numVariants; i++ {
+		out, err := h.Repl.Run(ctx, model, replInput)
+		if err != nil {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+			return nil
+		}
+		switch v := out.(type) {
+		case string:
+			if strings.TrimSpace(v) != "" {
+				urls = append(urls, strings.TrimSpace(v))
+			}
+		case []interface{}:
+			for _, item := range v {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					urls = append(urls, strings.TrimSpace(s))
+				}
+			}
+		case map[string]interface{}:
+			if ov, ok := v["output"]; ok {
+				if s, ok := ov.(string); ok && strings.TrimSpace(s) != "" {
+					urls = append(urls, strings.TrimSpace(s))
+				}
+				if arr, ok := ov.([]interface{}); ok {
+					for _, item := range arr {
+						if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+							urls = append(urls, strings.TrimSpace(s))
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(urls) == 0 {
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "No audio output", 0, "")
+		return nil
+	}
+	outNormalized := map[string]interface{}{"output": urls}
+
+	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", outNormalized, "", 0, "")
+	if h.Stream != nil {
+		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"audio"}`, p.JobID.String()))
+		}
+	}
+	if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
+		h.invalidateJobCaches(ctx, job)
+	}
+	go mirrorMediaToR2(h, p.JobID, outNormalized, "audio")
 	return nil
 }
 
@@ -2057,6 +2167,7 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeOutline, h.OutlineHandler)
 	mux.HandleFunc(TypeTranslate, h.TranslateHandler)
 	mux.HandleFunc(TypeLogo, h.LogoHandler)
+	mux.HandleFunc(TypeAudio, h.AudioHandler)
 	mux.HandleFunc(TypeProductScore, h.ProductScoreHandler)
 	mux.HandleFunc(TypeProductDescription, h.ProductDescriptionHandler)
 	mux.HandleFunc(TypeProductSceneImprove, h.ProductSceneImproveHandler)

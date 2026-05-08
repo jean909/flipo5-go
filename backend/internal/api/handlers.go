@@ -106,6 +106,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/outline", s.createOutline)
 		r.Post("/translate", s.createTranslate)
 		r.Post("/logo", s.createLogo)
+		r.Post("/audio", s.createAudio)
 		r.Route("/products", func(r chi.Router) {
 			r.Get("/", s.listProducts)
 			r.Post("/", s.createProduct)
@@ -899,6 +900,60 @@ func (s *Server) createLogo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
 }
 
+func (s *Server) createAudio(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt       string `json:"prompt"`
+		Instrumental bool   `json:"instrumental"`
+		AudioMode    string `json:"audio_mode,omitempty"` // "music" | "vocal"
+		NumVariants  int    `json:"num_variants,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
+		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	req.AudioMode = strings.ToLower(strings.TrimSpace(req.AudioMode))
+	if req.AudioMode == "" {
+		req.AudioMode = "music"
+	}
+	if req.AudioMode != "music" && req.AudioMode != "vocal" {
+		http.Error(w, `{"error":"audio_mode must be music or vocal"}`, http.StatusBadRequest)
+		return
+	}
+	if req.AudioMode == "vocal" {
+		req.Instrumental = false
+	}
+	if req.NumVariants < 1 || req.NumVariants > 4 {
+		req.NumVariants = 1
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"prompt":       strings.TrimSpace(req.Prompt),
+		"instrumental": req.Instrumental,
+		"audio_mode":   req.AudioMode,
+		"num_variants": req.NumVariants,
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "audio", input, nil)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	s.recordUserProfile(userID, "audio", nil)
+	task, _ := queue.NewAudioTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+}
+
 func (s *Server) createImageInpaint(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Prompt   string  `json:"prompt"`
@@ -1296,7 +1351,7 @@ func (s *Server) listContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	typeFilter := strings.TrimSpace(r.URL.Query().Get("type"))
-	if typeFilter != "" && typeFilter != "image" && typeFilter != "video" && typeFilter != "logo" {
+	if typeFilter != "" && typeFilter != "image" && typeFilter != "video" && typeFilter != "logo" && typeFilter != "audio" {
 		typeFilter = ""
 	}
 	search := strings.TrimSpace(r.URL.Query().Get("q"))

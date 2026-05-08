@@ -214,12 +214,14 @@ func (db *DB) ListContentJobs(ctx context.Context, userID uuid.UUID, offset, lim
 	n := 1
 	if typeFilter == "logo" {
 		base += ` AND type = 'logo'`
+	} else if typeFilter == "audio" {
+		base += ` AND type = 'audio'`
 	} else if typeFilter == "image" {
 		base += ` AND type IN ('image','upscale')`
 	} else if typeFilter == "video" {
 		base += ` AND type = 'video'`
 	} else {
-		base += ` AND type IN ('image','video','upscale')`
+		base += ` AND type IN ('image','video','upscale','audio')`
 	}
 	if search != "" {
 		n++
