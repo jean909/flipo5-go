@@ -786,13 +786,21 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 		req.Size = "2K"
 	}
 	if req.AspectRatio == "" {
-		req.AspectRatio = "match_input_image"
+		if req.Size == "4K" {
+			req.AspectRatio = "match_input_image"
+		} else {
+			req.AspectRatio = "1:1"
+		}
 	}
-	if req.MaxImages < 1 || req.MaxImages > 15 {
-		req.MaxImages = 4
-	}
-	if req.SequentialMode == "" {
-		req.SequentialMode = "auto"
+	if req.Size == "4K" {
+		if req.MaxImages < 1 || req.MaxImages > 15 {
+			req.MaxImages = 4
+		}
+		if req.SequentialMode == "" {
+			req.SequentialMode = "auto"
+		}
+	} else if req.MaxImages < 1 || req.MaxImages > 10 {
+		req.MaxImages = 1
 	}
 	if len(req.ImageInput) > 14 {
 		req.ImageInput = req.ImageInput[:14]
@@ -804,11 +812,20 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := map[string]interface{}{
-		"prompt":                      req.Prompt,
-		"size":                        req.Size,
-		"aspect_ratio":                req.AspectRatio,
-		"max_images":                  req.MaxImages,
-		"sequential_image_generation": req.SequentialMode,
+		"prompt":       req.Prompt,
+		"size":         req.Size,
+		"aspect_ratio": req.AspectRatio,
+		"max_images":   req.MaxImages,
+	}
+	if req.Size == "4K" {
+		input["sequential_image_generation"] = req.SequentialMode
+	} else {
+		input["quality"] = "high"
+		input["output_format"] = "webp"
+		input["number_of_images"] = req.MaxImages
+		input["output_compression"] = 90
+		input["background"] = "auto"
+		input["moderation"] = "auto"
 	}
 	if len(req.ImageInput) > 0 {
 		resolved := make([]string, 0, len(req.ImageInput))

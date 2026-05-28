@@ -36,7 +36,12 @@ export function ImageSettingsRow({ locale, settings, onChange }: ImageSettingsRo
           <Select
             value={settings.size}
             options={RESOLUTION_OPTIONS.map((s) => ({ value: s, label: s }))}
-            onChange={(v) => onChange({ ...settings, size: v as '2K' | '4K' | 'HD' })}
+            onChange={(v) => {
+              const size = v as '2K' | '4K' | 'HD';
+              const aspectRatio =
+                size !== '4K' && settings.aspectRatio === 'match_input_image' ? '1:1' : settings.aspectRatio;
+              onChange({ ...settings, size, aspectRatio });
+            }}
             size="sm"
             className="min-w-[80px]"
           />
@@ -46,7 +51,11 @@ export function ImageSettingsRow({ locale, settings, onChange }: ImageSettingsRo
               <button
                 key={s}
                 type="button"
-                onClick={() => onChange({ ...settings, size: s })}
+                onClick={() => {
+                  const aspectRatio =
+                    s !== '4K' && settings.aspectRatio === 'match_input_image' ? '1:1' : settings.aspectRatio;
+                  onChange({ ...settings, size: s, aspectRatio });
+                }}
                 className={`px-3 py-1.5 text-sm transition-colors ${
                   settings.size === s
                     ? 'bg-theme-bg-hover-strong text-theme-fg'
@@ -65,11 +74,15 @@ export function ImageSettingsRow({ locale, settings, onChange }: ImageSettingsRo
           value={settings.aspectRatio}
           options={[
             { value: '1:1', label: t(locale, 'image.aspect1:1') },
+            { value: '3:2', label: t(locale, 'image.aspect3:2') },
+            { value: '2:3', label: t(locale, 'image.aspect2:3') },
             { value: '16:9', label: t(locale, 'image.aspect16:9') },
             { value: '9:16', label: t(locale, 'image.aspect9:16') },
             { value: '4:3', label: t(locale, 'image.aspect4:3') },
             { value: '3:4', label: t(locale, 'image.aspect3:4') },
-            { value: 'match_input_image', label: t(locale, 'image.aspectMatch') },
+            ...(settings.size === '4K'
+              ? [{ value: 'match_input_image', label: t(locale, 'image.aspectMatch') }]
+              : []),
           ]}
           onChange={(v) => onChange({ ...settings, aspectRatio: v })}
           size="sm"

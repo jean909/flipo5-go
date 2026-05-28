@@ -1,3 +1,10 @@
+/**
+ * Typed HTTP client for the Flipo5 backend (`NEXT_PUBLIC_API_URL`).
+ *
+ * - **Auth**: Bearer from Supabase session via {@link getToken} (short cache + refresh near expiry).
+ * - **Media**: relative keys use `/api/media` or {@link getMediaDisplayUrl}; HTTPS blobs use download proxy where needed.
+ * - **SSR**: most callers are `'use client'`; `getToken` returns null on the server.
+ */
 import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -408,17 +415,17 @@ export async function createImage(params: CreateImageParams | string, threadId?:
   if (!token) throw new Error('Not logged in');
   const body: Record<string, unknown> =
     typeof params === 'string'
-      ? { prompt: params, thread_id: threadId, size: '2K', aspect_ratio: 'match_input_image', max_images: 4, sequential_image_generation: 'auto' }
+      ? { prompt: params, thread_id: threadId, size: '2K', aspect_ratio: '1:1', max_images: 1 }
       : {
           prompt: params.prompt,
           thread_id: params.threadId,
           incognito: params.incognito,
           size: params.size ?? '2K',
-          aspect_ratio: params.aspectRatio ?? 'match_input_image',
+          aspect_ratio: params.aspectRatio ?? (params.size === '4K' ? 'match_input_image' : '1:1'),
           image_input: params.imageInput?.length ? params.imageInput : undefined,
           product_id: params.productId || undefined,
-          max_images: params.maxImages ?? 4,
-          sequential_image_generation: 'auto',
+          max_images: params.maxImages ?? (params.size === '4K' ? 4 : 1),
+          ...(params.size === '4K' ? { sequential_image_generation: 'auto' } : {}),
         };
   const res = await fetch(`${API_URL}/api/image`, {
     method: 'POST',
@@ -814,7 +821,7 @@ export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {
 export interface ListContentParams {
   page?: number;
   limit?: number;
-  type?: 'image' | 'video' | 'logo' | '';
+  type?: 'image' | 'video' | 'logo' | 'audio' | '';
   q?: string;
 }
 
@@ -1206,6 +1213,45 @@ export async function createLogoJob(params: {
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error((e as { error?: string }).error || 'Logo creation failed');
+  }
+  return res.json();
+}
+
+export async function createAudioJob(params: {
+  prompt: string;
+  instrumental?: boolean;
+  audio_mode?: 'music' | 'vocal';
+  num_variants?: number;
+  output_format?: 'mp3_standard' | 'mp3_high_quality' | 'wav_16khz' | 'wav_22khz' | 'wav_24khz' | 'wav_cd_quality';
+  music_length_ms?: number;
+  force_instrumental?: boolean;
+}): Promise<{ job_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const mode = params.audio_mode === 'vocal' ? 'vocal' : 'music';
+  const instrumentalFromMode = mode === 'vocal' ? false : params.instrumental === true;
+  const forceInstrumental = typeof params.force_instrumental === 'boolean' ? params.force_instrumental : instrumentalFromMode;
+  const numVariants = typeof params.num_variants === 'number' ? Math.min(4, Math.max(1, Math.floor(params.num_variants))) : 1;
+  const musicLengthMs = typeof params.music_length_ms === 'number'
+    ? Math.min(300000, Math.max(5000, Math.floor(params.music_length_ms)))
+    : 10000;
+  const outputFormat = params.output_format || 'mp3_standard';
+  const res = await fetch(`${API_URL}/api/audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      prompt: params.prompt.trim(),
+      instrumental: forceInstrumental,
+      force_instrumental: forceInstrumental,
+      audio_mode: mode,
+      num_variants: numVariants,
+      output_format: outputFormat,
+      music_length_ms: musicLengthMs,
+    }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Audio creation failed');
   }
   return res.json();
 }

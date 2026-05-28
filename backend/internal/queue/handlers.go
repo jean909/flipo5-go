@@ -645,26 +645,36 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 	}
 
 	model := h.Cfg.ModelImage
+	if size == "4K" && h.Cfg.ModelImage4K != "" {
+		model = h.Cfg.ModelImage4K
+	}
 	if model == "" {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_IMAGE not set", 0, "")
 		return nil
 	}
-	input := make(repgo.PredictionInput)
-	for k, v := range jobInput {
-		input[k] = v
+
+	var input repgo.PredictionInput
+	if isGPTImageModel(model) {
+		input = buildGPTImage2Input(jobInput)
+	} else {
+		input = make(repgo.PredictionInput)
+		for k, v := range jobInput {
+			input[k] = v
+		}
+		if input["size"] == nil || input["size"] == "" {
+			input["size"] = size
+		}
+		if input["aspect_ratio"] == nil || input["aspect_ratio"] == "" {
+			input["aspect_ratio"] = "match_input_image"
+		}
+		if input["max_images"] == nil {
+			input["max_images"] = 4
+		}
+		if input["sequential_image_generation"] == nil || input["sequential_image_generation"] == "" {
+			input["sequential_image_generation"] = "disabled"
+		}
 	}
-	if input["size"] == nil || input["size"] == "" {
-		input["size"] = "2K"
-	}
-	if input["aspect_ratio"] == nil || input["aspect_ratio"] == "" {
-		input["aspect_ratio"] = "match_input_image"
-	}
-	if input["max_images"] == nil {
-		input["max_images"] = 4
-	}
-	if input["sequential_image_generation"] == nil || input["sequential_image_generation"] == "" {
-		input["sequential_image_generation"] = "disabled"
-	}
+
 	out, err := h.Repl.Run(ctx, model, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
@@ -674,10 +684,7 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 		}
 		return err
 	}
-	// Seedream returns array directly; r2mirror expects {"output": [...]}
-	if arr, ok := out.([]interface{}); ok {
-		out = map[string]interface{}{"output": arr}
-	}
+	out = normalizeImageJobOutput(out)
 	_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", out, "", 0, "")
 	if h.Stream != nil {
 		_ = h.Stream.Publish(ctx, p.JobID, `{"status":"completed"}`, true)

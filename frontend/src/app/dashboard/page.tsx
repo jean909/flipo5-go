@@ -95,7 +95,7 @@ export default function DashboardPage() {
   const [replaceMap, setReplaceMap] = useState<Record<string, string>>({});
   const [imageSettings, setImageSettings] = useState<ImageSettings>({
     size: '2K',
-    aspectRatio: 'match_input_image',
+    aspectRatio: '1:1',
   });
   const [videoSettings, setVideoSettings] = useState<VideoSettings>({
     duration: 5,

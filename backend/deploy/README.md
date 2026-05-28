@@ -63,6 +63,8 @@ Completează (și decomentează unde e cazul) valorile reale. Minim pentru a rul
 | `DATABASE_URL` | connection string-ul PostgreSQL (ex. de la Supabase) |
 | `REDIS_URL` | În Docker compose e setat automat la `redis://redis:6379`; poți lăsa sau pune același lucru în .env |
 | `REPLICATE_API_TOKEN` | token-ul de la replicate.com |
+| `REPLICATE_MODEL_IMAGE` | `openai/gpt-image-2` (2K în dashboard) |
+| `REPLICATE_MODEL_IMAGE_4K` | opțional `bytedance/seedream-4.5` pentru rezoluția 4K |
 | `SUPABASE_URL` | `https://xxx.supabase.co` (proiectul tău Supabase) |
 | `SUPABASE_SERVICE_ROLE_KEY` | cheia Service Role din Supabase (Settings → API) |
 

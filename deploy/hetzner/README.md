@@ -87,7 +87,8 @@ REDIS_URL=redis://localhost:6379   # Local. Upstash ca backup: schimbă la URL U
 
 REPLICATE_API_TOKEN=...
 REPLICATE_MODEL_TEXT=meta/meta-llama-3-70b-instruct
-REPLICATE_MODEL_IMAGE=bytedance/seedream-4.5
+REPLICATE_MODEL_IMAGE=openai/gpt-image-2
+REPLICATE_MODEL_IMAGE_4K=bytedance/seedream-4.5
 REPLICATE_MODEL_VIDEO=...
 
 # Supabase (același proiect ca frontend-ul)

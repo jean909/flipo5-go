@@ -32,7 +32,8 @@ type Config struct {
 
 	// Model identifiers from env (e.g. meta/meta-llama-3-70b-instruct)
 	ModelText      string
-	ModelImage     string
+	ModelImage     string // openai/gpt-image-2 for 2K dashboard images
+	ModelImage4K   string // optional: bytedance/seedream-4.5 for 4K; empty → uses ModelImage
 	ModelImageHD   string // google/nano-banana for HD / Edit
 	ModelFluxFill  string // black-forest-labs/flux-fill-pro for Edit using Brush (inpainting)
 	ModelVideo     string
@@ -65,7 +66,8 @@ func Load() *Config {
 		S3UseSSL:       getEnvBool("S3_USE_SSL", true),
 		S3PublicURL:    strings.TrimSuffix(getEnv("S3_PUBLIC_URL", getEnv("CLOUDFLARE_R2_PUBLIC_URL", "")), "/"),
 		ModelText:      getEnv("REPLICATE_MODEL_TEXT", ""),
-		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "bytedance/seedream-4.5"),
+		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "openai/gpt-image-2"),
+		ModelImage4K:   getEnv("REPLICATE_MODEL_IMAGE_4K", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),
 		ModelFluxFill:   getEnv("REPLICATE_MODEL_FLUX_FILL", "black-forest-labs/flux-fill-pro"),
 		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
