@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	repgo "github.com/replicate/replicate-go"
+	"flipo5/backend/internal/textmodel"
 )
 
 // ErrMsgServerUnavailable is shown to users when job times out (5 min)
@@ -178,8 +179,7 @@ func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
 			userName = userName[:idx]
 		}
 	}
-	// Build Gemini-style input: prompt, images (URIs), optionally videos/audio later
-	// Flipo5: thorough answers, no identity repetition. Do NOT instruct markdown - we render it.
+	// Build model input (Claude Fable or legacy Gemini).
 	system := `You are Flipo5, an AI assistant trained by Moise I. Jean.
 
 Identity:
@@ -279,16 +279,13 @@ Voice and style:
 		}
 	}
 
-	// Conversation context: previous exchanges in this thread (so AI remembers follow-ups)
+	// Build Claude / Gemini input from system + conversation + user message
 	contextBlock := buildChatContext(h.DB, ctx, job.ThreadID, job.UserID, p.JobID)
-	prompt := system + "\n\n"
+	userPrompt := p.Prompt
 	if contextBlock != "" {
-		prompt += contextBlock + "\n\n"
-	}
-	prompt += "User: " + p.Prompt
-	input := repgo.PredictionInput{
-		"prompt":            prompt,
-		"max_output_tokens": 16384,
+		userPrompt = contextBlock + "\n\nUser: " + p.Prompt
+	} else {
+		userPrompt = "User: " + p.Prompt
 	}
 	var jobInput map[string]interface{}
 	if len(job.Input) > 0 {
@@ -317,12 +314,10 @@ Voice and style:
 			images = append(images, urlStr)
 		}
 	}
-	if len(images) > 0 {
-		input["images"] = images
-	}
 	if hasNonImage {
-		input["prompt"] = prompt + "\n\n[Non-image files (e.g. PDFs, docs) cannot be read directly by the text model. If the user asks about their content, explain this and suggest they paste the relevant text or upload an image/screenshot.]"
+		userPrompt += "\n\n[Non-image files (e.g. PDFs, docs) cannot be read directly by the text model. If the user asks about their content, explain this and suggest they paste the relevant text or upload an image/screenshot.]"
 	}
+	input := textmodel.BuildInput(model, system, userPrompt, images, textmodel.DefaultMaxTokens)
 	// Prefer streaming: create prediction with stream, then consume stream and update job output per chunk
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, model, input)
 	if err != nil {
@@ -1239,7 +1234,7 @@ func (h *Handlers) SummarizeThreadHandler(ctx context.Context, t *asynq.Task) er
 	if h.Repl == nil || h.Cfg.ModelText == "" {
 		return nil
 	}
-	out, err := h.Repl.Run(ctx, h.Cfg.ModelText, repgo.PredictionInput{"prompt": prompt, "max_output_tokens": 50})
+	out, err := h.Repl.Run(ctx, h.Cfg.ModelText, textmodel.BuildInput(h.Cfg.ModelText, "", prompt, nil, 256))
 	if err != nil {
 		return err
 	}
@@ -1703,27 +1698,27 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 		textToTranslate = fetched
 	}
 
-	// Build model input: prompt required; optionally images, audio (Gemini-style).
+	// Build model input: Claude Fable or legacy Gemini.
 	var prompt string
-	var input map[string]interface{}
+	var input repgo.PredictionInput
 
 	if len(sourceImages) > 0 {
-		prompt = fmt.Sprintf("Translate the text visible in these images from %s to %s. Output ONLY the translation, no explanations. Preserve structure (paragraphs, line breaks).", sourceLang, targetLang)
-		input = map[string]interface{}{
-			"prompt":     prompt,
-			"images":     sourceImages,
-			"max_tokens": 8000,
-		}
-		input["system_prompt"] = "You are a professional translator. Output only the translated text, nothing else."
-		input["system_instruction"] = input["system_prompt"]
+		prompt = fmt.Sprintf("Translate the text visible in this image from %s to %s. Output ONLY the translation, no explanations. Preserve structure (paragraphs, line breaks).", sourceLang, targetLang)
+		input = textmodel.BuildInput(h.Cfg.ModelText,
+			"You are a professional translator. Output only the translated text, nothing else.",
+			prompt, sourceImages, 8000)
 	} else if sourceAudio != "" {
+		if textmodel.IsClaude(h.Cfg.ModelText) {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Audio translation is not supported with the current text model", 0, "")
+			return nil
+		}
 		prompt = fmt.Sprintf("Transcribe and translate this audio from %s to %s. Output ONLY the translation (or transcription if same language). No explanations.", sourceLang, targetLang)
 		input = map[string]interface{}{
-			"prompt":     prompt,
-			"audio":      sourceAudio,
-			"max_tokens": 8000,
+			"prompt":        prompt,
+			"audio":         sourceAudio,
+			"max_tokens":    8000,
+			"system_prompt": "You are a professional translator. Output only the translated/transcribed text, nothing else.",
 		}
-		input["system_prompt"] = "You are a professional translator. Output only the translated/transcribed text, nothing else."
 		input["system_instruction"] = input["system_prompt"]
 	} else {
 		if textToTranslate == "" {
@@ -1735,11 +1730,7 @@ func (h *Handlers) TranslateHandler(ctx context.Context, t *asynq.Task) error {
 		}
 		systemPrompt := "You are a professional translator. Translate the user's text accurately. Preserve paragraphs, line breaks, and structure. Output ONLY the translation, no explanations or notes. If the source language is 'auto', detect it. Do not add any preamble."
 		prompt = fmt.Sprintf("Translate from %s to %s:\n\n%s", sourceLang, targetLang, textToTranslate)
-		input = map[string]interface{}{
-			"system_prompt": systemPrompt,
-			"prompt":        prompt,
-			"max_tokens":    8000,
-		}
+		input = textmodel.BuildInput(h.Cfg.ModelText, systemPrompt, prompt, nil, 8000)
 	}
 
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
@@ -1861,12 +1852,72 @@ func (h *Handlers) ProductScoreHandler(ctx context.Context, t *asynq.Task) error
 		return nil
 	}
 	prompt := fmt.Sprintf("You have %d product photos. For each image rate 1-10: how clear and suitable is this product photo for generating new marketing images (visibility of product, lighting, framing). Reply with ONLY a JSON array of numbers, one per image in the same order, e.g. [7, 6, 8]. No other text.", len(imageURLs))
-	input := map[string]interface{}{
-		"prompt":        prompt,
-		"images":        imageURLs,
-		"max_tokens":    200,
-		"system_prompt": "You are a product photo quality rater. Output only a JSON array of numbers 1-10.",
+	system := "You are a product photo quality rater. Output only a JSON array of numbers 1-10."
+
+	var scores []float64
+	if textmodel.IsClaude(h.Cfg.ModelText) {
+		for i, url := range imageURLs {
+			onePrompt := fmt.Sprintf("Rate product photo %d of %d (1-10): how clear and suitable is this product photo for generating marketing images? Reply with ONLY one integer.", i+1, len(imageURLs))
+			out, err := h.Repl.Run(ctx, h.Cfg.ModelText, textmodel.BuildInput(h.Cfg.ModelText, system, onePrompt, []string{url}, 128))
+			if err != nil {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")
+				return nil
+			}
+			normalized := normalizeChatOutput(out)
+			outText := ""
+			if m, ok := normalized.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			outText = strings.TrimSpace(outText)
+			parsed := parseScoreArray(outText)
+			if len(parsed) != 1 {
+				_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Could not parse score for image "+fmt.Sprint(i+1), 0, "")
+				return nil
+			}
+			scores = append(scores, parsed[0])
+		}
+		if len(scores) != len(photos) {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Could not parse scores (expected "+fmt.Sprint(len(photos))+" numbers)", 0, "")
+			return nil
+		}
+		if err := h.DB.UpdateProductPhotoScores(ctx, productID, scores); err != nil {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "Failed to save scores", 0, "")
+			return nil
+		}
+		output := map[string]interface{}{"scores": scores}
+		productContext := "Product: " + product.Name
+		if product.Category != "" {
+			productContext += ", category: " + product.Category
+		}
+		if product.Description != "" {
+			productContext += ". Description: " + product.Description
+		}
+		scenePrompt := "For this product suggest exactly 10 specific scene descriptions for product photography. Each scene should be one short line, suitable for generating marketing images. " + productContext + ". Return ONLY a JSON array of exactly 10 strings, e.g. [\"scene 1\", \"scene 2\", ...]. No other text, no markdown."
+		sceneInput := textmodel.BuildInput(h.Cfg.ModelText,
+			"You are a product photography director. Output only a JSON array of 10 scene description strings.",
+			scenePrompt, nil, 800)
+		if out, err := h.Repl.Run(ctx, h.Cfg.ModelText, sceneInput); err == nil {
+			normalized := normalizeChatOutput(out)
+			outText := ""
+			if m, ok := normalized.(map[string]interface{}); ok {
+				outText, _ = m["output"].(string)
+			}
+			if scenes := parseScenesArray(strings.TrimSpace(outText)); len(scenes) > 0 {
+				if len(scenes) > 10 {
+					scenes = scenes[:10]
+				}
+				output["scenes"] = scenes
+			}
+		}
+		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", output, "", 0, "")
+		if h.Stream != nil {
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"product_score"}`, p.JobID.String()))
+		}
+		return nil
 	}
+
+	input := textmodel.BuildInput(h.Cfg.ModelText, system, prompt, imageURLs, 200)
 	pred, err := h.Repl.CreatePredictionWithStream(ctx, h.Cfg.ModelText, input)
 	if err != nil {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, jobErrorMsg(err), 0, "")

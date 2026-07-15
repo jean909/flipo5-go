@@ -65,7 +65,7 @@ func Load() *Config {
 		S3SecretKey:    getEnv("S3_SECRET_KEY", getEnv("CLOUDFLARE_R2_SECRET_ACCESS_KEY", "")),
 		S3UseSSL:       getEnvBool("S3_USE_SSL", true),
 		S3PublicURL:    strings.TrimSuffix(getEnv("S3_PUBLIC_URL", getEnv("CLOUDFLARE_R2_PUBLIC_URL", "")), "/"),
-		ModelText:      getEnv("REPLICATE_MODEL_TEXT", ""),
+		ModelText:      getEnv("REPLICATE_MODEL_TEXT", "anthropic/claude-fable-5"),
 		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "openai/gpt-image-2"),
 		ModelImage4K:   getEnv("REPLICATE_MODEL_IMAGE_4K", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),

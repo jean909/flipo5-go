@@ -32,6 +32,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 	repgo "github.com/replicate/replicate-go"
+	"flipo5/backend/internal/textmodel"
 )
 
 type Server struct {
@@ -535,7 +536,7 @@ func (s *Server) generatePromptVariants(w http.ResponseWriter, r *http.Request) 
 %s
 Generate exactly 5 different, creative prompt variants that could be used as the generation prompt for this %s. Each variant should be one or two sentences, in English, descriptive and ready to use. Make them distinct (different wording, emphasis, or detail). Return ONLY a JSON array of exactly 5 strings, no other text, no markdown, no code block. Example: ["First prompt here.", "Second prompt here.", ...]`,
 		mediaType, userPart, mediaType)
-	input := repgo.PredictionInput{"prompt": prompt, "max_output_tokens": 16384}
+	input := textmodel.BuildInput(s.ModelText, "", prompt, nil, textmodel.DefaultMaxTokens)
 	out, err := s.Repl.Run(ctx, s.ModelText, input)
 	if err != nil {
 		log.Printf("prompt-variants run: %v", err)
