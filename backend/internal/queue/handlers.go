@@ -12,6 +12,7 @@ import (
 
 	"flipo5/backend/internal/cache"
 	"flipo5/backend/internal/config"
+	"flipo5/backend/internal/documents"
 	"flipo5/backend/internal/replicate"
 	"flipo5/backend/internal/storage"
 	"flipo5/backend/internal/store"
@@ -228,12 +229,9 @@ Voice and style:
 		}
 	}
 
-	// Apply chat project (Grok-style projects): prepend custom instructions and
-	// split source files by kind. The text model on Replicate only accepts images
-	// on the `images` input (sending PDFs/docs returns E006), so we forward images
-	// and list non-image files by name/type so the model knows they exist.
+	// Chat project files: images → vision; PDFs/docs → server-side text extraction for Claude.
 	var projectImageURLs []string
-	var projectDocFiles []string
+	var projectDocTexts []string
 	if job.ThreadID != nil {
 		if pid, _ := h.DB.GetThreadProjectID(ctx, *job.ThreadID); pid != nil {
 			if proj, _ := h.DB.GetChatProject(ctx, *pid, job.UserID); proj != nil {
@@ -242,37 +240,31 @@ Voice and style:
 				}
 				if files, _ := h.DB.ListChatProjectFiles(ctx, *pid, job.UserID); len(files) > 0 {
 					for _, f := range files {
-						fileURL := f.FileURL
-						if strings.HasPrefix(fileURL, "uploads/") && h.Store != nil {
-							fileURL = h.Store.URL(fileURL)
-						}
+						fileURL := resolveMediaURL(h, f.FileURL)
 						name := f.FileName
 						if name == "" {
-							name = "file"
+							name = filenameFromURL(fileURL)
 						}
 						if strings.HasPrefix(f.ContentType, "image/") {
 							if fileURL != "" {
 								projectImageURLs = append(projectImageURLs, fileURL)
 							}
-						} else {
-							label := name
-							if f.ContentType != "" {
-								label += " (" + f.ContentType + ")"
+						} else if documents.IsDocumentContentType(f.ContentType) || strings.HasSuffix(strings.ToLower(name), ".pdf") {
+							fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+							text, err := documents.FetchAndExtract(fetchCtx, fileURL, f.ContentType, name)
+							cancel()
+							if err == nil && strings.TrimSpace(text) != "" {
+								projectDocTexts = append(projectDocTexts, fmt.Sprintf("### %s\n%s", name, text))
+							} else if err != nil {
+								log.Printf("[ChatHandler] project doc extract %s: %v", name, err)
 							}
-							projectDocFiles = append(projectDocFiles, label)
 						}
 					}
 					if len(projectImageURLs) > 0 {
 						system += "\n\nThe user attached project reference images to this conversation. Look at them, remember them across turns, and ground your answers in what they show."
 					}
-					if len(projectDocFiles) > 0 {
-						var b strings.Builder
-						b.WriteString("\n\nProject reference documents listed (you cannot read their content directly yet; if asked, explain this and suggest the user pastes the relevant excerpt):")
-						for _, label := range projectDocFiles {
-							b.WriteString("\n- ")
-							b.WriteString(label)
-						}
-						system += b.String()
+					if len(projectDocTexts) > 0 {
+						system += "\n\nProject reference documents (extracted text — use as source of truth):\n\n" + strings.Join(projectDocTexts, "\n\n")
 					}
 				}
 			}
@@ -291,12 +283,9 @@ Voice and style:
 	if len(job.Input) > 0 {
 		_ = json.Unmarshal(job.Input, &jobInput)
 	}
-	// Only image URLs are accepted by the text model. PDFs/docs cause E006 "invalid input".
-	// TODO(roadmap): extract text from PDFs server-side (e.g. github.com/ledongthuc/pdf)
-	//   and append it to the system prompt so chat attachments + project files become
-	//   readable. Applies to both chat messages and chat_project_files.
+	// Vision model accepts images only; PDFs/docs are text-extracted server-side and appended to the prompt.
 	images := make([]string, 0, len(projectImageURLs)+4)
-	hasNonImage := len(projectDocFiles) > 0
+	var attachmentDocSections []string
 	images = append(images, projectImageURLs...)
 	if urls, ok := jobInput["attachment_urls"].([]interface{}); ok && len(urls) > 0 {
 		types, _ := jobInput["attachment_content_types"].([]interface{})
@@ -305,17 +294,37 @@ Voice and style:
 			if !ok || urlStr == "" {
 				continue
 			}
+			urlStr = resolveMediaURL(h, urlStr)
+			contentType := ""
 			if i < len(types) {
-				if ct, ok := types[i].(string); ok && !strings.HasPrefix(ct, "image/") {
-					hasNonImage = true
-					continue
-				}
+				contentType, _ = types[i].(string)
 			}
-			images = append(images, urlStr)
+			if strings.HasPrefix(contentType, "image/") || (contentType == "" && isLikelyImageURL(urlStr)) {
+				images = append(images, urlStr)
+				continue
+			}
+			if documents.IsDocumentContentType(contentType) || strings.HasSuffix(strings.ToLower(filenameFromURL(urlStr)), ".pdf") || strings.HasSuffix(strings.ToLower(filenameFromURL(urlStr)), ".txt") {
+				name := filenameFromURL(urlStr)
+				fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+				text, err := documents.FetchAndExtract(fetchCtx, urlStr, contentType, name)
+				cancel()
+				if err == nil && strings.TrimSpace(text) != "" {
+					attachmentDocSections = append(attachmentDocSections, fmt.Sprintf("### %s\n%s", name, text))
+				} else {
+					log.Printf("[ChatHandler] attachment extract %s: %v", name, err)
+					if err != nil {
+						attachmentDocSections = append(attachmentDocSections, fmt.Sprintf("### %s\n[Could not read this file: %v]", name, err))
+					}
+				}
+				continue
+			}
+			if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+				attachmentDocSections = append(attachmentDocSections, fmt.Sprintf("### %s\n[Unsupported document type %s — paste text or upload PDF/TXT]", filenameFromURL(urlStr), contentType))
+			}
 		}
 	}
-	if hasNonImage {
-		userPrompt += "\n\n[Non-image files (e.g. PDFs, docs) cannot be read directly by the text model. If the user asks about their content, explain this and suggest they paste the relevant text or upload an image/screenshot.]"
+	if len(attachmentDocSections) > 0 {
+		userPrompt += "\n\nAttached documents (extracted text — answer using this content):\n\n" + strings.Join(attachmentDocSections, "\n\n")
 	}
 	input := textmodel.BuildInput(model, system, userPrompt, images, textmodel.DefaultMaxTokens)
 	// Prefer streaming: create prediction with stream, then consume stream and update job output per chunk
@@ -2231,6 +2240,40 @@ func parseScoreArray(s string) []float64 {
 		}
 	}
 	return arr
+}
+
+func resolveMediaURL(h *Handlers, u string) string {
+	if u == "" {
+		return u
+	}
+	if strings.HasPrefix(u, "uploads/") && h.Store != nil {
+		return h.Store.URL(u)
+	}
+	return u
+}
+
+func filenameFromURL(u string) string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return "file"
+	}
+	if i := strings.Index(u, "?"); i >= 0 {
+		u = u[:i]
+	}
+	if i := strings.LastIndex(u, "/"); i >= 0 {
+		return u[i+1:]
+	}
+	return u
+}
+
+func isLikelyImageURL(u string) bool {
+	lower := strings.ToLower(filenameFromURL(u))
+	for _, ext := range []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"} {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handlers) Register(mux *asynq.ServeMux) {
