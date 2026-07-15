@@ -32,6 +32,7 @@ type Config struct {
 
 	// Model identifiers from env (e.g. meta/meta-llama-3-70b-instruct)
 	ModelText      string
+	ModelTextFallback string // optional fallback text model if primary fails
 	ModelImage     string // openai/gpt-image-2 for 2K dashboard images
 	ModelImage4K   string // optional: bytedance/seedream-4.5 for 4K; empty → uses ModelImage
 	ModelImageHD   string // google/nano-banana for HD / Edit
@@ -66,6 +67,7 @@ func Load() *Config {
 		S3UseSSL:       getEnvBool("S3_USE_SSL", true),
 		S3PublicURL:    strings.TrimSuffix(getEnv("S3_PUBLIC_URL", getEnv("CLOUDFLARE_R2_PUBLIC_URL", "")), "/"),
 		ModelText:      getEnv("REPLICATE_MODEL_TEXT", "anthropic/claude-fable-5"),
+		ModelTextFallback: getEnv("REPLICATE_MODEL_TEXT_FALLBACK", "google/gemini-2.5-flash"),
 		ModelImage:     getEnv("REPLICATE_MODEL_IMAGE", "openai/gpt-image-2"),
 		ModelImage4K:   getEnv("REPLICATE_MODEL_IMAGE_4K", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),

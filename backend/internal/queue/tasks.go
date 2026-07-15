@@ -9,22 +9,22 @@ import (
 )
 
 const (
-	TypeChat              = "chat"
-	TypeImage             = "image"
-	TypeVideo             = "video"
-	TypeUpscale           = "upscale"
-	TypeSEO               = "seo"
-	TypeOutline           = "outline"
-	TypeTranslate         = "translate"
-	TypeLogo              = "logo"
-	TypeAudio             = "audio"
+	TypeChat                = "chat"
+	TypeImage               = "image"
+	TypeVideo               = "video"
+	TypeUpscale             = "upscale"
+	TypeSEO                 = "seo"
+	TypeOutline             = "outline"
+	TypeTranslate           = "translate"
+	TypeLogo                = "logo"
+	TypeAudio               = "audio"
 	TypeProductScore        = "product_score"
-	TypeProductDescription   = "product_description"
-	TypeProductSceneImprove  = "product_scene_improve"
-	TypeSummarizeThread   = "summarize_thread"
-	TypeCancelStaleJobs   = "cancel_stale_jobs"
-	JobTimeoutMinutes     = 5
-	StaleJobCleanupMinutes = 5
+	TypeProductDescription  = "product_description"
+	TypeProductSceneImprove = "product_scene_improve"
+	TypeSummarizeThread     = "summarize_thread"
+	TypeCancelStaleJobs     = "cancel_stale_jobs"
+	JobTimeoutMinutes       = 5
+	StaleJobCleanupMinutes  = 5
 )
 
 var taskTimeout = asynq.Timeout(JobTimeoutMinutes * time.Minute)

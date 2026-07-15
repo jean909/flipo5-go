@@ -86,14 +86,14 @@ func buildGPTImage2Input(jobInput map[string]interface{}) repgo.PredictionInput 
 	}
 
 	input := repgo.PredictionInput{
-		"prompt":               prompt,
-		"aspect_ratio":         mapAspectRatioForGPTImage(aspectRatio),
-		"quality":              quality,
-		"output_format":        outputFormat,
-		"number_of_images":     numImages,
-		"output_compression":   compression,
-		"background":           background,
-		"moderation":           moderation,
+		"prompt":             prompt,
+		"aspect_ratio":       mapAspectRatioForGPTImage(aspectRatio),
+		"quality":            quality,
+		"output_format":      outputFormat,
+		"number_of_images":   numImages,
+		"output_compression": compression,
+		"background":         background,
+		"moderation":         moderation,
 	}
 
 	var inputImages []string

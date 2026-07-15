@@ -34,10 +34,9 @@ func main() {
 	}
 	defer db.Close()
 	if err := db.Migrate(ctx); err != nil {
-		log.Printf("migrate FAILED (non-fatal, check DATABASE_URL and schema): %v", err)
-	} else {
-		log.Print("migrate: ok")
+		log.Fatalf("migrate: %v", err)
 	}
+	log.Print("migrate: ok")
 
 	var redisOpt asynq.RedisConnOpt
 	if parsed, err := asynq.ParseRedisURI(cfg.Redis); err == nil {

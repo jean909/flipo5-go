@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"embed"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -48,6 +49,13 @@ func (db *DB) Ping(ctx context.Context) error {
 }
 
 func (db *DB) Migrate(ctx context.Context) error {
+	if _, err := db.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		name TEXT PRIMARY KEY,
+		applied_at TIMESTAMPTZ DEFAULT NOW()
+	)`); err != nil {
+		return fmt.Errorf("schema_migrations: %w", err)
+	}
+
 	b, err := schemaFS.ReadFile("schema.sql")
 	if err != nil {
 		return err
@@ -61,7 +69,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
-	// Run migrations (e.g. 001_add_upscale_job_type.sql for existing DBs)
+
 	entries, _ := migrationsFS.ReadDir("migrations")
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -70,14 +78,26 @@ func (db *DB) Migrate(ctx context.Context) error {
 		}
 	}
 	sort.Strings(names)
+
 	for _, name := range names {
+		var applied bool
+		if err := db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = $1)`, name).Scan(&applied); err != nil {
+			return fmt.Errorf("migration check %s: %w", name, err)
+		}
+		if applied {
+			continue
+		}
+
 		b, err := migrationsFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return err
+		}
+		tx, err := db.Pool.Begin(ctx)
 		if err != nil {
 			return err
 		}
 		for _, s := range strings.Split(string(b), ";") {
 			stmt := strings.TrimSpace(s)
-			// Skip empty or comment-only blocks; strip leading comment lines
 			for strings.HasPrefix(stmt, "--") || strings.TrimSpace(stmt) == "" {
 				if idx := strings.Index(stmt, "\n"); idx >= 0 {
 					stmt = strings.TrimSpace(stmt[idx+1:])
@@ -89,9 +109,17 @@ func (db *DB) Migrate(ctx context.Context) error {
 			if stmt == "" {
 				continue
 			}
-			if _, err := db.Pool.Exec(ctx, stmt); err != nil {
-				return err
+			if _, err := tx.Exec(ctx, stmt); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("migration %s: %w", name, err)
 			}
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(name) VALUES ($1)`, name); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("migration record %s: %w", name, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("migration commit %s: %w", name, err)
 		}
 	}
 	return nil
