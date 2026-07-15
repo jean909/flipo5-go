@@ -79,6 +79,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	}
 	sort.Strings(names)
 
+	if err := db.bootstrapLegacyMigrations(ctx, names); err != nil {
+		return err
+	}
+
 	for _, name := range names {
 		var applied bool
 		if err := db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = $1)`, name).Scan(&applied); err != nil {
@@ -120,6 +124,45 @@ func (db *DB) Migrate(ctx context.Context) error {
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("migration commit %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// bootstrapLegacyMigrations marks pre-020 migrations applied on existing DBs that
+// already ran them before schema_migrations tracking existed.
+func (db *DB) bootstrapLegacyMigrations(ctx context.Context, names []string) error {
+	var tracked int
+	if err := db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&tracked); err != nil {
+		return err
+	}
+	if tracked > 0 {
+		return nil
+	}
+	var jobsTable bool
+	if err := db.Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'jobs'
+		)`).Scan(&jobsTable); err != nil {
+		return err
+	}
+	if !jobsTable {
+		return nil
+	}
+	var jobRows int64
+	if err := db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM jobs`).Scan(&jobRows); err != nil {
+		return err
+	}
+	if jobRows == 0 {
+		return nil
+	}
+	for _, name := range names {
+		if strings.HasPrefix(name, "020_") {
+			break
+		}
+		if _, err := db.Pool.Exec(ctx, `INSERT INTO schema_migrations(name) VALUES ($1) ON CONFLICT DO NOTHING`, name); err != nil {
+			return fmt.Errorf("bootstrap %s: %w", name, err)
 		}
 	}
 	return nil
