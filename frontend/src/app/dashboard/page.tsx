@@ -441,7 +441,7 @@ export default function DashboardPage() {
         size: imageSettings.size,
         aspectRatio: imageSettings.aspectRatio,
         imageInput,
-        maxImages: 4,
+        maxImages: 1,
       });
       setReplaceMap((prev) => ({ ...prev, [oldJobId]: res.job_id }));
       setJobId(res.job_id);

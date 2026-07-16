@@ -428,8 +428,8 @@ export async function createImage(params: CreateImageParams | string, threadId?:
           aspect_ratio: params.aspectRatio ?? (params.size === '4K' ? 'match_input_image' : '1:1'),
           image_input: params.imageInput?.length ? params.imageInput : undefined,
           product_id: params.productId || undefined,
-          max_images: params.maxImages ?? (params.size === '4K' ? 4 : 1),
-          ...(params.size === '4K' ? { sequential_image_generation: 'auto' } : {}),
+          max_images: params.maxImages ?? 1,
+          ...(params.size === '4K' ? { sequential_image_generation: 'disabled' } : {}),
         };
   const res = await fetch(`${API_URL}/api/image`, {
     method: 'POST',

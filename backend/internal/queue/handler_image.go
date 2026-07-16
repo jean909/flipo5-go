@@ -176,7 +176,7 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 			input["aspect_ratio"] = "match_input_image"
 		}
 		if input["max_images"] == nil {
-			input["max_images"] = 4
+			input["max_images"] = 1
 		}
 		if input["sequential_image_generation"] == nil || input["sequential_image_generation"] == "" {
 			input["sequential_image_generation"] = "disabled"

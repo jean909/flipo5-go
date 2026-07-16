@@ -184,7 +184,7 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
         size: ctx.imageSettings.size,
         aspectRatio: ctx.imageSettings.aspectRatio,
         imageInput,
-        maxImages: 4,
+        maxImages: 1,
       });
       ctx.addOptimisticJob({ id: res.job_id, type: 'image', thread_id: res.thread_id ?? tid ?? null });
       ctx.setJobId(res.job_id);
