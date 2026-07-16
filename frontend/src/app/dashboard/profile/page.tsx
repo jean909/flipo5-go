@@ -69,7 +69,7 @@ export default function ProfilePage() {
 
   const profile = user?.profile;
   const stats = profile?.stats;
-  console.log(profile);
+  // stats from learning profile (optional)
   
   const hasAnyStats = useMemo(() => {
     if (!stats) return false;

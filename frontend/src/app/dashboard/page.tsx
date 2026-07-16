@@ -10,7 +10,7 @@ import { useToast } from '@/app/components/ToastContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
-import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, type User, type Job, type Thread } from '@/lib/api';
+import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, listRecentPrompts, type User, type Job, type Thread } from '@/lib/api';
 import { extractImageInputsFromJobInput } from '@/lib/promptIntent';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
@@ -33,6 +33,11 @@ const JobCard = dynamic(
     ),
   }
 );
+
+const InspireGallery = dynamic(() => import('./components/InspireGallery'), {
+  ssr: false,
+  loading: () => <div className="flex-1 animate-pulse-subtle bg-theme-bg-subtle" aria-hidden />,
+});
 
 type AttachmentItem = { id: string; file: File; previewUrl: string };
 
@@ -72,6 +77,7 @@ export default function DashboardPage() {
   const [contentTotal, setContentTotal] = useState(0);
   const [newsIndex, setNewsIndex] = useState(0);
   const [lastThreadPreview, setLastThreadPreview] = useState<{ threadId: string; lastPrompt?: string; thumbnailUrl?: string } | null>(null);
+  const [recentPrompts, setRecentPrompts] = useState<{ prompt: string; type: string }[]>([]);
   const [promoCarouselIndex, setPromoCarouselIndex] = useState(0);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [promptDragOver, setPromptDragOver] = useState(false);
@@ -285,6 +291,43 @@ export default function DashboardPage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [profileLoaded, user, hasStarted, incognito]);
+
+  useEffect(() => {
+    if (!profileLoaded || !user || hasStarted || incognito) return;
+    let cancelled = false;
+    listRecentPrompts(6)
+      .then((p) => {
+        if (!cancelled) setRecentPrompts(p);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [profileLoaded, user, hasStarted, incognito]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
+      if (e.key === 'Escape') {
+        setAttachments([]);
+        setReferenceImageUrls([]);
+        return;
+      }
+      if (typing) return;
+      if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        const el = document.querySelector<HTMLTextAreaElement>('textarea[data-prompt="true"]');
+        el?.focus();
+        return;
+      }
+      if (e.key === '1') setMode('chat');
+      if (e.key === '2') setMode('image');
+      if (e.key === '3') setMode('video');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNewsIndex((i) => (i + 1) % 5), 5000);
@@ -984,85 +1027,6 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Company curated gallery — replace with real AI images/videos when ready
-  const P = (seed: string, w: number, h: number) => ({ url: `https://picsum.photos/seed/${seed}/${w}/${h}`, poster: '', type: 'image' as const, w, h });
-  // Pexels free MP4 previews — small files, reliable CDN, allow embedding
-  const V = (id: string, poster: string, w = 1280, h = 720) => ({
-    url: `https://player.vimeo.com/external/${id}.hd.mp4?s=&profile_id=174`,
-    poster: `https://picsum.photos/seed/${poster}/${w}/${h}`,
-    type: 'video' as const, w, h,
-  });
-  // Cloudflare/Google media samples — small, fast-loading
-  const S = (url: string, poster: string, w = 960, h = 540) => ({
-    url, poster: `https://picsum.photos/seed/${poster}/${w}/${h}`, type: 'video' as const, w, h,
-  });
-  const COMPANY_IMAGES: { url: string; poster: string; type: 'image' | 'video'; w: number; h: number }[] = [
-    P('aurora',    600, 900),
-    P('canyon',    800, 520),
-    S('https://storage.googleapis.com/media-session/big-buck-bunny/chapter1.mp4', 'vid1', 1280, 720),
-    P('dusk',      500, 750),
-    P('ember',     900, 600),
-    P('forest',    480, 700),
-    S('https://storage.googleapis.com/media-session/big-buck-bunny/chapter2.mp4', 'vid2', 1280, 720),
-    P('glacier',   700, 480),
-    P('harbor',    600, 600),
-    P('iris',      420, 680),
-    S('https://storage.googleapis.com/media-session/big-buck-bunny/chapter3.mp4', 'vid3', 1280, 720),
-    P('jungle',    850, 560),
-    P('kestrel',   560, 840),
-    S('https://storage.googleapis.com/web-dev-assets/video-and-source-tags/chrome.mp4', 'vid4', 800, 600),
-    P('lagoon',    780, 520),
-    P('mesa',      500, 760),
-    P('nebula',    900, 640),
-    S('https://media.w3.org/2010/05/sintel/trailer.mp4', 'vid5', 1280, 544),
-    P('ocean',     640, 900),
-    P('prism',     700, 700),
-    S('https://media.w3.org/2010/05/bunny/trailer.mp4', 'vid6', 1280, 720),
-    P('quartz',    820, 540),
-    P('ravine',    480, 720),
-    P('savanna',   860, 580),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', 'vid7', 1280, 720),
-    P('tide',      540, 860),
-    P('umbra',     760, 500),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4', 'vid8', 1280, 720),
-    P('vale',      500, 740),
-    P('wash',      880, 600),
-    P('xenon',     460, 700),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4', 'vid9', 1280, 720),
-    P('yonder',    740, 480),
-    P('zenith',    580, 880),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4', 'vid10', 1280, 720),
-    P('apex',      820, 560),
-    P('blaze',     500, 760),
-    P('cascade',   760, 520),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4', 'vid11', 1280, 720),
-    P('delta',     480, 740),
-    P('echo',      900, 620),
-    P('fjord',     560, 840),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4', 'vid12', 1280, 720),
-    P('grove',     800, 540),
-    P('helix',     440, 680),
-    P('indigo',    860, 580),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4', 'vid13', 1280, 720),
-    P('jasper',    520, 780),
-    P('karma',     780, 520),
-    S('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4', 'vid14', 1280, 720),
-    P('lumen',     460, 700),
-    P('mirage',    900, 640),
-    P('nimbus',    540, 820),
-    P('onyx',      820, 540),
-    P('pulse',     500, 760),
-    P('ridge',     860, 580),
-    P('solstice',  480, 720),
-    P('terrace',   760, 500),
-    P('ultra',     560, 860),
-    P('vortex',    820, 560),
-    P('wisp',      480, 740),
-    P('xylem',     900, 600),
-    P('yearning',  540, 820),
-    P('zeal',      780, 520),
-  ];
-
   const chatRenderModel = useMemo(() => {
     const rawList = [
       ...(pendingUserMessage && effectiveThreadId === pendingUserMessageThreadId
@@ -1166,84 +1130,7 @@ export default function DashboardPage() {
       )}
 
       {!hasStarted && inspireMode ? (
-        <>
-          {/* Inspire gallery — scrollable, fills available height */}
-          <div className="flex-1 min-h-0 relative">
-          <div className="h-full overflow-y-auto scrollbar-subtle">
-            {/* Slim header */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-theme-border-subtle">
-              <p className="text-xs text-theme-fg-muted">{t(locale, 'collections.hero')}</p>
-              <button
-                type="button"
-                onClick={() => router.replace('/dashboard')}
-                className="text-xs text-theme-fg-subtle hover:text-theme-fg transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            {/* Masonry grid */}
-            <div
-              className="masonry-cols"
-              style={{ columns: 'auto 160px', gap: '2px', padding: '2px' }}
-            >
-              {COMPANY_IMAGES.map((item, i) => (
-                <div
-                  key={i}
-                  className="relative group overflow-hidden bg-theme-bg-elevated"
-                  style={{ breakInside: 'avoid', marginBottom: '2px', display: 'block' }}
-                >
-                  {item.type === 'video' ? (
-                    <div style={{ aspectRatio: `${item.w}/${item.h}`, position: 'relative' }}>
-                      {/* Poster image — always visible, video loads on top */}
-                      <img
-                        src={item.poster}
-                        alt=""
-                        className="absolute inset-0 w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <video
-                        src={item.url}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        autoPlay
-                        muted
-                        loop
-                        playsInline
-                        preload="metadata"
-                      />
-                    </div>
-                  ) : (
-                    <img
-                      src={item.url}
-                      alt=""
-                      width={item.w}
-                      height={item.h}
-                      className="w-full block"
-                      loading={i < 10 ? 'eager' : 'lazy'}
-                      decoding="async"
-                    />
-                  )}
-                  {item.type === 'video' && (
-                    <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-black/70 text-white backdrop-blur-sm border border-white/10 pointer-events-none">
-                      Video
-                    </span>
-                  )}
-                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors duration-150 pointer-events-none" />
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Endless fade — gradient from 50% height to background */}
-          <div
-            className="absolute bottom-0 left-0 right-0 pointer-events-none"
-            style={{
-              height: '35%',
-              background: 'linear-gradient(to bottom, transparent 0%, var(--theme-bg) 100%)',
-            }}
-          />
-          </div>
-          {bottomBar}
-        </>
+        <InspireGallery bottomBar={bottomBar} />
       ) : !hasStarted ? (
         <div className="w-full max-w-2xl flex flex-col items-center">
           {incognito && (
@@ -1253,6 +1140,110 @@ export default function DashboardPage() {
             </div>
           )}
           <h2 className="font-display text-2xl font-bold text-theme-fg mb-4 tracking-tight">FLIPO5</h2>
+          {(user?.profile?.stats?.job_counts || recentPrompts.length > 0) && (
+            <div className="w-full mb-4 flex flex-col gap-2">
+              {user?.profile?.stats?.job_counts && (
+                <div className="flex flex-wrap justify-center gap-2">
+                  {Object.entries(user.profile.stats.job_counts)
+                    .sort((a, b) => (b[1] as number) - (a[1] as number))
+                    .slice(0, 4)
+                    .map(([type]) => {
+                      const modeMap: Record<string, Mode | null> = {
+                        chat: 'chat',
+                        image: 'image',
+                        video: 'video',
+                        translate: null,
+                        logo: null,
+                        audio: null,
+                        seo: null,
+                      };
+                      const hrefMap: Record<string, string> = {
+                        translate: '/dashboard/translations',
+                        logo: '/dashboard/logo',
+                        audio: '/dashboard/audio',
+                        seo: '/dashboard/seo',
+                        product: '/dashboard/product-pictures',
+                        product_description: '/dashboard/product-pictures',
+                      };
+                      const label =
+                        type === 'chat'
+                          ? t(locale, 'jobs.type.chat')
+                          : type === 'image'
+                            ? t(locale, 'jobs.type.image')
+                            : type === 'video'
+                              ? t(locale, 'jobs.type.video')
+                              : type === 'translate'
+                                ? t(locale, 'jobs.type.translate')
+                                : type === 'logo'
+                                  ? t(locale, 'jobs.type.logo')
+                                  : type === 'audio'
+                                    ? t(locale, 'jobs.type.audio')
+                                    : type === 'seo'
+                                      ? t(locale, 'jobs.type.seo')
+                                      : type.startsWith('product')
+                                        ? t(locale, 'jobs.type.product')
+                                        : type;
+                      const m = modeMap[type];
+                      const href = hrefMap[type];
+                      if (m) {
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => setMode(m)}
+                            className={`btn-tap px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                              mode === m
+                                ? 'border-theme-accent bg-theme-accent/15 text-theme-accent'
+                                : 'border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      }
+                      if (href) {
+                        return (
+                          <Link
+                            key={type}
+                            href={href}
+                            className="btn-tap px-3 py-1.5 rounded-full text-xs border border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg"
+                          >
+                            {label}
+                          </Link>
+                        );
+                      }
+                      return null;
+                    })}
+                </div>
+              )}
+              {recentPrompts.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-1.5">
+                  {recentPrompts.slice(0, 4).map((rp) => (
+                    <button
+                      key={rp.prompt.slice(0, 48)}
+                      type="button"
+                      title={rp.prompt}
+                      onClick={() => {
+                        setPrompt(rp.prompt);
+                        if (rp.type === 'image' || rp.type === 'video' || rp.type === 'chat') {
+                          setMode(rp.type as Mode);
+                        }
+                        requestAnimationFrame(() => {
+                          document.querySelector<HTMLTextAreaElement>('textarea[data-prompt="true"]')?.focus();
+                        });
+                      }}
+                      className="btn-tap max-w-[12rem] truncate px-2.5 py-1 rounded-lg text-[11px] border border-theme-border-subtle bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:border-theme-border"
+                    >
+                      {rp.prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-center text-[10px] text-theme-fg-subtle hidden sm:block">
+                / focus · 1 chat · 2 image · 3 video · Esc clear
+              </p>
+            </div>
+          )}
           <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full flex flex-col items-center gap-4">
             {mode === 'image' && (
               <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />

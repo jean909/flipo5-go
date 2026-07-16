@@ -79,6 +79,7 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/threads/{id}", s.getThread)
 		r.Patch("/threads/{id}", s.patchThread)
 		r.Get("/jobs", s.listJobs)
+		r.Get("/prompts/recent", s.listRecentPrompts)
 		r.Get("/content", s.listContent)
 		r.Post("/content/from-url", s.addContentFromURL)
 		r.Get("/jobs/{id}", s.getJob)

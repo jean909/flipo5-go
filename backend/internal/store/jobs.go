@@ -199,6 +199,45 @@ func (db *DB) ListJobs(ctx context.Context, userID uuid.UUID, limit int) ([]Job,
 	return list, rows.Err()
 }
 
+// ListRecentPrompts returns distinct recent prompts from the user's jobs (newest first).
+func (db *DB) ListRecentPrompts(ctx context.Context, userID uuid.UUID, limit int) ([]map[string]string, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 8
+	}
+	rows, err := db.Pool.Query(ctx, `
+		SELECT prompt, type FROM (
+			SELECT
+				TRIM(COALESCE(input->>'prompt', '')) AS prompt,
+				type::text AS type,
+				created_at,
+				ROW_NUMBER() OVER (
+					PARTITION BY LOWER(TRIM(COALESCE(input->>'prompt', '')))
+					ORDER BY created_at DESC
+				) AS rn
+			FROM jobs
+			WHERE user_id = $1
+			  AND status = 'completed'
+			  AND COALESCE(TRIM(input->>'prompt'), '') <> ''
+			  AND CHAR_LENGTH(TRIM(input->>'prompt')) >= 3
+		) t
+		WHERE rn = 1
+		ORDER BY created_at DESC
+		LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]string
+	for rows.Next() {
+		var prompt, typ string
+		if err := rows.Scan(&prompt, &typ); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]string{"prompt": prompt, "type": typ})
+	}
+	return out, rows.Err()
+}
+
 // ListContentJobs returns paginated image/video jobs (completed, with output) for content page.
 // typeFilter: "image", "video", or "" for both.
 // search: search in input prompt (case-insensitive).

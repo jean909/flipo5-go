@@ -5,6 +5,7 @@ import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
 import { downloadMediaUrl, setJobFeedback } from '@/lib/api';
+import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
 
 const btnCls =
   'flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover active:scale-95 transition-[color,background,transform] duration-150 disabled:opacity-50 disabled:pointer-events-none';
@@ -80,19 +81,32 @@ export function ResultActionsBar({
     } catch {}
   };
   const handleDownload = async () => {
-    const url = mediaUrls[0];
-    if (!url || downloading) return;
+    if (!mediaUrls.length || downloading) return;
     setDownloading(true);
     try {
-      const blob = await downloadMediaUrl(url);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = jobType === 'video' ? 'flipo5-video.mp4' : 'flipo5-image.png';
-      a.click();
-      URL.revokeObjectURL(a.href);
+      if (mediaUrls.length === 1) {
+        const blob = await downloadMediaUrl(mediaUrls[0]);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = jobType === 'video' ? 'flipo5-video.mp4' : 'flipo5-image.png';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } else {
+        const entries: { name: string; blob: Blob }[] = [];
+        for (let i = 0; i < mediaUrls.length; i++) {
+          try {
+            const blob = await downloadMediaUrl(mediaUrls[i]);
+            entries.push({ name: zipEntryName(i, blob, mediaUrls[i], `flipo5-${jobType}`), blob });
+          } catch {
+            // skip failed url
+          }
+        }
+        if (entries.length === 0) throw new Error('download failed');
+        await zipBlobsAndDownload(entries, `flipo5-${jobType}-${Date.now()}`);
+      }
       showToast('toast.downloaded');
     } catch {
-      window.open(url, '_blank');
+      window.open(mediaUrls[0], '_blank');
     } finally {
       setDownloading(false);
     }

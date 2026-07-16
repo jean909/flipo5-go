@@ -33,6 +33,36 @@ export async function zipBlobsAndDownload(entries: { name: string; blob: Blob }[
   }, 1500);
 }
 
-export function zipEntryName(index: number, blob: Blob, ref: string): string {
-  return `export-${index + 1}.${guessExt(blob, ref)}`;
+export function zipEntryName(index: number, blob: Blob, ref: string, base = 'export'): string {
+  const safe = (base || 'export')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'export';
+  return `${safe}-${index + 1}.${guessExt(blob, ref)}`;
+}
+
+/** Fetch many refs with limited concurrency; skips failures. */
+export async function fetchBlobsConcurrent(
+  refs: string[],
+  fetchOne: (ref: string) => Promise<Blob>,
+  concurrency = 4,
+): Promise<{ entries: { name: string; blob: Blob; ref: string }[]; failed: number }> {
+  const entries: { name: string; blob: Blob; ref: string }[] = [];
+  let failed = 0;
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, refs.length) }, async () => {
+    while (cursor < refs.length) {
+      const i = cursor++;
+      const ref = refs[i];
+      try {
+        const blob = await fetchOne(ref);
+        entries.push({ name: '', blob, ref });
+      } catch {
+        failed += 1;
+      }
+    }
+  });
+  await Promise.all(workers);
+  return { entries, failed };
 }

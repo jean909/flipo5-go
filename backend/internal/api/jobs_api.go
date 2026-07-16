@@ -26,6 +26,30 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"jobs": jobs})
 }
 
+func (s *Server) listRecentPrompts(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserID(r.Context())
+	if !ok || userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	limit := 8
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 20 {
+			limit = v
+		}
+	}
+	prompts, err := s.DB.ListRecentPrompts(r.Context(), userID, limit)
+	if err != nil {
+		http.Error(w, `{"error":"list prompts"}`, http.StatusInternalServerError)
+		return
+	}
+	if prompts == nil {
+		prompts = []map[string]string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
+}
+
 func (s *Server) listContent(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	page := 1

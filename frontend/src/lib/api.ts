@@ -822,6 +822,18 @@ export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {
   return res.json();
 }
 
+/** Recent unique prompts from completed jobs (for dashboard quick-reuse chips). */
+export async function listRecentPrompts(limit = 8): Promise<{ prompt: string; type: string }[]> {
+  const token = await getToken();
+  if (!token) return [];
+  const res = await fetch(`${API_URL}/api/prompts/recent?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { prompts?: { prompt: string; type: string }[] };
+  return data.prompts ?? [];
+}
+
 export interface ListContentParams {
   page?: number;
   limit?: number;

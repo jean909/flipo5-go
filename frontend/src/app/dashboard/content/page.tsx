@@ -10,7 +10,7 @@ import { useToast } from '@/app/components/ToastContext';
 import { listContent, getToken, getMediaDisplayUrl, fetchBlobForJobRef, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputRefs } from '@/lib/jobOutput';
-import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
+import { zipBlobsAndDownload, zipEntryName, fetchBlobsConcurrent } from '@/lib/zipExport';
 import { ImageViewModal } from '../components/ImageViewModal';
 import { AudioPlayer } from '../components/AudioPlayer';
 import { Input } from '@/components/ui/Input';
@@ -108,7 +108,7 @@ export default function ContentPage() {
 
   const handleExportZip = useCallback(async () => {
     if (selectedJobIds.size === 0 || exportInFlightRef.current) return;
-    const selectedRefs = items
+  const selectedRefs = items
       .filter((job) => selectedJobIds.has(job.id))
       .flatMap((job) => job.outputRefs);
     if (selectedRefs.length === 0) {
@@ -122,18 +122,20 @@ export default function ContentPage() {
       setExportBusy(true);
     });
     try {
-      const entries: { name: string; blob: Blob }[] = [];
-      let idx = 0;
-      let failedCount = 0;
-      for (const ref of selectedRefs) {
-        try {
-          const blob = await fetchBlobForJobRef(ref);
-          idx += 1;
-          entries.push({ name: zipEntryName(idx, blob, ref), blob });
-        } catch {
-          failedCount += 1;
-        }
-      }
+      const selectedJobs = items.filter((job) => selectedJobIds.has(job.id) && job.outputRefs.length > 0);
+      const refsWithBase = selectedJobs.flatMap((job) => {
+        const base = getJobDisplayName(job) || job.type || 'export';
+        return job.outputRefs.map((ref) => ({ ref, base }));
+      });
+      const { entries: raw, failed: failedCount } = await fetchBlobsConcurrent(
+        refsWithBase.map((x) => x.ref),
+        fetchBlobForJobRef,
+        4,
+      );
+      const entries = raw.map((e, i) => {
+        const base = refsWithBase.find((x) => x.ref === e.ref)?.base || 'export';
+        return { name: zipEntryName(i, e.blob, e.ref, base), blob: e.blob };
+      });
       if (entries.length === 0) {
         showToast('content.exportZipError');
         return;
