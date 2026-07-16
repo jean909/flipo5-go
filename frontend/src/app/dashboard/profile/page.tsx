@@ -6,7 +6,6 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { getMe, listThreads, patchThread, type User, type Thread } from '@/lib/api';
 import { ThreadItem } from '../components/ThreadItem';
-import { object } from 'framer-motion/client';
 
 const JOB_TYPE_I18N: Record<string, string> = {
   chat: 'jobs.type.chat',

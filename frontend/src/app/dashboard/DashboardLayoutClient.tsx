@@ -8,10 +8,15 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { Sidebar } from './components/Sidebar';
-import { JobsInProgressButton } from './components/JobsInProgressButton';
+import dynamic from 'next/dynamic';
 import { JobsInProgressProvider } from './components/JobsInProgressContext';
 import { InstallPromptBanner } from './components/InstallPromptBanner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+
+const JobsInProgressButton = dynamic(
+  () => import('./components/JobsInProgressButton').then((m) => ({ default: m.JobsInProgressButton })),
+  { ssr: false },
+);
 
 export default function DashboardLayoutClient({
   children,

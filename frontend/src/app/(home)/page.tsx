@@ -17,7 +17,7 @@ const Header = dynamic(
 
 const HomeAnimatedSections = dynamic(() => import('./components/HomeAnimatedSections'), {
   loading: () => <HomeBelowFoldSkeleton />,
-  ssr: true,
+  ssr: false,
 });
 
 export default function Home() {

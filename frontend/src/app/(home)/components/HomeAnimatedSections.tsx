@@ -38,7 +38,7 @@ export default function HomeAnimatedSections() {
           >
             <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-white/15 bg-black/40 shadow-[0_0_80px_-16px_rgba(255,255,255,0.06)] ring-1 ring-white/5">
               <LazySectionVideo
-                src="/home/bring%20to%20life.mp4"
+                src="/home/bring-to-life.mp4"
                 className="aspect-video w-full min-h-[240px] sm:min-h-[280px]"
               />
               <div className="absolute inset-0 rounded-2xl sm:rounded-3xl pointer-events-none ring-inset ring-white/5" aria-hidden />

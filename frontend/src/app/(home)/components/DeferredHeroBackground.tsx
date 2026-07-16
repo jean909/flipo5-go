@@ -2,55 +2,29 @@
 
 import { useEffect, useState } from 'react';
 
-const HERO_MEDIA = [
-  { src: '/home/herosection.webm', type: 'video/webm' },
-  { src: '/home/herosection.mp4', type: 'video/mp4' },
-] as const;
-const HERO_FALLBACK = '/home/herosection.gif';
+const HERO_VIDEO = '/home/herosection.mp4';
+const HERO_POSTER = '/home/herosection-poster.jpg';
 
 /**
- * Defers heavy hero media until after first paint so LCP stays text (headline), not a multi‑MB GIF.
- * Prefers WebM/MP4 when present under public/home/ (see scripts/optimize-home-hero.mjs).
+ * Shows a light poster immediately, then swaps to compressed MP4 after idle.
+ * Avoids shipping multi‑MB GIF fallbacks.
  */
 export function DeferredHeroBackground() {
-  const [media, setMedia] = useState<{ kind: 'video'; src: string } | { kind: 'image'; src: string } | null>(null);
+  const [showVideo, setShowVideo] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-
-    const pickGif = () => {
-      const img = new Image();
-      img.src = HERO_FALLBACK;
-      img.onload = () => {
-        if (!cancelled) setMedia({ kind: 'image', src: HERO_FALLBACK });
-      };
+    const start = () => {
+      if (!cancelled) setShowVideo(true);
     };
-
-    const tryVideo = (index: number) => {
-      if (index >= HERO_MEDIA.length) {
-        pickGif();
-        return;
-      }
-      const { src } = HERO_MEDIA[index];
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.muted = true;
-      video.src = src;
-      video.onloadeddata = () => {
-        if (!cancelled) setMedia({ kind: 'video', src });
-      };
-      video.onerror = () => tryVideo(index + 1);
-    };
-
-    const start = () => tryVideo(0);
     if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(start, { timeout: 2500 });
+      const id = requestIdleCallback(start, { timeout: 2000 });
       return () => {
         cancelled = true;
         cancelIdleCallback(id);
       };
     }
-    const t = setTimeout(start, 200);
+    const t = setTimeout(start, 150);
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -59,25 +33,26 @@ export function DeferredHeroBackground() {
 
   return (
     <div className="absolute inset-0 bg-black" aria-hidden>
-      {media?.kind === 'video' ? (
+      <img
+        src={HERO_POSTER}
+        alt=""
+        width={720}
+        height={720}
+        decoding="async"
+        fetchPriority="low"
+        className={`absolute inset-0 w-full h-full object-cover object-center transition-opacity duration-500 ${showVideo ? 'opacity-0' : 'opacity-100'}`}
+      />
+      {showVideo ? (
         <video
-          src={media.src}
-          className="w-full h-full object-cover object-center"
+          src={HERO_VIDEO}
+          poster={HERO_POSTER}
+          className="absolute inset-0 w-full h-full object-cover object-center"
           autoPlay
           muted
           loop
           playsInline
+          preload="metadata"
           aria-hidden
-        />
-      ) : null}
-      {media?.kind === 'image' ? (
-        <img
-          src={media.src}
-          alt=""
-          width={1920}
-          height={1080}
-          decoding="async"
-          className="w-full h-full object-cover object-center"
         />
       ) : null}
     </div>

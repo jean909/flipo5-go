@@ -1,21 +1,17 @@
 #!/usr/bin/env node
 /**
- * Converts public/home/herosection.gif → herosection.webm + herosection.mp4 (requires ffmpeg on PATH).
- * Run: node scripts/optimize-home-hero.mjs
+ * Converts public/home/herosection.gif → compressed herosection.mp4 + poster (requires ffmpeg).
+ * Also recompresses bring-to-life source if present.
+ * Run: npm run optimize:hero
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const input = join(root, 'public', 'home', 'herosection.gif');
 const outDir = join(root, 'public', 'home');
-
-if (!existsSync(input)) {
-  console.error('Missing:', input);
-  process.exit(1);
-}
+const gif = join(outDir, 'herosection.gif');
 
 const ffmpeg = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' });
 if (ffmpeg.status !== 0) {
@@ -23,14 +19,35 @@ if (ffmpeg.status !== 0) {
   process.exit(1);
 }
 
-const jobs = [
-  ['-y', '-i', input, '-movflags', '+faststart', '-pix_fmt', 'yuv420p', '-vf', 'scale=1920:-2', '-c:v', 'libx264', '-crf', '28', join(outDir, 'herosection.mp4')],
-  ['-y', '-i', input, '-c:v', 'libvpx-vp9', '-crf', '35', '-b:v', '0', '-vf', 'scale=1920:-2', join(outDir, 'herosection.webm')],
-];
-
-for (const args of jobs) {
+function run(args) {
   const r = spawnSync('ffmpeg', args, { stdio: 'inherit' });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-console.log('Done. Deploy herosection.webm + herosection.mp4; home page prefers them over the GIF.');
+if (existsSync(gif)) {
+  run(['-y', '-i', gif, '-an', '-movflags', '+faststart', '-pix_fmt', 'yuv420p', '-vf', 'scale=720:-2', '-c:v', 'libx264', '-preset', 'slow', '-crf', '32', join(outDir, 'herosection.mp4')]);
+  run(['-y', '-i', gif, '-vf', 'select=eq(n\\,0),scale=720:-2', '-frames:v', '1', '-update', '1', '-q:v', '6', join(outDir, 'herosection-poster.jpg')]);
+  run(['-y', '-i', join(outDir, 'herosection.mp4'), '-vf', 'scale=1200:630:force_original_aspect_ratio=increase,crop=1200:630', '-frames:v', '1', '-update', '1', '-q:v', '5', join(outDir, 'og.jpg')]);
+  try {
+    unlinkSync(gif);
+    console.log('Removed herosection.gif (use MP4 + poster instead).');
+  } catch {
+    /* ignore */
+  }
+} else if (!existsSync(join(outDir, 'herosection.mp4'))) {
+  console.error('Missing herosection.gif and herosection.mp4');
+  process.exit(1);
+}
+
+const legacyBring = join(outDir, 'bring to life.mp4');
+const bringOut = join(outDir, 'bring-to-life.mp4');
+if (existsSync(legacyBring)) {
+  run(['-y', '-i', legacyBring, '-an', '-movflags', '+faststart', '-pix_fmt', 'yuv420p', '-vf', "scale='min(960,iw)':-2", '-c:v', 'libx264', '-preset', 'slow', '-crf', '30', bringOut]);
+  try {
+    unlinkSync(legacyBring);
+  } catch {
+    /* ignore */
+  }
+}
+
+console.log('Done. Home media: herosection.mp4, herosection-poster.jpg, og.jpg, bring-to-life.mp4');

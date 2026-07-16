@@ -34,14 +34,21 @@ const nextConfig = {
   },
   compress: true,
   async headers() {
-    if (!preconnectHeader) return [];
-    const link = [{ key: 'Link', value: preconnectHeader }];
-    return [
-      { source: '/dashboard/:path*', headers: link },
-      { source: '/start', headers: link },
-      { source: '/start/:path*', headers: link },
-      { source: '/auth/:path*', headers: link },
-    ];
+    const out = [];
+    if (preconnectHeader) {
+      const link = [{ key: 'Link', value: preconnectHeader }];
+      out.push(
+        { source: '/dashboard/:path*', headers: link },
+        { source: '/start', headers: link },
+        { source: '/start/:path*', headers: link },
+        { source: '/auth/:path*', headers: link },
+      );
+    }
+    out.push({
+      source: '/home/:path*',
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+    });
+    return out;
   },
   async rewrites() {
     return [{ source: '/favicon.ico', destination: '/favicon.svg' }];

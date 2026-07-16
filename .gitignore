@@ -12,6 +12,11 @@ out/
 frontend/flipo5-api
 backend/flipo5-api
 backend/api.exe
+*.tsbuildinfo
+*.log
+deploy-log.txt
+server-check.txt
+frontend/build-output.log
 
 # Archives / large binaries (evită commit la zip-uri mari)
 frontend.zip
