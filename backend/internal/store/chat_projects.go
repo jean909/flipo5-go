@@ -22,13 +22,15 @@ type ChatProject struct {
 }
 
 type ChatProjectFile struct {
-	ID          uuid.UUID `json:"id"`
-	ProjectID   uuid.UUID `json:"project_id"`
-	FileURL     string    `json:"file_url"`
-	FileName    string    `json:"file_name"`
-	ContentType string    `json:"content_type"`
-	SizeBytes   *int64    `json:"size_bytes,omitempty"`
-	CreatedAt   string    `json:"created_at"`
+	ID            uuid.UUID `json:"id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+	FileURL       string    `json:"file_url"`
+	FileName      string    `json:"file_name"`
+	ContentType   string    `json:"content_type"`
+	SizeBytes     *int64    `json:"size_bytes,omitempty"`
+	ExtractedText string    `json:"extracted_text,omitempty"`
+	Summary       string    `json:"summary,omitempty"`
+	CreatedAt     string    `json:"created_at"`
 }
 
 func sanitizeProjectName(s string) string {
@@ -225,7 +227,8 @@ func (db *DB) AddChatProjectFile(ctx context.Context, projectID, userID uuid.UUI
 
 func (db *DB) ListChatProjectFiles(ctx context.Context, projectID, userID uuid.UUID) ([]ChatProjectFile, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT f.id, f.project_id, f.file_url, COALESCE(f.file_name, ''), COALESCE(f.content_type, ''), f.size_bytes, f.created_at::text
+		`SELECT f.id, f.project_id, f.file_url, COALESCE(f.file_name, ''), COALESCE(f.content_type, ''), f.size_bytes,
+			COALESCE(f.extracted_text, ''), COALESCE(f.summary, ''), f.created_at::text
 		 FROM chat_project_files f
 		 JOIN chat_projects p ON p.id = f.project_id
 		 WHERE f.project_id = $1 AND p.user_id = $2
@@ -237,7 +240,7 @@ func (db *DB) ListChatProjectFiles(ctx context.Context, projectID, userID uuid.U
 	var list []ChatProjectFile
 	for rows.Next() {
 		var f ChatProjectFile
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.FileURL, &f.FileName, &f.ContentType, &f.SizeBytes, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.FileURL, &f.FileName, &f.ContentType, &f.SizeBytes, &f.ExtractedText, &f.Summary, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, f)
@@ -249,6 +252,26 @@ func (db *DB) DeleteChatProjectFile(ctx context.Context, fileID, userID uuid.UUI
 	res, err := db.Pool.Exec(ctx,
 		`DELETE FROM chat_project_files WHERE id = $1 AND project_id IN (SELECT id FROM chat_projects WHERE user_id = $2)`,
 		fileID, userID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (db *DB) UpdateChatProjectFileIndex(ctx context.Context, fileID, userID uuid.UUID, extractedText, summary string) error {
+	if len(extractedText) > 500000 {
+		extractedText = extractedText[:500000]
+	}
+	if len(summary) > 4000 {
+		summary = summary[:4000]
+	}
+	res, err := db.Pool.Exec(ctx,
+		`UPDATE chat_project_files SET extracted_text = $3, summary = $4
+		 WHERE id = $1 AND project_id IN (SELECT id FROM chat_projects WHERE user_id = $2)`,
+		fileID, userID, extractedText, summary)
 	if err != nil {
 		return err
 	}

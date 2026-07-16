@@ -4,11 +4,27 @@ import './globals.css';
 import { LocaleProvider } from './components/LocaleContext';
 import { ToastProvider } from './components/ToastContext';
 import { IncognitoProvider } from './components/IncognitoContext';
-import { CookieConsentBanner } from './components/CookieConsentBanner';
+import { CookieConsentLazy } from './components/CookieConsentLazy';
 import { SITE_URL, SITE_NAME, DEFAULT_DESCRIPTION, absoluteUrl, DEFAULT_OG_IMAGE } from '@/lib/seo';
 
-const syne = Syne({ subsets: ['latin'], variable: '--font-syne', display: 'swap' });
-const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans', display: 'swap' });
+/** Display font for LCP headlines — single weight keeps the critical font chain to one file. */
+const syne = Syne({
+  subsets: ['latin'],
+  variable: '--font-syne',
+  display: 'swap',
+  weight: ['700'],
+  preload: true,
+  adjustFontFallback: true,
+});
+/** Body font loads after paint (preload: false) to shorten HTML → CSS → font chain on marketing pages. */
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  variable: '--font-dm-sans',
+  display: 'swap',
+  weight: ['400', '500'],
+  preload: false,
+  adjustFontFallback: true,
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -62,35 +78,19 @@ export const viewport: Viewport = {
   viewportFit: 'cover', /* safe-area for notched devices */
 };
 
-function preconnectOrigin(raw: string | undefined): string | null {
-  const s = raw?.trim();
-  if (!s) return null;
-  try {
-    return new URL(s).origin;
-  } catch {
-    return null;
-  }
-}
-
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const apiOrigin = preconnectOrigin(process.env.NEXT_PUBLIC_API_URL);
-  const supabaseOrigin = preconnectOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL);
   return (
     <html lang="en" className={`${syne.variable} ${dmSans.variable}`} suppressHydrationWarning>
-      <head>
-        {apiOrigin ? <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" /> : null}
-        {supabaseOrigin ? <link rel="preconnect" href={supabaseOrigin} crossOrigin="anonymous" /> : null}
-      </head>
       <body className="min-h-screen antialiased font-sans touch-manipulation">
         <LocaleProvider>
           <ToastProvider>
             <IncognitoProvider>
               {children}
-              <CookieConsentBanner />
+              <CookieConsentLazy />
             </IncognitoProvider>
           </ToastProvider>
         </LocaleProvider>

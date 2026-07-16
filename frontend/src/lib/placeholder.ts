@@ -1,3 +1,6 @@
+/**
+ * Time-of-day and weekday-aware dashboard prompt greetings (EN/DE).
+ */
 import type { Locale } from '@/lib/i18n';
 
 function firstName(fullName: string | undefined): string {
@@ -66,3 +69,4 @@ export function getFriendlyPlaceholder(fullName: string | undefined, locale: Loc
 function dict(locale: Locale): Record<string, string[]> {
   return locale === 'de' ? DE : EN;
 }
+

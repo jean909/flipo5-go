@@ -84,6 +84,25 @@ func (h *Handlers) AudioHandler(ctx context.Context, t *asynq.Task) error {
 		"music_length_ms":    musicLengthMs,
 		"output_format":      outputFormat,
 	}
+	audioAction, _ := jobInput["audio_action"].(string)
+	audioAction = strings.ToLower(strings.TrimSpace(audioAction))
+	sourceAudio, _ := jobInput["source_audio"].(string)
+	sourceAudio = resolveMediaURL(h, strings.TrimSpace(sourceAudio))
+	if sourceAudio != "" {
+		replInput["source_audio"] = sourceAudio
+	}
+	switch audioAction {
+	case "extend":
+		prompt = "Continue and extend this track seamlessly, same style and tempo: " + prompt
+		replInput["prompt"] = prompt
+	case "remix":
+		prompt = "Remix this track with a fresh arrangement while keeping the core melody: " + prompt
+		replInput["prompt"] = prompt
+	case "stems":
+		prompt = "Generate separated stems (drums, bass, melody, vocals if any) for: " + prompt
+		replInput["prompt"] = prompt
+		replInput["output_stems"] = true
+	}
 
 	var urls []string
 	for i := 0; i < numVariants; i++ {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"flipo5/backend/internal/documents"
 	"flipo5/backend/internal/middleware"
 	"flipo5/backend/internal/store"
 
@@ -217,6 +218,7 @@ func (s *Server) addChatProjectFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"add file failed"}`, http.StatusInternalServerError)
 		return
 	}
+	s.indexChatProjectFileAsync(userID, f.ID, body.FileURL, body.ContentType, body.FileName)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"file": f})
@@ -244,4 +246,48 @@ func (s *Server) deleteChatProjectFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// searchChatProjectDocs searches indexed project files (simple RAG).
+func (s *Server) searchChatProjectDocs(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Query string `json:"query"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Query) == "" {
+		http.Error(w, `{"error":"query required"}`, http.StatusBadRequest)
+		return
+	}
+	files, err := s.DB.ListChatProjectFiles(r.Context(), id, userID)
+	if err != nil {
+		http.Error(w, `{"error":"list failed"}`, http.StatusInternalServerError)
+		return
+	}
+	docs := make([]struct{ Name, Text string }, 0, len(files))
+	for _, f := range files {
+		text := strings.TrimSpace(f.ExtractedText)
+		if text == "" {
+			text = strings.TrimSpace(f.Summary)
+		}
+		if text == "" {
+			continue
+		}
+		name := f.FileName
+		if name == "" {
+			name = "file"
+		}
+		docs = append(docs, struct{ Name, Text string }{name, text})
+	}
+	hits := documents.SearchText(body.Query, docs)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"results": hits})
 }

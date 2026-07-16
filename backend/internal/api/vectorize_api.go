@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"flipo5/backend/internal/middleware"
+	"flipo5/backend/internal/queue"
 
 	"github.com/google/uuid"
 )
@@ -22,8 +23,9 @@ func (s *Server) vectorizeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		URL  string `json:"url"`
-		Mode string `json:"mode,omitempty"`
+		URL   string `json:"url"`
+		Mode  string `json:"mode,omitempty"`
+		Async bool   `json:"async,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -35,6 +37,28 @@ func (s *Server) vectorizeImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Async {
+		ctx := r.Context()
+		input := map[string]interface{}{"url": src, "mode": strings.TrimSpace(req.Mode)}
+		jobID, err := s.DB.CreateJob(ctx, userID, "vectorize", input, nil)
+		if err != nil {
+			http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+			return
+		}
+		s.recordUserProfile(userID, "vectorize", nil)
+		task, _ := queue.NewVectorizeTask(jobID)
+		if _, err := s.Asynq.Enqueue(task); err != nil {
+			http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+			return
+		}
+		s.invalidateContentCache(ctx, userID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"job_id": jobID.String()})
+		return
+	}
+
+	// Sync path below
 	// Load image bytes either from our storage (uploads/<user>/...) or from a
 	// trusted external CDN (the same allow-list used by downloadMedia).
 	var imgBody io.ReadCloser

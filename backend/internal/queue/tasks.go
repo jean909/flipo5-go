@@ -18,6 +18,7 @@ const (
 	TypeTranslate           = "translate"
 	TypeLogo                = "logo"
 	TypeAudio               = "audio"
+	TypeVectorize           = "vectorize"
 	TypeProductScore        = "product_score"
 	TypeProductDescription  = "product_description"
 	TypeProductSceneImprove = "product_scene_improve"
@@ -136,6 +137,18 @@ func NewAudioTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeAudio, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
+}
+
+type VectorizePayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewVectorizeTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(VectorizePayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeVectorize, payload, asynq.Queue("default"), asynq.MaxRetry(2), asynq.Timeout(3*time.Minute)), nil
 }
 
 type ProductScorePayload struct {

@@ -12,6 +12,7 @@ import { t } from '@/lib/i18n';
 import { getOutputRefs } from '@/lib/jobOutput';
 import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
 import { ImageViewModal } from '../components/ImageViewModal';
+import { AudioPlayer } from '../components/AudioPlayer';
 import { Input } from '@/components/ui/Input';
 import { buttonClassName } from '@/components/ui/Button';
 import { useJobsInProgress } from '../components/JobsInProgressContext';
@@ -42,6 +43,13 @@ function displayForRef(ref: string, mediaToken: string | null): string {
   return mediaToken ? getMediaDisplayUrl(ref, mediaToken) : '';
 }
 
+function refExt(ref: string): 'mp3' | 'wav' | 'unknown' {
+  const normalized = ref.toLowerCase();
+  if (normalized.includes('.mp3')) return 'mp3';
+  if (normalized.includes('.wav')) return 'wav';
+  return 'unknown';
+}
+
 export default function ContentPage() {
   const { locale } = useLocale();
   const { showToast } = useToast();
@@ -63,8 +71,13 @@ export default function ContentPage() {
     urls: string[];
     downloadUrls: string[];
   } | null>(null);
+  const [viewingAudio, setViewingAudio] = useState<{
+    url: string;
+    downloadRef: string;
+    title: string;
+  } | null>(null);
 
-  const typeFilter = (searchParams.get('type') || '') as 'image' | 'video' | '';
+  const typeFilter = (searchParams.get('type') || '') as 'image' | 'video' | 'audio' | '';
   const searchQ = searchParams.get('q') || '';
 
   const contentCacheRef = useRef<{ key: string; items: ContentJob[]; total: number; at: number } | null>(null);
@@ -156,6 +169,40 @@ export default function ContentPage() {
     });
   }, []);
 
+  const downloadAudio = useCallback(async (ref: string, format: 'original' | 'mp3' | 'wav') => {
+    try {
+      const blob = await fetchBlobForJobRef(ref);
+      const refFormat = refExt(ref);
+      const blobType = blob.type.toLowerCase();
+      let ext: 'mp3' | 'wav' = refFormat === 'unknown' ? (blobType.includes('wav') ? 'wav' : 'mp3') : refFormat;
+      if (format === 'mp3') {
+        if (ext !== 'mp3' && !blobType.includes('mpeg') && !blobType.includes('mp3')) {
+          showToast('content.audioFormatUnavailable');
+          return;
+        }
+        ext = 'mp3';
+      } else if (format === 'wav') {
+        if (ext !== 'wav' && !blobType.includes('wav')) {
+          showToast('content.audioFormatUnavailable');
+          return;
+        }
+        ext = 'wav';
+      }
+      const name = `flipo5-${new Date().toISOString().slice(0, 10)}.${ext}`;
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      showToast('toast.downloaded');
+    } catch {
+      showToast('content.exportZipError');
+    }
+  }, [showToast]);
+
   const fetchContent = useCallback(() => {
     const cacheKey = `${page}:${typeFilter}:${searchQ}`;
     const cached = contentCacheRef.current;
@@ -167,7 +214,7 @@ export default function ContentPage() {
       listContent({
         page,
         limit: PAGE_SIZE,
-        type: typeFilter === 'image' || typeFilter === 'video' ? typeFilter : '',
+        type: typeFilter === 'image' || typeFilter === 'video' || typeFilter === 'audio' ? typeFilter : '',
         q: searchQ || undefined,
       })
         .then((r) => {
@@ -185,7 +232,7 @@ export default function ContentPage() {
     listContent({
       page,
       limit: PAGE_SIZE,
-      type: typeFilter === 'image' || typeFilter === 'video' ? typeFilter : '',
+      type: typeFilter === 'image' || typeFilter === 'video' || typeFilter === 'audio' ? typeFilter : '',
       q: searchQ || undefined,
     })
       .then((r) => {
@@ -290,7 +337,7 @@ export default function ContentPage() {
           />
         </form>
         <div className="flex flex-wrap gap-2">
-          {(['', 'image', 'video'] as const).map((typeVal) => (
+          {(['', 'image', 'video', 'audio'] as const).map((typeVal) => (
             <a
               key={typeVal || 'all'}
               href={`/dashboard/content?${new URLSearchParams({
@@ -306,7 +353,13 @@ export default function ContentPage() {
                 }`,
               })}
             >
-              {typeVal === '' ? t(locale, 'content.all') : typeVal === 'image' ? t(locale, 'content.images') : t(locale, 'content.videos')}
+              {typeVal === ''
+                ? t(locale, 'content.all')
+                : typeVal === 'image'
+                  ? t(locale, 'content.images')
+                  : typeVal === 'video'
+                    ? t(locale, 'content.videos')
+                    : t(locale, 'content.audio')}
             </a>
           ))}
         </div>
@@ -357,7 +410,7 @@ export default function ContentPage() {
                   transition={{ duration: 0.18, delay: Math.min(i * 0.02, 0.12) }}
                   className="flex flex-col gap-1.5 relative"
                 >
-                  {(job.type === 'image' || job.type === 'video' || job.type === 'upscale') ? (
+                  {(job.type === 'image' || job.type === 'video' || job.type === 'upscale' || job.type === 'audio') ? (
                     <>
                       <label className="absolute top-2 left-2 z-20 flex items-center justify-center w-8 h-8 rounded-md bg-theme-bg-elevated/90 border border-theme-border cursor-pointer shadow-sm">
                         <input
@@ -368,48 +421,79 @@ export default function ContentPage() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const raw = job.outputRefs;
-                          const display = raw.map((r) => displayForRef(r, mediaToken));
-                          setViewingMedia({
-                            urls: display,
-                            downloadUrls: raw,
-                          });
-                        }}
-                        className="btn-tap w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover group"
-                      >
-                        <div className="aspect-square relative bg-theme-bg-elevated">
-                          {thumb ? (
-                            job.type === 'video' ? (
-                              <video
-                                src={thumb}
-                                className="w-full h-full object-cover"
-                                muted
-                                preload="metadata"
-                                playsInline
-                              />
-                            ) : (
-                              <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                            )
-                          ) : (
+                      {job.type === 'audio' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const raw = job.outputRefs[0] ?? '';
+                            const display = displayForRef(raw, mediaToken);
+                            if (!display) return;
+                            setViewingAudio({
+                              url: display,
+                              downloadRef: raw,
+                              title: getJobDisplayName(job) || 'Audio track',
+                            });
+                          }}
+                          className="btn-tap w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover group"
+                        >
+                          <div className="aspect-square bg-theme-bg-elevated p-3 flex flex-col justify-between relative">
                             <div className="w-full h-full flex items-center justify-center text-theme-fg-subtle">
-                              {job.type === 'video' ? <VideoIcon className="w-12 h-12" /> : <ImageIcon className="w-12 h-12" />}
+                              <AudioIcon className="w-14 h-14" />
                             </div>
-                          )}
-                          {job.type === 'upscale' && (
-                            <span className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-theme-bg-elevated/95 text-theme-fg border border-theme-border shadow-sm">
-                              {t(locale, 'content.upscaled')}
-                            </span>
-                          )}
-                          <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span className="text-sm font-medium text-theme-fg px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong">
-                              {t(locale, 'content.view')}
-                            </span>
+                            <div className="pointer-events-none">
+                              {thumb ? <AudioPlayer src={thumb} /> : null}
+                            </div>
+                            <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-sm font-medium text-theme-fg px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong">
+                                {t(locale, 'content.view')}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const raw = job.outputRefs;
+                            const display = raw.map((r) => displayForRef(r, mediaToken));
+                            setViewingMedia({
+                              urls: display,
+                              downloadUrls: raw,
+                            });
+                          }}
+                          className="btn-tap w-full text-left rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden hover:bg-theme-bg-hover hover:border-theme-border-hover group"
+                        >
+                          <div className="aspect-square relative bg-theme-bg-elevated">
+                            {thumb ? (
+                              job.type === 'video' ? (
+                                <video
+                                  src={thumb}
+                                  className="w-full h-full object-cover"
+                                  muted
+                                  preload="metadata"
+                                  playsInline
+                                />
+                              ) : (
+                                <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                              )
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-theme-fg-subtle">
+                                {job.type === 'video' ? <VideoIcon className="w-12 h-12" /> : <ImageIcon className="w-12 h-12" />}
+                              </div>
+                            )}
+                            {job.type === 'upscale' && (
+                              <span className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-theme-bg-elevated/95 text-theme-fg border border-theme-border shadow-sm">
+                                {t(locale, 'content.upscaled')}
+                              </span>
+                            )}
+                            <div className="absolute inset-0 bg-theme-bg-overlay opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-sm font-medium text-theme-fg px-3 py-1.5 rounded-lg bg-theme-bg-hover-strong">
+                                {t(locale, 'content.view')}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      )}
                     </>
                   ) : null}
                   {getJobDisplayName(job) && (
@@ -472,6 +556,17 @@ export default function ContentPage() {
           locale={locale}
         />
       )}
+      {viewingAudio && (
+        <AudioViewModal
+          title={viewingAudio.title}
+          url={viewingAudio.url}
+          onClose={() => setViewingAudio(null)}
+          onDownloadOriginal={() => downloadAudio(viewingAudio.downloadRef, 'original')}
+          onDownloadMp3={() => downloadAudio(viewingAudio.downloadRef, 'mp3')}
+          onDownloadWav={() => downloadAudio(viewingAudio.downloadRef, 'wav')}
+          locale={locale}
+        />
+      )}
     </div>
   );
 }
@@ -496,5 +591,64 @@ function VideoIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
     </svg>
+  );
+}
+
+function AudioIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 18.75V5.25m6 13.5V8.25M4.5 15.75v-7.5m15 10.5v-4.5" />
+    </svg>
+  );
+}
+
+function AudioViewModal({
+  title,
+  url,
+  onClose,
+  onDownloadOriginal,
+  onDownloadMp3,
+  onDownloadWav,
+  locale,
+}: {
+  title: string;
+  url: string;
+  onClose: () => void;
+  onDownloadOriginal: () => void;
+  onDownloadMp3: () => void;
+  onDownloadWav: () => void;
+  locale: 'en' | 'de';
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-bg-overlay" onClick={onClose}>
+      <div
+        className="w-full max-w-xl rounded-2xl border border-theme-border bg-theme-bg p-4 md:p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <h3 className="text-sm md:text-base font-semibold text-theme-fg truncate">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-tap h-8 w-8 rounded-md border border-theme-border text-theme-fg-muted hover:text-theme-fg hover:bg-theme-bg-hover"
+            aria-label={t(locale, 'common.close')}
+          >
+            x
+          </button>
+        </div>
+        <AudioPlayer src={url} className="mb-4" />
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onDownloadOriginal} className={buttonClassName({ variant: 'secondary', className: 'px-3 py-2 rounded-lg border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-sm' })}>
+            {t(locale, 'content.downloadOriginal')}
+          </button>
+          <button type="button" onClick={onDownloadMp3} className={buttonClassName({ variant: 'secondary', className: 'px-3 py-2 rounded-lg border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-sm' })}>
+            {t(locale, 'content.downloadMp3')}
+          </button>
+          <button type="button" onClick={onDownloadWav} className={buttonClassName({ variant: 'secondary', className: 'px-3 py-2 rounded-lg border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover text-sm' })}>
+            {t(locale, 'content.downloadWav')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

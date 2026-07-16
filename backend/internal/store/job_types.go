@@ -6,7 +6,7 @@ import "strings"
 var JobTypes = []string{
 	"chat", "image", "video", "upscale", "seo", "outline", "translate", "logo",
 	"product_analyze", "product_score", "product_description", "product_scene_improve",
-	"product_suggest_scenes", "audio",
+	"product_suggest_scenes", "audio", "vectorize",
 }
 
 // JobTypesInClause returns a SQL IN (...) fragment for migrations.

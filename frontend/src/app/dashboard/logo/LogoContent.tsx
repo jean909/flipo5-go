@@ -427,7 +427,8 @@ export default function LogoContent() {
     setSvgExporting(true);
     setSvgExportError(null);
     try {
-      const blob = await vectorizeImage(svgExportDialog.url, mode);
+      const blob = await vectorizeImage(svgExportDialog.url, mode, false);
+      if (!(blob instanceof Blob)) throw new Error('Vectorize failed');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `logo-variant-${svgExportDialog.index + 1}.svg`;

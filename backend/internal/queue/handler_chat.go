@@ -102,6 +102,7 @@ Voice and style:
 					system += "\n\nProject instructions (apply to every reply in this conversation): " + strings.TrimSpace(proj.Instructions)
 				}
 				if files, _ := h.DB.ListChatProjectFiles(ctx, *pid, job.UserID); len(files) > 0 {
+					ragDocs := make([]struct{ Name, Text string }, 0, len(files))
 					for _, f := range files {
 						fileURL := resolveMediaURL(h, f.FileURL)
 						name := f.FileName
@@ -112,16 +113,33 @@ Voice and style:
 							if fileURL != "" {
 								projectImageURLs = append(projectImageURLs, fileURL)
 							}
+							text := strings.TrimSpace(f.ExtractedText)
+							if text == "" {
+								text = strings.TrimSpace(f.Summary)
+							}
+							if text != "" {
+								ragDocs = append(ragDocs, struct{ Name, Text string }{name, text})
+							}
 						} else if documents.IsDocumentContentType(f.ContentType) || strings.HasSuffix(strings.ToLower(name), ".pdf") {
 							fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-							text, err := documents.FetchAndExtract(fetchCtx, fileURL, f.ContentType, name)
+							text, err := h.fetchDocumentText(fetchCtx, job.UserID, fileURL, f.ContentType, name, f.ExtractedText)
 							cancel()
 							if err == nil && strings.TrimSpace(text) != "" {
 								projectDocTexts = append(projectDocTexts, fmt.Sprintf("### %s\n%s", name, text))
+								ragDocs = append(ragDocs, struct{ Name, Text string }{name, text})
 							} else if err != nil {
 								log.Printf("[ChatHandler] project doc extract %s: %v", name, err)
+							} else if strings.TrimSpace(f.Summary) != "" {
+								ragDocs = append(ragDocs, struct{ Name, Text string }{name, f.Summary})
 							}
 						}
+					}
+					if hits := documents.SearchText(p.Prompt, ragDocs); len(hits) > 0 {
+						var ragParts []string
+						for _, hit := range hits {
+							ragParts = append(ragParts, fmt.Sprintf("[%s] %s", hit.FileName, hit.Snippet))
+						}
+						system += "\n\nRelevant project excerpts for this question:\n" + strings.Join(ragParts, "\n")
 					}
 					if len(projectImageURLs) > 0 {
 						system += "\n\nThe user attached project reference images to this conversation. Look at them, remember them across turns, and ground your answers in what they show."
@@ -164,7 +182,7 @@ Voice and style:
 			if documents.IsDocumentContentType(contentType) || strings.HasSuffix(strings.ToLower(filenameFromURL(urlStr)), ".pdf") || strings.HasSuffix(strings.ToLower(filenameFromURL(urlStr)), ".txt") {
 				name := filenameFromURL(urlStr)
 				fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-				text, err := documents.FetchAndExtract(fetchCtx, urlStr, contentType, name)
+				text, err := h.fetchDocumentText(fetchCtx, job.UserID, urlStr, contentType, name, "")
 				cancel()
 				if err == nil && strings.TrimSpace(text) != "" {
 					attachmentDocSections = append(attachmentDocSections, fmt.Sprintf("### %s\n%s", name, text))

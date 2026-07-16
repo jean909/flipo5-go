@@ -996,6 +996,7 @@ export default function ProductPicturesContent() {
                   >
                     {t(locale, tpl.labelKey)}
                   </button>
+
                 ))}
               </div>
               {suggestedScenes.length > 0 && (

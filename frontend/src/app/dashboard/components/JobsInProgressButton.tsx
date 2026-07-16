@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
@@ -51,14 +51,28 @@ function playCompletionSound() {
   }
 }
 
-type CompletedToast = { id: string; type: 'image' | 'video'; threadId: string | null; durationSec: number; imageUrl?: string };
-type FailedToast = { id: string; type: 'image' | 'video'; error: string; threadId: string | null };
+type CompletedToast = { id: string; type: string; threadId: string | null; durationSec: number; imageUrl?: string; label?: string };
+type FailedToast = { id: string; type: string; error: string; threadId: string | null; label?: string };
 
 // Dedupe by id (keep last) to avoid React "duplicate key" and stuck UI
 function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const byId = new Map<string, T>();
   items.forEach((t) => byId.set(t.id, t));
   return [...byId.values()];
+}
+
+function completionMessageKey(type: string): string {
+  if (type === 'image') return 'jobsInProgress.imageReady';
+  if (type === 'video') return 'jobsInProgress.videoReady';
+  if (type === 'chat') return 'jobsInProgress.chatReady';
+  if (type === 'translate') return 'jobsInProgress.translateReady';
+  if (type === 'logo') return 'jobsInProgress.logoReady';
+  if (type === 'audio') return 'jobsInProgress.audioReady';
+  if (type === 'seo') return 'jobsInProgress.seoReady';
+  if (type === 'vectorize') return 'jobsInProgress.vectorizeReady';
+  if (type.startsWith('product')) return 'jobsInProgress.productReady';
+  if (type === 'upscale') return 'jobsInProgress.upscaleReady';
+  return 'jobsInProgress.readyGeneric';
 }
 
 // localStorage key for dismissed failed job IDs
@@ -114,6 +128,12 @@ export function JobsInProgressButton() {
   const [completedToasts, setCompletedToasts] = useState<CompletedToast[]>([]);
   const [failedToasts, setFailedToasts] = useState<FailedToast[]>([]);
   const [dismissedFailed, setDismissedFailed] = useState<Set<string>>(cleanupDismissedFailedIds());
+  // Mirror dismissedFailed in a ref so fetchJobs() always sees the latest set
+  // (useCallback would otherwise capture a stale snapshot and keep re-showing failed dialogs).
+  const dismissedFailedRef = useRef<Set<string>>(dismissedFailed);
+  useEffect(() => {
+    dismissedFailedRef.current = dismissedFailed;
+  }, [dismissedFailed]);
   const [, setTick] = useState(0); // triggers re-render so progress bar updates
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
@@ -132,18 +152,18 @@ export function JobsInProgressButton() {
         if (showLoading) {
           const recentCutoff = Date.now() - 10 * 60 * 1000; // 10 min
           const recentFailed = all.filter(
-            (j) => j.status === 'failed' && (j.type === 'image' || j.type === 'video') && new Date(j.created_at).getTime() > recentCutoff
+            (j) => j.status === 'failed' && new Date(j.created_at).getTime() > recentCutoff
           );
           const recentCompleted = all.filter(
-            (j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video') && new Date(j.created_at).getTime() > recentCutoff
+            (j) => j.status === 'completed' && new Date(j.created_at).getTime() > recentCutoff
           );
           if (recentFailed.length > 0) {
             // Filter out already dismissed failed jobs
-            const notDismissed = recentFailed.filter((j) => !dismissedFailed.has(j.id));
+            const notDismissed = recentFailed.filter((j) => !dismissedFailedRef.current.has(j.id));
             if (notDismissed.length > 0) {
               const toAdd: FailedToast[] = notDismissed.map((j) => ({
                 id: j.id,
-                type: j.type as 'image' | 'video',
+                type: j.type,
                 error: j.error || 'Failed',
                 threadId: j.thread_id ?? null,
               }));
@@ -156,23 +176,23 @@ export function JobsInProgressButton() {
               const updated = new Date(j.updated_at).getTime();
               const durationSec = Math.round((updated - created) / 1000);
               const urls = j.output ? getOutputUrls(j.output) : [];
-              return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+              return { id: j.id, type: j.type, threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
             });
             setCompletedToasts((prev) => dedupeById([...prev.filter((c) => !toAdd.some((a) => a.id === c.id)), ...toAdd]));
           }
         }
         if (pending.length > 0) {
           const verified = await Promise.all(pending.map((j) => getJob(j.id).then((fresh) => fresh ?? j)));
-          const actuallyCompleted = verified.filter((j) => j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
-          const actuallyFailed = verified.filter((j) => j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
+          const actuallyCompleted = verified.filter((j) => j.status === 'completed');
+          const actuallyFailed = verified.filter((j) => j.status === 'failed');
           pending = verified.filter((j) => j.status === 'pending' || j.status === 'running');
           if (actuallyFailed.length > 0) {
             actuallyFailed.forEach((j) => removeOptimisticJob(j.id));
-            const notDismissed = actuallyFailed.filter((j) => !dismissedFailed.has(j.id));
+            const notDismissed = actuallyFailed.filter((j) => !dismissedFailedRef.current.has(j.id));
             if (notDismissed.length > 0) {
               const toAdd: FailedToast[] = notDismissed.map((j) => ({
                 id: j.id,
-                type: j.type as 'image' | 'video',
+                type: j.type,
                 error: j.error || 'Failed',
                 threadId: j.thread_id ?? null,
               }));
@@ -185,14 +205,14 @@ export function JobsInProgressButton() {
             const toAdd = actuallyCompleted.map((j) => {
               if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
                 new Notification(t(locale, 'jobsInProgress.ready'), {
-                  body: t(locale, j.type === 'image' ? 'jobsInProgress.imageReady' : 'jobsInProgress.videoReady'),
+                  body: t(locale, completionMessageKey(j.type)),
                 });
               }
               const created = new Date(j.created_at).getTime();
               const updated = new Date(j.updated_at).getTime();
               const durationSec = Math.round((updated - created) / 1000);
               const urls = j.output ? getOutputUrls(j.output) : [];
-              return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+              return { id: j.id, type: j.type, threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
             });
             setCompletedToasts((prev) => dedupeById([...prev, ...toAdd]));
           }
@@ -202,14 +222,14 @@ export function JobsInProgressButton() {
         const completedIds = [...prevIds].filter((id) => !newIds.has(id));
         if (completedIds.length > 0) {
           const results = await Promise.all(completedIds.map((id) => getJob(id)));
-          const failed = results.filter((j): j is Job => !!j && j.status === 'failed' && (j.type === 'image' || j.type === 'video'));
+          const failed = results.filter((j): j is Job => !!j && j.status === 'failed');
           if (failed.length > 0) {
             failed.forEach((j) => removeOptimisticJob(j.id));
-            const notDismissed = failed.filter((j) => !dismissedFailed.has(j.id));
+            const notDismissed = failed.filter((j) => !dismissedFailedRef.current.has(j.id));
             if (notDismissed.length > 0) {
               const toAdd: FailedToast[] = notDismissed.map((j) => ({
                 id: j.id,
-                type: j.type as 'image' | 'video',
+                type: j.type,
                 error: j.error || 'Failed',
                 threadId: j.thread_id ?? null,
               }));
@@ -220,18 +240,18 @@ export function JobsInProgressButton() {
           allCompleted.forEach((j) => removeOptimisticJob(j.id));
           if (allCompleted.length > 0 && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             allCompleted.forEach((j) => {
-              const bodyKey = j.type === 'image' ? 'jobsInProgress.imageReady' : j.type === 'video' ? 'jobsInProgress.videoReady' : j.type === 'chat' ? 'jobsInProgress.chatReady' : j.type === 'translate' ? 'jobsInProgress.translateReady' : j.type === 'logo' ? 'jobsInProgress.logoReady' : 'jobsInProgress.upscaleReady';
+              const bodyKey = completionMessageKey(j.type);
               new Notification(t(locale, 'jobsInProgress.ready'), { body: t(locale, bodyKey) });
             });
             playCompletionSound();
           }
-          const completed = results.filter((j): j is Job => !!j && j.status === 'completed' && (j.type === 'image' || j.type === 'video'));
+          const completed = results.filter((j): j is Job => !!j && j.status === 'completed');
           const toAdd = completed.map((j) => {
             const created = new Date(j.created_at).getTime();
             const updated = new Date(j.updated_at).getTime();
             const durationSec = Math.round((updated - created) / 1000);
             const urls = j.output ? getOutputUrls(j.output) : [];
-            return { id: j.id, type: j.type as 'image' | 'video', threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
+            return { id: j.id, type: j.type, threadId: j.thread_id ?? null, durationSec, imageUrl: urls[0] };
           });
           if (toAdd.length > 0) {
             setCompletedToasts((prev) => dedupeById([...prev, ...toAdd]));
@@ -276,7 +296,7 @@ export function JobsInProgressButton() {
           }
           if (data.jobId) {
             if (process.env.NODE_ENV === 'development') console.log('[JobsInProgressButton] Job update received:', data);
-            // Debounce: multiple SSE updates (e.g. 2 jobs complete) → one fetch to avoid 429
+            // Debounce: multiple SSE updates (e.g. 2 jobs complete) â†’ one fetch to avoid 429
             setTick(t => t + 1);
             if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
             fetchDebounceRef.current = setTimeout(() => {
@@ -337,16 +357,6 @@ export function JobsInProgressButton() {
     document.addEventListener('click', h);
     return () => document.removeEventListener('click', h);
   }, [open]);
-  
-  // Cleanup SSE on unmount
-  useEffect(() => {
-    return () => {
-      if (sseRef.current) {
-        sseRef.current.close();
-        sseRef.current = null;
-      }
-    };
-  }, []);
 
   const apiPendingJobs = jobs.filter((j) => j.status === 'pending' || j.status === 'running');
   const apiIds = new Set(apiPendingJobs.map((j) => j.id));
@@ -405,6 +415,9 @@ export function JobsInProgressButton() {
     if (type === 'outline') return t(locale, 'jobs.type.outline');
     if (type === 'translate') return t(locale, 'jobs.type.translate');
     if (type === 'logo') return t(locale, 'jobs.type.logo');
+    if (type === 'audio') return t(locale, 'jobs.type.audio');
+    if (type.startsWith('product')) return t(locale, 'jobs.type.product');
+    if (type === 'vectorize') return t(locale, 'jobs.type.vectorize');
     return type;
   };
 
@@ -417,8 +430,20 @@ export function JobsInProgressButton() {
 
   const goToJob = (job: Job) => {
     setOpen(false);
-    if (job.type === 'zip') {
+    if (job.type === 'zip' || job.type === 'vectorize') {
       router.push('/dashboard/content');
+      return;
+    }
+    if (job.type === 'audio') {
+      router.push('/dashboard/audio');
+      return;
+    }
+    if (job.type === 'seo' || job.type === 'translate' || job.type === 'outline') {
+      router.push('/dashboard/content');
+      return;
+    }
+    if (job.type.startsWith('product')) {
+      router.push('/dashboard/product-pictures');
       return;
     }
     if (job.thread_id) {
@@ -631,7 +656,7 @@ export function JobsInProgressButton() {
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-theme-fg">
-                              {toast.type === 'image' ? t(locale, 'jobsInProgress.imageReady') : t(locale, 'jobsInProgress.videoReady')}
+                              {t(locale, completionMessageKey(toast.type))}
                             </p>
                             <p className="text-xs text-theme-fg-muted">{t(locale, 'jobsInProgress.viewInSession')}</p>
                             <p className="text-xs text-theme-fg-subtle mt-0.5">{formatDuration(toast.durationSec)}</p>
@@ -665,7 +690,7 @@ export function JobsInProgressButton() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-theme-fg">
-                          {toast.type === 'image' ? t(locale, 'jobs.type.image') : t(locale, 'jobs.type.video')} – {t(locale, 'jobs.status.failed')}
+                          {toast.type === 'image' ? t(locale, 'jobs.type.image') : t(locale, 'jobs.type.video')} - {t(locale, 'jobs.status.failed')}
                         </p>
                         <p className="text-xs text-theme-fg-muted truncate">{toast.error}</p>
                       </div>
@@ -753,3 +778,4 @@ function ZipIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+

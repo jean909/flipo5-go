@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /api ./cmd/api
 
 # Run stage
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates poppler-utils
 WORKDIR /app
 COPY --from=builder /api .
 EXPOSE 8080

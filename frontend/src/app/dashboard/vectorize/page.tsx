@@ -11,6 +11,8 @@ import {
   listContent,
   getToken,
   getMediaDisplayUrl,
+  getJob,
+  fetchBlobForJobRef,
   type Job,
 } from '@/lib/api';
 import { getOutputUrls } from '@/lib/jobOutput';
@@ -36,6 +38,8 @@ export default function VectorizePage() {
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [library, setLibrary] = useState<Job[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [asyncMode, setAsyncMode] = useState(false);
+  const [asyncJobId, setAsyncJobId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,9 +52,10 @@ export default function VectorizePage() {
     Promise.all([
       listContent({ type: 'image', limit: PAGE_SIZE }).catch(() => ({ jobs: [] as Job[] })),
       listContent({ type: 'logo', limit: PAGE_SIZE }).catch(() => ({ jobs: [] as Job[] })),
+      listContent({ type: 'vectorize', limit: PAGE_SIZE }).catch(() => ({ jobs: [] as Job[] })),
     ])
-      .then(([imgs, logos]) => {
-        const merged = [...(logos.jobs ?? []), ...(imgs.jobs ?? [])].filter(
+      .then(([imgs, logos, vecs]) => {
+        const merged = [...(logos.jobs ?? []), ...(imgs.jobs ?? []), ...(vecs.jobs ?? [])].filter(
           (j) => j.status === 'completed'
         );
         setLibrary(merged);
@@ -107,6 +112,35 @@ export default function VectorizePage() {
     return source.kind === 'upload' ? source.previewUrl : source.displayUrl;
   }, [source]);
 
+  const applySvgBlob = (blob: Blob, baseName: string) => {
+    const url = URL.createObjectURL(blob);
+    setSvgBlobUrl(url);
+    setSvgDownloadName(`${baseName}.svg`);
+    showToast('toast.downloaded');
+  };
+
+  const pollVectorizeJob = async (jobId: string, baseName: string) => {
+    for (let i = 0; i < 120; i++) {
+      const job = await getJob(jobId);
+      if (!job) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      if (job.status === 'completed') {
+        const urls = getOutputUrls(job.output ?? null);
+        const ref = urls[0] ?? (typeof job.output === 'object' && job.output && 'svg_url' in job.output ? String((job.output as { svg_url?: string }).svg_url ?? '') : '');
+        if (!ref) throw new Error('No SVG in job output');
+        const blob = await fetchBlobForJobRef(ref);
+        applySvgBlob(blob, baseName);
+        loadLibrary();
+        return;
+      }
+      if (job.status === 'failed') throw new Error(job.error || 'Vectorize job failed');
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error('Vectorize timed out');
+  };
+
   const handleVectorize = async () => {
     if (!source || converting) return;
     setConverting(true);
@@ -127,11 +161,13 @@ export default function VectorizePage() {
         remoteUrl = source.url;
         baseName = 'flipo5-vector';
       }
-      const blob = await vectorizeImage(remoteUrl, mode);
-      const url = URL.createObjectURL(blob);
-      setSvgBlobUrl(url);
-      setSvgDownloadName(`${baseName}.svg`);
-      showToast('toast.downloaded');
+      const blobOrJob = await vectorizeImage(remoteUrl, mode, asyncMode);
+      if (asyncMode && blobOrJob && typeof blobOrJob === 'object' && 'job_id' in blobOrJob) {
+        setAsyncJobId(blobOrJob.job_id);
+        await pollVectorizeJob(blobOrJob.job_id, baseName);
+      } else {
+        applySvgBlob(blobOrJob as Blob, baseName);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Vectorize failed');
     } finally {
@@ -257,6 +293,13 @@ export default function VectorizePage() {
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-2 items-center">
+              <label className="flex items-center gap-2 text-xs text-theme-fg-muted cursor-pointer">
+                <input type="checkbox" checked={asyncMode} onChange={(e) => setAsyncMode(e.target.checked)} className="rounded" />
+                Async job (saved to content library)
+              </label>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -293,6 +336,9 @@ export default function VectorizePage() {
             </button>
 
             {error && <p className="text-sm text-theme-danger">{error}</p>}
+            {asyncJobId && converting && (
+              <p className="text-xs text-theme-fg-muted">Job {asyncJobId.slice(0, 8)}… running</p>
+            )}
 
             {svgBlobUrl && (
               <div className="rounded-xl border border-theme-border bg-theme-bg p-3">

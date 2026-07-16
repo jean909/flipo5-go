@@ -14,6 +14,7 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeTranslate, h.TranslateHandler)
 	mux.HandleFunc(TypeLogo, h.LogoHandler)
 	mux.HandleFunc(TypeAudio, h.AudioHandler)
+	mux.HandleFunc(TypeVectorize, h.VectorizeHandler)
 	mux.HandleFunc(TypeProductScore, h.ProductScoreHandler)
 	mux.HandleFunc(TypeProductDescription, h.ProductDescriptionHandler)
 	mux.HandleFunc(TypeProductSceneImprove, h.ProductSceneImproveHandler)

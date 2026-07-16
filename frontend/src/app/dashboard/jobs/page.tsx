@@ -38,6 +38,7 @@ export default function JobsPage() {
     if (type === 'chat') return t(locale, 'jobs.type.chat');
     if (type === 'image') return t(locale, 'jobs.type.image');
     if (type === 'video') return t(locale, 'jobs.type.video');
+    if (type === 'audio') return t(locale, 'jobs.type.audio');
     if (type === 'upscale') return t(locale, 'jobs.type.upscale');
     if (type === 'seo') return t(locale, 'jobs.type.seo');
     return type;

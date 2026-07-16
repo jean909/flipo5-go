@@ -172,6 +172,8 @@ func (s *Server) createAudio(w http.ResponseWriter, r *http.Request) {
 		NumVariants       int    `json:"num_variants,omitempty"`
 		OutputFormat      string `json:"output_format,omitempty"`
 		MusicLengthMs     int    `json:"music_length_ms,omitempty"`
+		SourceAudio       string `json:"source_audio,omitempty"`
+		AudioAction       string `json:"audio_action,omitempty"` // generate | extend | remix | stems
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -227,6 +229,12 @@ func (s *Server) createAudio(w http.ResponseWriter, r *http.Request) {
 		"num_variants":       req.NumVariants,
 		"output_format":      req.OutputFormat,
 		"music_length_ms":    req.MusicLengthMs,
+	}
+	if strings.TrimSpace(req.SourceAudio) != "" {
+		input["source_audio"] = strings.TrimSpace(req.SourceAudio)
+	}
+	if a := strings.TrimSpace(req.AudioAction); a != "" {
+		input["audio_action"] = strings.ToLower(a)
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "audio", input, nil)
 	if err != nil {

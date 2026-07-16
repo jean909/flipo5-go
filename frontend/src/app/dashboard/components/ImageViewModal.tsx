@@ -177,7 +177,8 @@ export function ImageViewModal({ url, urls, downloadUrls, onDelete, onClose, ena
     if (svgLoading) return;
     setSvgLoading(true);
     try {
-      const blob = await vectorizeImage(downloadUrl, 'color');
+      const blob = await vectorizeImage(downloadUrl, 'color', false);
+      if (!(blob instanceof Blob)) throw new Error('Vectorize failed');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `flipo5-${Date.now()}.svg`;

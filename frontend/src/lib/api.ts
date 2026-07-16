@@ -83,7 +83,8 @@ export async function downloadMediaUrl(imageUrl: string): Promise<Blob> {
 export async function vectorizeImage(
   imageUrl: string,
   mode: 'color' | 'binary' = 'color',
-): Promise<Blob> {
+  async = false,
+): Promise<Blob | { job_id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_URL}/api/vectorize`, {
@@ -92,7 +93,7 @@ export async function vectorizeImage(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ url: imageUrl, mode }),
+    body: JSON.stringify({ url: imageUrl, mode, async }),
   });
   if (!res.ok) {
     let msg = 'Vectorize failed';
@@ -103,6 +104,9 @@ export async function vectorizeImage(
       // ignore
     }
     throw new Error(msg);
+  }
+  if (async) {
+    return res.json() as Promise<{ job_id: string }>;
   }
   return res.blob();
 }
@@ -821,7 +825,7 @@ export async function listJobs(cacheBust?: boolean): Promise<{ jobs: Job[] }> {
 export interface ListContentParams {
   page?: number;
   limit?: number;
-  type?: 'image' | 'video' | 'logo' | 'audio' | '';
+  type?: 'image' | 'video' | 'logo' | 'audio' | 'vectorize' | '';
   q?: string;
 }
 
@@ -1225,6 +1229,8 @@ export async function createAudioJob(params: {
   output_format?: 'mp3_standard' | 'mp3_high_quality' | 'wav_16khz' | 'wav_22khz' | 'wav_24khz' | 'wav_cd_quality';
   music_length_ms?: number;
   force_instrumental?: boolean;
+  source_audio?: string;
+  audio_action?: 'generate' | 'extend' | 'remix' | 'stems';
 }): Promise<{ job_id: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
@@ -1247,6 +1253,8 @@ export async function createAudioJob(params: {
       num_variants: numVariants,
       output_format: outputFormat,
       music_length_ms: musicLengthMs,
+      ...(params.source_audio ? { source_audio: params.source_audio } : {}),
+      ...(params.audio_action ? { audio_action: params.audio_action } : {}),
     }),
   });
   if (!res.ok) {
@@ -1408,6 +1416,8 @@ export interface ChatProjectFile {
   file_name: string;
   content_type: string;
   size_bytes?: number | null;
+  extracted_text?: string;
+  summary?: string;
   created_at: string;
 }
 
@@ -1508,4 +1518,42 @@ export async function uploadAndAttachChatProjectFiles(projectId: string, files: 
     );
   }
   return out;
+}
+
+export async function searchChatProjectDocs(projectId: string, query: string): Promise<{ file_name: string; snippet: string; score: number }[]> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/chat-projects/${projectId}/search`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error('Search failed');
+  const data = (await res.json()) as { results?: { file_name: string; snippet: string; score: number }[] };
+  return data.results ?? [];
+}
+
+export type TemplateRunResult = { template: string; jobs: { job_id: string; type: string; label: string }[] };
+
+export async function runTemplate(template: 'amazon_listing' | 'social_week', input: Record<string, string>): Promise<TemplateRunResult> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/templates/run`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ template, input }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Template failed');
+  }
+  return res.json() as Promise<TemplateRunResult>;
+}
+
+export async function bulkRemoveProjectBackgrounds(projectId: string): Promise<{ items: { item_id: string; status: string }[] }> {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_URL}/api/projects/${projectId}/bulk-remove-bg`, {
+    method: 'POST',
+    headers,
+  });
+  if (!res.ok) throw new Error('Bulk remove-bg failed');
+  return res.json();
 }

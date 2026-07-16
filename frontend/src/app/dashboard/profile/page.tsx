@@ -6,12 +6,14 @@ import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { getMe, listThreads, patchThread, type User, type Thread } from '@/lib/api';
 import { ThreadItem } from '../components/ThreadItem';
+import { object } from 'framer-motion/client';
 
 const JOB_TYPE_I18N: Record<string, string> = {
   chat: 'jobs.type.chat',
   image: 'jobs.type.image',
   video: 'jobs.type.video',
   logo: 'jobs.type.logo',
+  audio: 'jobs.type.audio',
   upscale: 'jobs.type.upscale',
   seo: 'jobs.type.seo',
   outline: 'jobs.type.outline',
@@ -35,7 +37,7 @@ export default function ProfilePage() {
   const [archived, setArchived] = useState<Thread[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | null>(null);
-
+  
   useEffect(() => {
     getMe().then(setUser);
   }, []);
@@ -68,6 +70,8 @@ export default function ProfilePage() {
 
   const profile = user?.profile;
   const stats = profile?.stats;
+  console.log(profile);
+  
   const hasAnyStats = useMemo(() => {
     if (!stats) return false;
     const hasCounts = stats.job_counts && Object.keys(stats.job_counts).length > 0 && Object.values(stats.job_counts).some((n) => n > 0);

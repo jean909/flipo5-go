@@ -1,40 +1,15 @@
 /**
- * Extracts image/video URLs from job output (Replicate or Cloudflare).
- * Handles: { output: "url" }, { output: ["url1", "url2"] }, direct array, etc.
+ * Parse job `output` payloads from the API (Replicate, Cloudflare, storage keys).
+ * Supports stringified JSON, plain URLs, `{ output, url, urls }`, and arrays of strings or `{ url }`.
  */
+
 export function getOutputUrls(output: unknown): string[] {
-  if (output == null) return [];
-  let parsed: unknown = output;
-  if (typeof output === 'string') {
-    try {
-      parsed = JSON.parse(output) as unknown;
-    } catch {
-      return validUrl(output) ? [output] : [];
-    }
-  }
-  if (Array.isArray(parsed)) {
-    const out: string[] = [];
-    for (const u of parsed) {
-      if (typeof u === 'string' && validUrl(u)) out.push(u);
-      else if (u && typeof u === 'object' && typeof (u as { url?: string }).url === 'string' && validUrl((u as { url: string }).url))
-        out.push((u as { url: string }).url);
-    }
-    return out;
-  }
-  if (typeof parsed !== 'object') return [];
-  const o = parsed as Record<string, unknown>;
-  const val = o.output ?? o.url ?? o.urls;
-  if (typeof val === 'string' && validUrl(val)) return [val];
-  if (Array.isArray(val)) {
-    const out: string[] = [];
-    for (const u of val) {
-      if (typeof u === 'string' && validUrl(u)) out.push(u);
-      else if (u && typeof u === 'object' && typeof (u as { url?: string }).url === 'string' && validUrl((u as { url: string }).url))
-        out.push((u as { url: string }).url);
-    }
-    return out;
-  }
-  return [];
+  return extractOutputStrings(output, validUrl);
+}
+
+/** Same shape as {@link getOutputUrls} but also allows `uploads/...` keys for `/api/media` and ZIP export. */
+export function getOutputRefs(output: unknown): string[] {
+  return extractOutputStrings(output, validRef);
 }
 
 function validUrl(s: string): boolean {
@@ -47,38 +22,38 @@ function validRef(s: string): boolean {
   return s.startsWith('uploads/') && !s.includes('..');
 }
 
-/** Same as getOutputUrls plus storage keys (`uploads/...`) for authenticated /api/media and ZIP export. */
-export function getOutputRefs(output: unknown): string[] {
+function extractOutputStrings(output: unknown, accept: (s: string) => boolean): string[] {
   if (output == null) return [];
   let parsed: unknown = output;
   if (typeof output === 'string') {
     try {
       parsed = JSON.parse(output) as unknown;
     } catch {
-      return validRef(output) ? [output] : [];
+      return accept(output) ? [output] : [];
     }
   }
+  return collectFromParsed(parsed, accept);
+}
+
+function collectFromParsed(parsed: unknown, accept: (s: string) => boolean): string[] {
   if (Array.isArray(parsed)) {
-    const out: string[] = [];
-    for (const u of parsed) {
-      if (typeof u === 'string' && validRef(u)) out.push(u);
-      else if (u && typeof u === 'object' && typeof (u as { url?: string }).url === 'string' && validRef((u as { url: string }).url))
-        out.push((u as { url: string }).url);
-    }
-    return out;
+    return collectFromArrayLike(parsed, accept);
   }
-  if (typeof parsed !== 'object') return [];
+  if (typeof parsed !== 'object' || parsed === null) return [];
   const o = parsed as Record<string, unknown>;
   const val = o.output ?? o.url ?? o.urls;
-  if (typeof val === 'string' && validRef(val)) return [val];
-  if (Array.isArray(val)) {
-    const out: string[] = [];
-    for (const u of val) {
-      if (typeof u === 'string' && validRef(u)) out.push(u);
-      else if (u && typeof u === 'object' && typeof (u as { url?: string }).url === 'string' && validRef((u as { url: string }).url))
-        out.push((u as { url: string }).url);
-    }
-    return out;
-  }
+  if (typeof val === 'string' && accept(val)) return [val];
+  if (Array.isArray(val)) return collectFromArrayLike(val, accept);
   return [];
+}
+
+function collectFromArrayLike(items: unknown[], accept: (s: string) => boolean): string[] {
+  const out: string[] = [];
+  for (const u of items) {
+    if (typeof u === 'string' && accept(u)) out.push(u);
+    else if (u && typeof u === 'object' && typeof (u as { url?: string }).url === 'string' && accept((u as { url: string }).url)) {
+      out.push((u as { url: string }).url);
+    }
+  }
+  return out;
 }

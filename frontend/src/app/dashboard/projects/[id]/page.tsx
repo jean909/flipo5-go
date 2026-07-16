@@ -11,6 +11,7 @@ import {
   getChatProject,
   updateChatProject,
   deleteChatProject,
+  searchChatProjectDocs,
   uploadAndAttachChatProjectFiles,
   deleteChatProjectFile,
   createChat,
@@ -56,6 +57,9 @@ export default function ChatProjectDetailPage() {
   const [showInstructionsDialog, setShowInstructionsDialog] = useState(false);
   const [showSourcesDialog, setShowSourcesDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [docSearch, setDocSearch] = useState('');
+  const [searchHits, setSearchHits] = useState<{ file_name: string; snippet: string }[]>([]);
+  const [searching, setSearching] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -408,6 +412,45 @@ export default function ChatProjectDetailPage() {
               </div>
             </button>
 
+            <div className="rounded-xl border border-theme-border bg-theme-bg p-3 space-y-2">
+              <label className="text-xs font-medium text-theme-fg-muted">Search in project docs</label>
+              <div className="flex gap-2">
+                <input
+                  value={docSearch}
+                  onChange={(e) => setDocSearch(e.target.value)}
+                  placeholder="Keywords…"
+                  className="flex-1 rounded-lg border border-theme-border bg-theme-bg-subtle px-2 py-1.5 text-xs"
+                />
+                <button
+                  type="button"
+                  disabled={!docSearch.trim() || searching}
+                  onClick={async () => {
+                    setSearching(true);
+                    try {
+                      const hits = await searchChatProjectDocs(projectId, docSearch.trim());
+                      setSearchHits(hits);
+                    } catch {
+                      setSearchHits([]);
+                    } finally {
+                      setSearching(false);
+                    }
+                  }}
+                  className="rounded-lg bg-theme-accent px-2 py-1 text-xs text-white disabled:opacity-50"
+                >
+                  Go
+                </button>
+              </div>
+              {searchHits.length > 0 && (
+                <ul className="max-h-32 overflow-y-auto text-[11px] space-y-1 text-theme-fg-muted">
+                  {searchHits.map((h, i) => (
+                    <li key={i} className="border-t border-theme-border pt-1">
+                      <strong className="text-theme-fg">{h.file_name}</strong>: {h.snippet}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
           </div>
     </aside>
   );
@@ -701,22 +744,34 @@ export default function ChatProjectDetailPage() {
                   {t(locale, 'chatProjects.sourcesEmpty')}
                 </div>
               ) : (
-                <ul className="rounded-xl border border-theme-border divide-y divide-theme-border bg-theme-bg-subtle">
+                <ul
+                  className="rounded-xl border border-theme-border divide-y divide-theme-border bg-theme-bg-subtle"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleFiles(e.dataTransfer.files);
+                  }}
+                >
                   {files.map((f) => (
-                    <li key={f.id} className="flex items-center gap-2 px-3 py-2">
-                      <FileSmallIcon className="w-4 h-4 shrink-0 text-theme-fg-subtle" />
-                      <span className="text-sm text-theme-fg truncate flex-1">{f.file_name || 'file'}</span>
-                      {f.size_bytes ? (
-                        <span className="text-xs text-theme-fg-subtle shrink-0">{Math.round(f.size_bytes / 1024)} KB</span>
+                    <li key={f.id} className="flex flex-col gap-0.5 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <FileSmallIcon className="w-4 h-4 shrink-0 text-theme-fg-subtle" />
+                        <span className="text-sm text-theme-fg truncate flex-1">{f.file_name || 'file'}</span>
+                        {f.size_bytes ? (
+                          <span className="text-xs text-theme-fg-subtle shrink-0">{Math.round(f.size_bytes / 1024)} KB</span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => removeFile(f.id)}
+                          className="p-1 rounded-md text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover"
+                          aria-label={t(locale, 'common.remove')}
+                        >
+                          <XIcon className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {f.summary ? (
+                        <p className="text-[11px] text-theme-fg-muted pl-6 line-clamp-2">{f.summary}</p>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => removeFile(f.id)}
-                        className="p-1 rounded-md text-theme-fg-subtle hover:text-theme-danger hover:bg-theme-bg-hover"
-                        aria-label={t(locale, 'common.remove')}
-                      >
-                        <XIcon className="w-3.5 h-3.5" />
-                      </button>
                     </li>
                   ))}
                 </ul>

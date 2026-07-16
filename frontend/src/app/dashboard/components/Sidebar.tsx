@@ -98,6 +98,7 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
     { href: '/dashboard', labelKey: 'nav.dashboard', icon: DashboardIcon },
     { href: '/dashboard/content', labelKey: 'nav.content', icon: ContentIcon },
     { href: '/dashboard/studio', labelKey: 'nav.studio', icon: StudioIcon },
+    { href: '/dashboard/templates', labelKey: 'nav.templates', icon: TemplatesIcon },
     { href: '/dashboard/upscaling', labelKey: 'nav.upscaling', icon: UpscaleIcon },
   ];
 
@@ -347,6 +348,7 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
             </p>
             {[
               { href: '/dashboard/logo', labelKey: 'nav.logo', icon: LogoIcon },
+              { href: '/dashboard/audio', labelKey: 'nav.audio', icon: AudioIcon },
               { href: '/dashboard/seo', labelKey: 'nav.seo', icon: SEOIcon },
               { href: '/dashboard/outline', labelKey: 'nav.outline', icon: OutlineIcon },
               { href: '/dashboard/translations', labelKey: 'nav.translations', icon: TranslateIcon },
@@ -374,6 +376,9 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
           <>
             <Link href="/dashboard/logo" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/logo') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.logo')}>
               <LogoIcon className="w-5 h-5 shrink-0" />
+            </Link>
+            <Link href="/dashboard/audio" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/audio') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.audio')}>
+              <AudioIcon className="w-5 h-5 shrink-0" />
             </Link>
             <Link href="/dashboard/seo" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/seo') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.seo')}>
               <SEOIcon className="w-5 h-5 shrink-0" />
@@ -638,6 +643,14 @@ function StudioIcon({ className }: { className?: string }) {
   );
 }
 
+function TemplatesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 7.5V5.25A2.25 2.25 0 0110.5 3h6.75A2.25 2.25 0 0119.5 5.25v13.5A2.25 2.25 0 0117.25 21h-6.75a2.25 2.25 0 01-2.25-2.25V16.5M4.875 7.5h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9A2.25 2.25 0 012.625 18.75v-9A2.25 2.25 0 014.875 7.5z" />
+    </svg>
+  );
+}
+
 function UpscaleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -675,6 +688,14 @@ function LogoIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.38 3.39a15.995 15.995 0 004.769-2.95M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function AudioIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 18.75V5.25m6 13.5V8.25M4.5 15.75v-7.5m15 10.5v-4.5" />
     </svg>
   );
 }

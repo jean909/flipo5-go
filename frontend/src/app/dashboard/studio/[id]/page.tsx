@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useLocale } from '@/app/components/LocaleContext';
-import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, listProjectVersions, removeProjectVersion, uploadProjectVersion, addProjectVersionByUrl, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, createImage, createImageInpaint, uploadAttachments, getJob, exportToCollection, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
+import { getProject, updateProject, deleteProject, addProjectItem, removeProjectItem, uploadProjectItem, removeProjectItemBackground, bulkRemoveProjectBackgrounds, listProjectVersions, removeProjectVersion, uploadProjectVersion, addProjectVersionByUrl, listContent, getToken, getMediaDisplayUrl, downloadMediaUrl, createImage, createImageInpaint, uploadAttachments, getJob, exportToCollection, type Project, type ProjectItem, type ProjectVersion, type Job } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { getOutputUrls } from '@/lib/jobOutput';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -62,6 +62,50 @@ function getDownloadExt(blob: Blob, url: string): string {
   return 'jpg';
 }
 
+function resizeImageBlob(blob: Blob, preset: 'instagram' | 'amazon'): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(objUrl);
+      const canvas = document.createElement('canvas');
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas unavailable'));
+        return;
+      }
+      if (preset === 'instagram') {
+        canvas.width = 1080;
+        canvas.height = 1080;
+        const scale = Math.max(1080 / w, 1080 / h);
+        const sw = w * scale;
+        const sh = h * scale;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 1080, 1080);
+        ctx.drawImage(img, (1080 - sw) / 2, (1080 - sh) / 2, sw, sh);
+      } else {
+        const max = 2000;
+        if (w >= h) {
+          canvas.width = max;
+          canvas.height = Math.max(1, Math.round((h * max) / w));
+        } else {
+          canvas.height = max;
+          canvas.width = Math.max(1, Math.round((w * max) / h));
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      }
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Resize failed'))), 'image/png');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objUrl);
+      reject(new Error('Image load failed'));
+    };
+    img.src = objUrl;
+  });
+}
+
 /** useParams().id can be string | string[] in some Next versions; normalize to string. */
 function useProjectId(): string {
   const params = useParams();
@@ -91,6 +135,10 @@ export default function StudioProjectPage() {
   const [pendingDeleteProject, setPendingDeleteProject] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [removingBg, setRemovingBg] = useState(false);
+  const [bulkRemovingBg, setBulkRemovingBg] = useState(false);
+  const [exportPresetOpen, setExportPresetOpen] = useState(false);
+  const [versionUndoStack, setVersionUndoStack] = useState<number[]>([]);
+  const [versionRedoStack, setVersionRedoStack] = useState<number[]>([]);
   const [downloading, setDownloading] = useState(false);
   const [exportingToCollection, setExportingToCollection] = useState(false);
   const [itemVersions, setItemVersions] = useState<ProjectVersion[] | null>(null);
@@ -258,6 +306,62 @@ export default function StudioProjectPage() {
     setMaskBlobForInpaint(null);
     setImageBoxSize(null);
   }, [selectedItem?.id]);
+
+  const versionStackKey = id && selectedItem ? `studio-version-nav:${id}:${selectedItem.id}` : null;
+
+  useEffect(() => {
+    if (!versionStackKey) return;
+    try {
+      const raw = localStorage.getItem(versionStackKey);
+      if (!raw) {
+        setVersionUndoStack([]);
+        setVersionRedoStack([]);
+        return;
+      }
+      const parsed = JSON.parse(raw) as { undo?: number[]; redo?: number[]; viewing?: number | null };
+      setVersionUndoStack(parsed.undo ?? []);
+      setVersionRedoStack(parsed.redo ?? []);
+      if (parsed.viewing !== undefined) setViewingVersionNum(parsed.viewing ?? null);
+    } catch {
+      setVersionUndoStack([]);
+      setVersionRedoStack([]);
+    }
+  }, [versionStackKey]);
+
+  useEffect(() => {
+    if (!versionStackKey) return;
+    try {
+      localStorage.setItem(versionStackKey, JSON.stringify({
+        undo: versionUndoStack,
+        redo: versionRedoStack,
+        viewing: viewingVersionNum,
+      }));
+    } catch {
+      // ignore quota errors
+    }
+  }, [versionStackKey, versionUndoStack, versionRedoStack, viewingVersionNum]);
+
+  function navigateToVersion(next: number | null) {
+    setVersionUndoStack((s) => [...s, viewingVersionNum ?? -1]);
+    setVersionRedoStack([]);
+    setViewingVersionNum(next);
+  }
+
+  function handleUndoVersion() {
+    if (versionUndoStack.length === 0) return;
+    const prev = versionUndoStack[versionUndoStack.length - 1];
+    setVersionUndoStack((s) => s.slice(0, -1));
+    setVersionRedoStack((s) => [...s, viewingVersionNum ?? -1]);
+    setViewingVersionNum(prev === -1 ? null : prev);
+  }
+
+  function handleRedoVersion() {
+    if (versionRedoStack.length === 0) return;
+    const next = versionRedoStack[versionRedoStack.length - 1];
+    setVersionRedoStack((s) => s.slice(0, -1));
+    setVersionUndoStack((s) => [...s, viewingVersionNum ?? -1]);
+    setViewingVersionNum(next === -1 ? null : next);
+  }
 
   // Reset pan when switching version (same item, different image)
   useEffect(() => {
@@ -520,6 +624,58 @@ export default function StudioProjectPage() {
     }
   }
 
+  async function handleDownloadWithPreset(preset: 'original' | 'instagram' | 'amazon') {
+    if (!referenceUrl || !effectiveDisplayUrl) return;
+    setExportPresetOpen(false);
+    if (preset === 'original') {
+      await handleDownload();
+      return;
+    }
+    setDownloading(true);
+    try {
+      let blob: Blob;
+      try {
+        blob = await downloadMediaUrl(referenceUrl);
+      } catch {
+        const res = await fetch(referenceUrl);
+        if (!res.ok) throw new Error('Fetch failed');
+        blob = await res.blob();
+      }
+      blob = await resizeImageBlob(blob, preset);
+      const suffix = preset === 'instagram' ? 'instagram-1080' : 'amazon-2000';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `flipo5-${suffix}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? 'Export failed');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleBulkRemoveBg() {
+    if (!id) return;
+    setBulkRemovingBg(true);
+    setError(null);
+    try {
+      await bulkRemoveProjectBackgrounds(id);
+      await fetchProject();
+      if (selectedItem) {
+        const { versions } = await listProjectVersions(selectedItem.id);
+        setItemVersions(versions ?? []);
+      }
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? 'Bulk remove-bg failed');
+    } finally {
+      setBulkRemovingBg(false);
+    }
+  }
+
   async function handleDownload() {
     if (!referenceUrl || !effectiveDisplayUrl) return;
     setDownloading(true);
@@ -773,10 +929,10 @@ export default function StudioProjectPage() {
                 )}
               </div>
             )}
-            <button type="button" className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" title="Undo" aria-label="Undo">
+            <button type="button" onClick={handleUndoVersion} disabled={versionUndoStack.length === 0} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 touch-manipulation" title="Undo" aria-label="Undo">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
             </button>
-            <button type="button" className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover touch-manipulation" title="Redo" aria-label="Redo">
+            <button type="button" onClick={handleRedoVersion} disabled={versionRedoStack.length === 0} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 touch-manipulation" title="Redo" aria-label="Redo">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6 6" /></svg>
             </button>
             <span className="text-xs text-theme-fg-subtle shrink-0 hidden sm:inline">{currentVersionLabel} versions</span>
@@ -793,6 +949,15 @@ export default function StudioProjectPage() {
                 <button type="button" onClick={() => { setRightPanelOpen(true); setLeftPanelOpen(false); }} className="min-h-[44px] px-3 py-2 rounded-lg border border-theme-border bg-theme-bg-hover text-theme-fg text-xs font-medium touch-manipulation" aria-label="Tools panel">{t(locale, 'studio.tools')}</button>
               )}
             </div>
+            <button
+              type="button"
+              onClick={handleBulkRemoveBg}
+              disabled={!items.some((i) => i.type === 'image') || bulkRemovingBg}
+              className="min-h-[44px] px-3 py-2 rounded text-xs font-medium shrink-0 whitespace-nowrap text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 disabled:pointer-events-none touch-manipulation"
+              title="Remove background from all images"
+            >
+              {bulkRemovingBg ? t(locale, 'common.loading') : 'Bulk remove BG'}
+            </button>
             <button
               type="button"
               onClick={handleRemoveBg}
@@ -831,7 +996,20 @@ export default function StudioProjectPage() {
             </button>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0 relative">
+            <button type="button" onClick={() => setExportPresetOpen((o) => !o)} disabled={!effectiveDisplayUrl || downloading} className="min-h-[44px] px-2 flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 touch-manipulation text-xs font-medium" title="Export preset">
+              Export
+            </button>
+            {exportPresetOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setExportPresetOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 py-1 rounded-lg bg-theme-bg border border-theme-border shadow-xl z-50 min-w-[160px]">
+                  <button type="button" onClick={() => handleDownloadWithPreset('original')} className="w-full px-3 py-2 text-left text-xs text-theme-fg hover:bg-theme-bg-hover">Original</button>
+                  <button type="button" onClick={() => handleDownloadWithPreset('instagram')} className="w-full px-3 py-2 text-left text-xs text-theme-fg hover:bg-theme-bg-hover">Instagram 1:1 (1080px)</button>
+                  <button type="button" onClick={() => handleDownloadWithPreset('amazon')} className="w-full px-3 py-2 text-left text-xs text-theme-fg hover:bg-theme-bg-hover">Amazon (2000px)</button>
+                </div>
+              </>
+            )}
             <button type="button" onClick={handleDownload} disabled={!effectiveDisplayUrl || downloading} className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-theme-fg-subtle hover:text-theme-fg hover:bg-theme-bg-hover disabled:opacity-40 touch-manipulation" title="Download">
               {downloading ? (
                 <span className="w-5 h-5 block border-2 border-theme-fg-subtle border-t-transparent rounded-full animate-spin" />
@@ -1199,7 +1377,7 @@ export default function StudioProjectPage() {
                         <div key={entry.version_num} className="relative shrink-0 w-14 h-14 min-w-[3.5rem]">
                           <button
                             type="button"
-                            onClick={() => setViewingVersionNum(entry.version_num)}
+                            onClick={() => navigateToVersion(entry.version_num)}
                             className={`w-full h-full min-h-[44px] rounded-lg overflow-hidden border-2 transition-colors touch-manipulation ${
                               active ? 'border-theme-accent ring-2 ring-theme-accent/50' : 'border-theme-border hover:border-theme-border-hover'
                             }`}
@@ -1235,7 +1413,7 @@ export default function StudioProjectPage() {
                     {versionHistory.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => setViewingVersionNum(null)}
+                        onClick={() => navigateToVersion(null)}
                         className={`shrink-0 px-2 py-1.5 rounded-lg border-2 text-xs font-medium ${
                           viewingVersionNum === null ? 'border-theme-accent bg-theme-accent/10 text-theme-accent' : 'border-theme-border hover:border-theme-border-hover text-theme-fg-subtle'
                         }`}
