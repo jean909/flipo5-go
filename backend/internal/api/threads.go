@@ -79,6 +79,7 @@ func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.invalidateThreadCache(r.Context(), id, userID)
+		s.invalidateThreadCache(r.Context(), id, userID)
 	case "unarchive":
 		if err := s.DB.UnarchiveThread(r.Context(), id, userID); err != nil {
 			if err == pgx.ErrNoRows {
@@ -88,6 +89,7 @@ func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"unarchive failed"}`, http.StatusInternalServerError)
 			return
 		}
+		s.invalidateThreadCache(r.Context(), id, userID)
 	case "delete":
 		active, _ := s.DB.ThreadHasActiveJobs(r.Context(), id)
 		if active {

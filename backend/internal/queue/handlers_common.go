@@ -48,6 +48,8 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" || job.Type == "audio" {
 		_ = h.Cache.DeleteByPrefix(ctx, "content:"+job.UserID.String()+":")
 	}
+	// Recent prompts chips on dashboard
+	_ = h.Cache.DeleteByPrefix(ctx, "prompts:recent:"+job.UserID.String()+":")
 }
 
 // Context strategy (research-based): user questions = topic anchor; full assistant replies = token-heavy.

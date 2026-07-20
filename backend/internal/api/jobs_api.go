@@ -38,7 +38,16 @@ func (s *Server) listRecentPrompts(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	prompts, err := s.DB.ListRecentPrompts(r.Context(), userID, limit)
+	ctx := r.Context()
+	cacheKey := "prompts:recent:" + userID.String() + ":" + strconv.Itoa(limit)
+	if s.Cache != nil {
+		if b, _ := s.Cache.Get(ctx, cacheKey); len(b) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(b)
+			return
+		}
+	}
+	prompts, err := s.DB.ListRecentPrompts(ctx, userID, limit)
 	if err != nil {
 		http.Error(w, `{"error":"list prompts"}`, http.StatusInternalServerError)
 		return
@@ -46,8 +55,14 @@ func (s *Server) listRecentPrompts(w http.ResponseWriter, r *http.Request) {
 	if prompts == nil {
 		prompts = []map[string]string{}
 	}
+	out := map[string]interface{}{"prompts": prompts}
+	if s.Cache != nil {
+		if b, err := json.Marshal(out); err == nil {
+			_ = s.Cache.Set(ctx, cacheKey, b)
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
+	json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) listContent(w http.ResponseWriter, r *http.Request) {

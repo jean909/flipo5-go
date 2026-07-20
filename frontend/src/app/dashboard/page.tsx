@@ -317,8 +317,7 @@ export default function DashboardPage() {
       if (typing) return;
       if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
         e.preventDefault();
-        const el = document.querySelector<HTMLTextAreaElement>('textarea[data-prompt="true"]');
-        el?.focus();
+        focusPromptInput();
         return;
       }
       if (e.key === '1') setMode('chat');
@@ -1228,9 +1227,7 @@ export default function DashboardPage() {
                         if (rp.type === 'image' || rp.type === 'video' || rp.type === 'chat') {
                           setMode(rp.type as Mode);
                         }
-                        requestAnimationFrame(() => {
-                          document.querySelector<HTMLTextAreaElement>('textarea[data-prompt="true"]')?.focus();
-                        });
+                        focusPromptInput();
                       }}
                       className="btn-tap max-w-[12rem] truncate px-2.5 py-1 rounded-lg text-[11px] border border-theme-border-subtle bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:border-theme-border"
                     >
@@ -1239,7 +1236,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               )}
-              <p className="text-center text-[10px] text-theme-fg-subtle hidden sm:block">
+              <p className="text-center text-[10px] text-theme-fg-subtle sr-only sm:not-sr-only sm:block">
                 / focus · 1 chat · 2 image · 3 video · Esc clear
               </p>
             </div>
