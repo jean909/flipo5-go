@@ -361,6 +361,7 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
               {t(locale, 'nav.businessZone')}
             </p>
             {[
+              { href: '/dashboard/branding', labelKey: 'nav.branding', icon: BrandingIcon },
               { href: '/dashboard/logo', labelKey: 'nav.logo', icon: LogoIcon },
               { href: '/dashboard/audio', labelKey: 'nav.audio', icon: AudioIcon },
               { href: '/dashboard/seo', labelKey: 'nav.seo', icon: SEOIcon },
@@ -388,6 +389,9 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
         )}
         {effectiveCollapsed && (
           <>
+            <Link href="/dashboard/branding" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/branding') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.branding')}>
+              <BrandingIcon className="w-5 h-5 shrink-0" />
+            </Link>
             <Link href="/dashboard/logo" className={`flex items-center justify-center px-3 py-2.5 min-h-[44px] rounded-md text-sm transition-colors ${pathname.startsWith('/dashboard/logo') ? 'bg-theme-bg-hover text-theme-fg' : 'text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg'}`} title={t(locale, 'nav.logo')}>
               <LogoIcon className="w-5 h-5 shrink-0" />
             </Link>
@@ -702,6 +706,15 @@ function LogoIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.38 3.39a15.995 15.995 0 004.769-2.95M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function BrandingIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.38 3.39a15.995 15.995 0 004.769-2.95M15.75 6.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636" />
     </svg>
   );
 }

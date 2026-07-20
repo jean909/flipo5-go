@@ -92,6 +92,7 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/outline", s.createOutline)
 		r.Post("/translate", s.createTranslate)
 		r.Post("/logo", s.createLogo)
+		r.Post("/branding", s.createBranding)
 		r.Post("/audio", s.createAudio)
 		r.Route("/products", func(r chi.Router) {
 			r.Get("/", s.listProducts)

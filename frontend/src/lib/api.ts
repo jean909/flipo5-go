@@ -1263,6 +1263,47 @@ export async function createLogoJob(params: {
   return res.json();
 }
 
+export interface BrandingDNA {
+  brand_name: string;
+  tagline?: string;
+  tone?: string;
+  voice?: string;
+  audience?: string;
+  colors?: { primary?: string; secondary?: string; accent?: string };
+  fonts?: string;
+  assets?: Array<{ label?: string; type?: string; prompt?: string; aspect_ratio?: string }>;
+}
+
+export interface BrandingJobRef {
+  job_id: string;
+  type: string;
+  label: string;
+  aspect_ratio?: string;
+}
+
+export async function createBranding(params: {
+  description: string;
+  brand_name?: string;
+  image_urls?: string[];
+}): Promise<{ dna: BrandingDNA; jobs: BrandingJobRef[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/branding`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      description: params.description.trim(),
+      brand_name: params.brand_name?.trim() || '',
+      image_urls: params.image_urls ?? [],
+    }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Branding failed');
+  }
+  return res.json();
+}
+
 export async function createAudioJob(params: {
   prompt: string;
   instrumental?: boolean;
