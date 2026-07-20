@@ -10,7 +10,7 @@ import { useToast } from '@/app/components/ToastContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
-import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, updateProfile, listContent, listThreads, listRecentPrompts, type User, type Job, type Thread } from '@/lib/api';
+import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, getToken, getMediaDisplayUrl, updateProfile, listContent, listThreads, listRecentPrompts, type User, type Job, type Thread } from '@/lib/api';
 import { extractImageInputsFromJobInput } from '@/lib/promptIntent';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
@@ -86,6 +86,8 @@ export default function DashboardPage() {
   const [threadData, setThreadData] = useState<Thread | null>(null);
   const [threadJobs, setThreadJobs] = useState<Job[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [threadLoadError, setThreadLoadError] = useState(false);
+  const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [lastSentPrompt, setLastSentPrompt] = useState<string>('');
   const [pendingUserMessage, setPendingUserMessage] = useState<string>('');
   const [pendingUserMessageThreadId, setPendingUserMessageThreadId] = useState<string | null>(null);
@@ -145,8 +147,13 @@ export default function DashboardPage() {
     ];
     return docTypes.includes(file.type);
   }, []);
+  const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
   const addAttachment = useCallback((file: File) => {
     if (!isAcceptedAttachment(file)) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      showToast('upload.fileTooLarge');
+      return;
+    }
     const id = Math.random().toString(36).slice(2);
     const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
     setAttachments((prev) => [...prev, { id, file, previewUrl }]);
@@ -155,7 +162,7 @@ export default function DashboardPage() {
       setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       setVideoFile(null);
     }
-  }, [mode, isAcceptedAttachment]);
+  }, [mode, isAcceptedAttachment, showToast]);
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
       const one = prev.find((a) => a.id === id);
@@ -201,11 +208,15 @@ export default function DashboardPage() {
   const addVideoFile = useCallback((file: File) => {
     const valid = ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type);
     if (!valid) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      showToast('upload.fileTooLarge');
+      return;
+    }
     setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
     setVideoFile(file);
     clearAttachments();
     setReferenceImageUrls([]);
-  }, [clearAttachments]);
+  }, [clearAttachments, showToast]);
   const removeVideoFile = useCallback(() => {
     setVideoPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setVideoFile(null);
@@ -363,38 +374,63 @@ export default function DashboardPage() {
 
   const urlThreadId = searchParams.get('thread');
   const effectiveThreadId = incognito ? incognitoThreadId : threadId;
+
   useEffect(() => {
-    const loadId = urlThreadId ?? (incognito ? incognitoThreadId : null);
-    if (loadId && loadId !== threadId) {
-      setThreadId(loadId);
+    let cancelled = false;
+    const refresh = () => {
+      getToken().then((tok) => { if (!cancelled) setMediaToken(tok); }).catch(() => {});
+    };
+    refresh();
+    const id = setInterval(refresh, 50_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const loadThread = useCallback((loadId: string, opts?: { clear?: boolean }) => {
+    if (opts?.clear !== false) {
       setThreadData(null);
       setThreadJobs([]);
       setReplaceMap({});
       setPendingUserMessage('');
       setPendingUserMessageThreadId(null);
-      setThreadLoading(true);
-      setHasStarted(true);
+    }
+    setThreadLoadError(false);
+    setThreadLoading(true);
+    setHasStarted(true);
+    let cancelled = false;
+    getThread(loadId)
+      .then((r) => {
+        if (cancelled) return;
+        setThreadData(r.thread ?? null);
+        setThreadJobs(r.jobs ?? []);
+        setThreadLoadError(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const notFound = err instanceof Error && err.message === 'not_found';
+        if (notFound) {
+          setThreadData(null);
+          setThreadJobs([]);
+          setThreadId(null);
+          setThreadLoadError(false);
+          if (!incognito) router.replace('/dashboard', { scroll: false });
+          else setIncognitoThreadId(null);
+        } else {
+          setThreadLoadError(true);
+        }
+      })
+      .finally(() => { if (!cancelled) setThreadLoading(false); });
+    return () => { cancelled = true; };
+  }, [incognito, router, setIncognitoThreadId]);
+
+  useEffect(() => {
+    const loadId = urlThreadId ?? (incognito ? incognitoThreadId : null);
+    if (loadId && loadId !== threadId) {
+      setThreadId(loadId);
       if (urlThreadId) {
         setIncognito(false);
         setIncognitoThreadId(null);
       }
-      let cancelled = false;
-      getThread(loadId)
-        .then((r) => {
-          if (cancelled) return;
-          setThreadData(r.thread ?? null);
-          setThreadJobs(r.jobs ?? []);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setThreadData(null);
-          setThreadJobs([]);
-          setThreadId(null);
-          if (!incognito) router.replace('/dashboard', { scroll: false });
-          else setIncognitoThreadId(null);
-        })
-        .finally(() => { if (!cancelled) setThreadLoading(false); });
-      return () => { cancelled = true; };
+      return loadThread(loadId);
     }
     if (!incognito && !urlThreadId && threadId) {
       setThreadId(null);
@@ -403,12 +439,13 @@ export default function DashboardPage() {
       setReplaceMap({});
       setPendingUserMessage('');
       setPendingUserMessageThreadId(null);
+      setThreadLoadError(false);
       // Fall back to the dashboard landing view — otherwise hasStarted stays true
       // and the chat UI keeps rendering even though no thread is selected.
       setHasStarted(false);
       setPrompt('');
     }
-  }, [urlThreadId, incognito, incognitoThreadId, router]);
+  }, [urlThreadId, incognito, incognitoThreadId, router, loadThread]);
 
   const effectiveThreadIdRef = useRef(effectiveThreadId);
   effectiveThreadIdRef.current = effectiveThreadId;
@@ -420,8 +457,19 @@ export default function DashboardPage() {
       if (effectiveThreadIdRef.current !== id) return;
       setThreadData(r.thread ?? null);
       setThreadJobs(r.jobs ?? []);
-    }).catch(() => { if (effectiveThreadIdRef.current === id) setThreadJobs([]); });
+      setThreadLoadError(false);
+    }).catch(() => { /* keep existing jobs on transient errors */ });
   }, []);
+
+  const retryLoadThread = useCallback(() => {
+    const id = effectiveThreadIdRef.current;
+    if (!id) return;
+    loadThread(id, { clear: false });
+  }, [loadThread]);
+
+  const handleJobCancel = useCallback(() => {
+    refreshThread();
+  }, [refreshThread]);
 
   const scheduleThreadRefresh = useCallback((tid: string | null) => {
     if (!tid) return;
@@ -810,7 +858,16 @@ export default function DashboardPage() {
                 aria-label="Attach image"
               >
                 {(referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
-                  <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="h-full w-full object-cover" decoding="async" />
+                  <img
+                    src={
+                      referenceImageUrls[0]
+                        ? (mediaToken ? getMediaDisplayUrl(referenceImageUrls[0], mediaToken) || referenceImageUrls[0] : referenceImageUrls[0])
+                        : attachments[0]!.previewUrl
+                    }
+                    alt=""
+                    className="h-full w-full object-cover"
+                    decoding="async"
+                  />
                 ) : (
                   <DocumentIcon className="h-5 w-5 shrink-0 text-theme-fg-muted" />
                 )}
@@ -914,7 +971,7 @@ export default function DashboardPage() {
             ))}
             {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
               <div key={url} className="relative shrink-0 group">
-                <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
+                <img src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
                 <button type="button" onClick={(e) => { e.stopPropagation(); removeReferenceImage(url); }} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}>
                   <XIcon className="w-2.5 h-2.5" />
                 </button>
@@ -1304,7 +1361,16 @@ export default function DashboardPage() {
                         aria-label="Attach image"
                       >
                         {(referenceImageUrls[0] || attachments[0]?.previewUrl) ? (
-                          <img src={referenceImageUrls[0] || attachments[0]!.previewUrl} alt="" className="h-full w-full object-cover" decoding="async" />
+                          <img
+                            src={
+                              referenceImageUrls[0]
+                                ? (mediaToken ? getMediaDisplayUrl(referenceImageUrls[0], mediaToken) || referenceImageUrls[0] : referenceImageUrls[0])
+                                : attachments[0]!.previewUrl
+                            }
+                            alt=""
+                            className="h-full w-full object-cover"
+                            decoding="async"
+                          />
                         ) : (
                           <DocumentIcon className="h-5 w-5 shrink-0 text-theme-fg-muted" />
                         )}
@@ -1382,7 +1448,7 @@ export default function DashboardPage() {
                     ))}
                     {(mode === 'image' || (mode === 'video' && videoModel === '1' && !videoFile)) && (referenceImageUrls.length > 0 ? referenceImageUrls.slice(1) : referenceImageUrls).map((url) => (
                       <div key={url} className="relative shrink-0 group">
-                        <img src={url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
+                        <img src={mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url} alt="" className="w-8 h-8 rounded-full object-cover border border-theme-border" loading="lazy" decoding="async" />
                         <button type="button" onClick={(e) => { e.stopPropagation(); removeReferenceImage(url); }} className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-theme-bg-overlay-strong border border-theme-border-hover text-theme-fg flex items-center justify-center hover:bg-theme-bg-hover opacity-90 hover:opacity-100 transition-opacity" aria-label={t(locale, 'common.remove')}><XIcon className="w-2.5 h-2.5" /></button>
                       </div>
                     ))}
@@ -1560,10 +1626,26 @@ export default function DashboardPage() {
           <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full scrollbar-subtle">
             <div ref={chatContentRef} className="w-full max-w-2xl mx-auto flex flex-col py-4 gap-3 px-4">
             {threadLoading && (
-              <p className="text-theme-fg-subtle text-sm py-4">{t(locale, 'common.loading')}</p>
+              <div className="flex flex-col gap-3 py-4" aria-busy="true" aria-label={t(locale, 'common.loading')}>
+                <div className="h-14 w-[70%] ml-auto rounded-2xl bg-theme-bg-subtle animate-pulse-subtle" />
+                <div className="h-28 w-[80%] rounded-2xl bg-theme-bg-subtle animate-pulse-subtle" />
+                <div className="h-14 w-[55%] ml-auto rounded-2xl bg-theme-bg-subtle animate-pulse-subtle" />
+              </div>
+            )}
+            {threadLoadError && !threadLoading && (
+              <div className="flex flex-col items-start gap-2 py-4">
+                <p className="text-sm text-theme-danger">{t(locale, 'thread.loadFailed')}</p>
+                <button
+                  type="button"
+                  onClick={retryLoadThread}
+                  className="btn-tap text-sm px-3 py-1.5 rounded-lg border border-theme-border-hover bg-theme-bg-hover text-theme-fg hover:bg-theme-bg-hover-strong"
+                >
+                  {t(locale, 'common.retry')}
+                </button>
+              </div>
             )}
             <AnimatePresence initial={false}>
-            {chatRenderModel.displayList.map((job) => {
+            {!threadLoading && chatRenderModel.displayList.map((job) => {
                 const promptForRegenerate = (job.input as { prompt?: string })?.prompt;
                 const isRegeneratedSlot = job.id !== '_pending' && chatRenderModel.regeneratedIds.has(job.id);
                 const isLastReply = job.id === chatRenderModel.lastChatJobId;
@@ -1588,6 +1670,7 @@ export default function DashboardPage() {
                     locale={locale}
                     dark
                     variant="chat"
+                    mediaToken={mediaToken}
                     onNotFound={job.id === jobId ? handleActiveJobNotFound : undefined}
                     onUseAsReference={addReferenceImage}
                     regenerateUsed={isRegeneratedSlot}
@@ -1607,7 +1690,7 @@ export default function DashboardPage() {
                             : undefined
                     }
                     onRetry={handleJobRetry}
-                    onCancel={undefined}
+                    onCancel={handleJobCancel}
                     onStartThreadFromText={handleStartThreadFromText}
                   />
                   )}

@@ -78,15 +78,23 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
   useEffect(() => {
     if (!sessionsExpanded || effectiveCollapsed) return;
     let cancelled = false;
-    setThreadsLoading(true);
-    listThreads()
-      .then((r) => {
-        if (cancelled) return;
-        setThreads(r.threads ?? []);
-      })
-      .catch(() => { if (!cancelled) setThreads([]); })
-      .finally(() => { if (!cancelled) setThreadsLoading(false); });
-    return () => { cancelled = true; };
+    const refresh = () => {
+      setThreadsLoading(true);
+      listThreads()
+        .then((r) => {
+          if (cancelled) return;
+          setThreads(r.threads ?? []);
+        })
+        .catch(() => { if (!cancelled) setThreads([]); })
+        .finally(() => { if (!cancelled) setThreadsLoading(false); });
+    };
+    refresh();
+    const onChanged = () => { if (!cancelled) refresh(); };
+    window.addEventListener('flipo5:threads-changed', onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('flipo5:threads-changed', onChanged);
+    };
   }, [sessionsExpanded, overlay, collapsed]);
 
   async function logout() {

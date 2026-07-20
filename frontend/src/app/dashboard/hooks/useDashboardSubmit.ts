@@ -140,8 +140,9 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
         if (effectiveIncognito) ctx.setIncognitoThreadId(res.thread_id);
         if (!tid) {
           if (!effectiveIncognito) ctx.routerReplace(`/dashboard?thread=${res.thread_id}`);
-          setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => ctx.setThreadJobs([])), 400);
+          setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => {}), 400);
           setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flipo5:threads-changed'));
         }
       }
       ctx.clearAttachments();
@@ -196,8 +197,9 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
         if (effectiveIncognito) ctx.setIncognitoThreadId(res.thread_id);
         if (!tid) {
           if (!effectiveIncognito) ctx.routerReplace(`/dashboard?thread=${res.thread_id}`);
-          setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => ctx.setThreadJobs([])), 400);
+          setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => {}), 400);
           setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flipo5:threads-changed'));
         }
       }
       ctx.clearAttachments();
@@ -274,8 +276,9 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
         if (effectiveIncognito) ctx.setIncognitoThreadId(res.thread_id);
         if (!tid) {
           if (!effectiveIncognito) ctx.routerReplace(`/dashboard?thread=${res.thread_id}`);
-          setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => ctx.setThreadJobs([])), 400);
+          setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => {}), 400);
           setTimeout(() => ctx.getThread(res.thread_id!).then((r) => { ctx.setThreadData(r.thread ?? null); ctx.setThreadJobs(r.jobs ?? []); }).catch(() => {}), 2000);
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flipo5:threads-changed'));
         }
       }
       ctx.clearAttachments();

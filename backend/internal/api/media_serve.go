@@ -36,7 +36,7 @@ func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"url not allowed"}`, http.StatusBadRequest)
 		return
 	}
-	resp, err := http.Get(urlStr)
+	resp, err := (&http.Client{Timeout: 60 * time.Second}).Get(urlStr)
 	if err != nil {
 		http.Error(w, `{"error":"fetch failed"}`, http.StatusBadGateway)
 		return

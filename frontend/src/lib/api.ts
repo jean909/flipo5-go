@@ -292,7 +292,10 @@ export async function uploadAttachments(files: File[]): Promise<string[]> {
     throw new Error((e as { error?: string }).error || 'Upload failed');
   }
   const data = (await res.json()) as { urls?: string[] };
-  return data.urls ?? [];
+  const urls = data.urls ?? [];
+  if (urls.length === 0) throw new Error('Upload failed');
+  if (urls.length < files.length) throw new Error('Some files failed to upload');
+  return urls;
 }
 
 export interface Thread {
@@ -343,7 +346,8 @@ export async function getThread(id: string): Promise<{ thread: Thread; jobs: Job
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_URL}/api/threads/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error('Session not found');
+  if (res.status === 404) throw new Error('not_found');
+  if (!res.ok) throw new Error('load_failed');
   return res.json();
 }
 

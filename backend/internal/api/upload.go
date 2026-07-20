@@ -61,7 +61,13 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 			log.Printf("upload store %s: %v", fh.Filename, err)
 			continue
 		}
-		urls = append(urls, s.Store.URL(key))
+	urls = append(urls, s.Store.URL(key))
+	}
+	if len(urls) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "upload failed (file too large or invalid)"})
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"urls": urls})

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
@@ -53,7 +54,7 @@ func (h *Handlers) VectorizeHandler(ctx context.Context, t *asynq.Task) error {
 		}
 		imgBody = body
 	} else {
-		resp, err := http.Get(src)
+		resp, err := (&http.Client{Timeout: 60 * time.Second}).Get(src)
 		if err != nil || resp.StatusCode != http.StatusOK {
 			if resp != nil {
 				resp.Body.Close()

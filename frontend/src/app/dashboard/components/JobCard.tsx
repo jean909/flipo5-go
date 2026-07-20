@@ -1,21 +1,22 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { getJob, getToken, getJobStreamUrl, cancelJob, retryJob } from '@/lib/api';
+import { getJob, getToken, getJobStreamUrl, cancelJob, retryJob, getMediaDisplayUrl } from '@/lib/api';
 import type { Job } from '@/lib/api';
 import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
-import { getOutputUrls } from '@/lib/jobOutput';
+import { getOutputRefs } from '@/lib/jobOutput';
 import { ImageGallery } from './ImageGallery';
 import { ImageViewModal } from './ImageViewModal';
 import { ResultActionsBar } from '@/components/ResultActionsBar';
 import { jobErrorDisplay } from '@/lib/i18n';
+import { useToast } from '@/app/components/ToastContext';
 
 // Markdown components: render AI output (including tables) without requiring prompt instructions
 const markdownComponents = {
@@ -76,6 +77,7 @@ type JobCardProps = {
   jobId: string;
   locale: Locale;
   dark?: boolean;
+  mediaToken?: string | null;
   onNotFound?: () => void;
   onUseAsReference?: (url: string) => void;
   onRegenerate?: () => void;
@@ -94,6 +96,7 @@ function areEqualJobCardProps(prev: JobCardProps, next: JobCardProps): boolean {
     prev.jobId === next.jobId &&
     prev.locale === next.locale &&
     prev.dark === next.dark &&
+    prev.mediaToken === next.mediaToken &&
     prev.regenerateUsed === next.regenerateUsed &&
     prev.variant === next.variant &&
     // Re-render only when callback availability toggles (affects UI controls),
@@ -122,6 +125,7 @@ function JobCardInner({
   jobId,
   locale,
   dark,
+  mediaToken = null,
   onNotFound,
   onUseAsReference,
   onRegenerate,
@@ -131,6 +135,7 @@ function JobCardInner({
   regenerateUsed = false,
   variant = 'card',
 }: JobCardProps) {
+  const { showToast } = useToast();
   const [job, setJob] = useState<Job | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [retryLoading, setRetryLoading] = useState(false);
@@ -159,7 +164,7 @@ function JobCardInner({
       setJob((j) => (j ? { ...j, status: 'cancelled' } : null));
       onCancel?.();
     } catch {
-      // ignore
+      showToast('toast.cancelFailed');
     } finally {
       setCancelLoading(false);
     }
@@ -171,7 +176,7 @@ function JobCardInner({
       const { job_id: newId } = await retryJob(jobId);
       onRetry?.(jobId, newId);
     } catch {
-      // ignore
+      showToast('toast.retryFailed');
     } finally {
       setRetryLoading(false);
     }
@@ -213,7 +218,7 @@ function JobCardInner({
   // Retry fetch when completed image/video job has no URLs (mirror may still be updating)
   useEffect(() => {
     if (!job || (job.type !== 'image' && job.type !== 'video') || job.status !== 'completed' || retryCount >= 3) return;
-    const urls = getOutputUrls(job.output);
+    const urls = getOutputRefs(job.output);
     if (urls.length > 0) return;
     let cancelled = false;
     const t = setTimeout(() => {
@@ -314,19 +319,31 @@ function JobCardInner({
   const parsedOutput = useMemo(() => {
     const out = (job?.output ?? null) as { output?: string | string[] } | string[] | null;
     let outputStr = '';
-    let outputArr: string[] = [];
     if (Array.isArray(out)) {
-      outputStr = out.filter((x): x is string => typeof x === 'string').join('');
-      outputArr = out.filter((x): x is string => typeof x === 'string' && x.startsWith('http'));
+      outputStr = out.filter((x): x is string => typeof x === 'string' && !x.startsWith('http') && !x.startsWith('uploads/')).join('');
     } else if (out && typeof out === 'object') {
       outputStr = typeof out.output === 'string' ? out.output : '';
-      outputArr = Array.isArray(out.output) ? out.output.filter((x): x is string => typeof x === 'string' && x.startsWith('http')) : [];
-      if (!outputStr && outputArr.length > 0) outputStr = outputArr.filter((x): x is string => typeof x === 'string').join('');
+      if (!outputStr && Array.isArray(out.output)) {
+        outputStr = out.output
+          .filter((x): x is string => typeof x === 'string' && !x.startsWith('http') && !x.startsWith('uploads/'))
+          .join('');
+      }
     }
-    const imageUrls = outputArr.length > 0 ? outputArr : getOutputUrls(job?.output ?? null);
-    return { outputStr, outputArr, imageUrls };
+    const imageUrls = getOutputRefs(job?.output ?? null);
+    return { outputStr, imageUrls };
   }, [job?.output]);
-  const { outputStr, outputArr, imageUrls } = parsedOutput;
+  const { outputStr, imageUrls } = parsedOutput;
+  const displayUrls = useMemo(
+    () => imageUrls.map((u) => (mediaToken ? getMediaDisplayUrl(u, mediaToken) || u : u)),
+    [imageUrls, mediaToken]
+  );
+  const resolveRefFromDisplay = useCallback(
+    (displayUrl: string) => {
+      const i = displayUrls.indexOf(displayUrl);
+      return i >= 0 ? imageUrls[i] : displayUrl;
+    },
+    [displayUrls, imageUrls]
+  );
   const completedChatMarkdown = useMemo(() => (
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
       {outputStr}
@@ -484,7 +501,12 @@ function JobCardInner({
     if (urls.length > 0) {
       return (
         <div className="flex flex-col items-start">
-          <ImageGallery urls={urls} variant="chat" locale={locale} onUseAsReference={onUseAsReference} />
+          <ImageGallery
+            urls={displayUrls}
+            variant="chat"
+            locale={locale}
+            onUseAsReference={onUseAsReference ? (u) => onUseAsReference(resolveRefFromDisplay(u)) : undefined}
+          />
           <ResultActionsBar
             jobId={jobId}
             jobType="image"
@@ -534,8 +556,9 @@ function JobCardInner({
 
   // Video job: completed = video player (or gradient loader while URLs loading)
   if (job && job.type === 'video' && job.status === 'completed') {
-    const videoUrl = imageUrls[0];
-    if (!videoUrl && retryCount < 3) {
+    const videoRef = imageUrls[0];
+    const videoUrl = displayUrls[0];
+    if (!videoRef && retryCount < 3) {
       return (
         <div className="flex justify-start">
           <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
@@ -575,7 +598,7 @@ function JobCardInner({
               jobId={jobId}
               jobType="video"
               initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
-              mediaUrls={[videoUrl]}
+              mediaUrls={[videoRef]}
               threadId={job.thread_id ?? null}
               showRegenerate={!!(job.input as { prompt?: string })?.prompt}
               onRegenerate={onRegenerate}
@@ -612,14 +635,15 @@ function JobCardInner({
   // Chat variant: completed = balon stânga (markdown, liste, linkuri)
   if (isChat && job.status === 'completed') {
     const hasText = outputStr.length > 0;
-    const hasImages = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http')).length > 0;
+    const hasImages = imageUrls.length > 0;
     const attachmentUrls = (job.input as { attachment_urls?: string[] } | null)?.attachment_urls ?? [];
     const attachmentTypes = (job.input as { attachment_content_types?: string[] } | null)?.attachment_content_types ?? [];
-    const validAttachments = attachmentUrls.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+    const validAttachments = attachmentUrls.filter((u): u is string => typeof u === 'string' && (u.startsWith('http') || u.startsWith('uploads/')));
     const isImageAttachment = (i: number) => {
       const t = attachmentTypes[i];
       return !t || t.startsWith('image/');
     };
+    const attDisplay = (url: string) => (mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url);
     if (!hasText && !hasImages) {
       return (
         <div className="flex justify-start flex-col items-start">
@@ -629,7 +653,7 @@ function JobCardInner({
               <div className="flex flex-wrap gap-1 mt-2">
                 {validAttachments.map((url, i) =>
                   isImageAttachment(i) ? (
-                    <img key={url} src={url} alt="" className="w-12 h-12 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
+                    <img key={url} src={attDisplay(url)} alt="" className="w-12 h-12 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
                   ) : (
                     <div key={url} className="w-12 h-12 rounded border border-theme-border shrink-0 bg-theme-bg-elevated flex items-center justify-center" title="Document">
                       <DocumentIcon className="w-6 h-6 text-theme-fg-muted" />
@@ -651,7 +675,6 @@ function JobCardInner({
         </div>
       );
     }
-    const chatMediaUrls = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http'));
     return (
       <div className="flex justify-start flex-col items-start">
         <div className="max-w-[min(85vw,680px)] min-w-0 rounded-2xl rounded-tl-md bg-theme-bg-subtle px-4 py-2.5 overflow-visible break-words">
@@ -660,14 +683,14 @@ function JobCardInner({
               {completedChatMarkdown}
             </div>
           )}
-          {chatMediaUrls.map((url) => (
-            <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded-lg" decoding="async" />
+          {displayUrls.map((url, i) => (
+            <img key={imageUrls[i] ?? url} src={url} alt="" className="mt-2 max-w-full h-auto rounded-lg" decoding="async" />
           ))}
           {validAttachments.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {validAttachments.map((url, i) =>
                 isImageAttachment(i) ? (
-                  <img key={url} src={url} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
+                  <img key={url} src={attDisplay(url)} alt="" className="w-10 h-10 object-cover rounded border border-theme-border shrink-0" loading="lazy" decoding="async" />
                 ) : (
                   <div key={url} className="w-10 h-10 rounded border border-theme-border shrink-0 bg-theme-bg-elevated flex items-center justify-center" title="Document">
                     <DocumentIcon className="w-5 h-5 text-theme-fg-muted" />
@@ -682,7 +705,7 @@ function JobCardInner({
           jobType="chat"
           initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
           text={outputStr}
-          mediaUrls={chatMediaUrls}
+          mediaUrls={imageUrls.length > 0 ? imageUrls : validAttachments.filter((_, i) => isImageAttachment(i))}
           threadId={job.thread_id ?? null}
           showRegenerate={outputStr.length > 0}
           regenerateUsed={regenerateUsed}
@@ -709,7 +732,7 @@ function JobCardInner({
   }
 
   // Card variant (default)
-  const cardOutputUrls = outputArr.filter((url): url is string => typeof url === 'string' && url.length > 0 && url.startsWith('http'));
+  const cardOutputUrls = displayUrls;
   return (
     <div className={cardCls}>
       <div className="flex items-center justify-between text-sm flex-wrap gap-2">
@@ -734,10 +757,10 @@ function JobCardInner({
       {job.status === 'completed' && job.output && (
         <>
           {outputStr && <p className={`mt-2 text-sm whitespace-pre-wrap ${dark ? 'text-theme-fg' : 'text-black'}`}>{outputStr}</p>}
-          {cardOutputUrls.map((url) => (
-            <img key={url} src={url} alt="" className="mt-2 max-w-full h-auto rounded border border-theme-border-subtle" decoding="async" />
+          {cardOutputUrls.map((url, i) => (
+            <img key={imageUrls[i] ?? url} src={url} alt="" className="mt-2 max-w-full h-auto rounded border border-theme-border-subtle" decoding="async" />
           ))}
-          {!outputStr && outputArr.length === 0 && job.output && typeof job.output === 'object' && 'output' in job.output && (
+          {!outputStr && imageUrls.length === 0 && job.output && typeof job.output === 'object' && 'output' in job.output && (
             <pre className={`mt-2 text-xs overflow-auto ${preCls}`}>{JSON.stringify(job.output)}</pre>
           )}
           <ResultActionsBar
@@ -745,7 +768,7 @@ function JobCardInner({
             jobType={job.type as 'chat' | 'image' | 'video'}
             initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
             text={outputStr}
-            mediaUrls={cardOutputUrls}
+            mediaUrls={imageUrls}
             threadId={job.thread_id ?? null}
             showRegenerate={job.type === 'chat' && outputStr.length > 0}
             regenerateUsed={regenerateUsed}

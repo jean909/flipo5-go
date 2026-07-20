@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import type { Locale } from '@/lib/i18n';
-import { downloadMediaUrl, setJobFeedback } from '@/lib/api';
+import { fetchBlobForJobRef, setJobFeedback } from '@/lib/api';
 import { zipBlobsAndDownload, zipEntryName } from '@/lib/zipExport';
 
 const btnCls =
@@ -85,7 +85,7 @@ export function ResultActionsBar({
     setDownloading(true);
     try {
       if (mediaUrls.length === 1) {
-        const blob = await downloadMediaUrl(mediaUrls[0]);
+        const blob = await fetchBlobForJobRef(mediaUrls[0]);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = jobType === 'video' ? 'flipo5-video.mp4' : 'flipo5-image.png';
@@ -95,7 +95,7 @@ export function ResultActionsBar({
         const entries: { name: string; blob: Blob }[] = [];
         for (let i = 0; i < mediaUrls.length; i++) {
           try {
-            const blob = await downloadMediaUrl(mediaUrls[i]);
+            const blob = await fetchBlobForJobRef(mediaUrls[i]);
             entries.push({ name: zipEntryName(i, blob, mediaUrls[i], `flipo5-${jobType}`), blob });
           } catch {
             // skip failed url
