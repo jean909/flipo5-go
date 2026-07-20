@@ -126,6 +126,24 @@ func (s *Subscriber) Close() error {
 	return nil
 }
 
+// Publish mirrors Publisher.Publish so the API process can push job-stream updates (e.g. cancel).
+func (s *Subscriber) Publish(ctx context.Context, jobID uuid.UUID, output string, done bool) error {
+	if s == nil || s.rdb == nil {
+		return nil
+	}
+	msg := ChunkMsg{Output: output, Done: done}
+	b, _ := json.Marshal(msg)
+	return s.rdb.Publish(ctx, channelKey(jobID), string(b)).Err()
+}
+
+// PublishRaw mirrors Publisher.PublishRaw for user-level job channels.
+func (s *Subscriber) PublishRaw(ctx context.Context, channel, message string) error {
+	if s == nil || s.rdb == nil {
+		return nil
+	}
+	return s.rdb.Publish(ctx, channel, message).Err()
+}
+
 // NoopPublisher used when Redis not configured
 type NoopPublisher struct{}
 

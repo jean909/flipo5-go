@@ -236,7 +236,7 @@ func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				sendSSE(outputText(next), next.Status)
-				if next.Status == "completed" || next.Status == "failed" {
+				if next.Status == "completed" || next.Status == "failed" || next.Status == "cancelled" {
 					return
 				}
 			}
@@ -255,7 +255,7 @@ func (s *Server) jobStreamSSE(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			sendSSE(outputText(next), next.Status)
-			if next.Status == "completed" || next.Status == "failed" {
+			if next.Status == "completed" || next.Status == "failed" || next.Status == "cancelled" {
 				return
 			}
 		}

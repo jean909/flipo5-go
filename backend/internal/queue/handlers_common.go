@@ -35,7 +35,6 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 	if h.Cache == nil || job == nil {
 		return
 	}
-	// Invalidate thread cache if job belongs to a thread
 	if job.ThreadID != nil {
 		keys := []string{
 			"thread:" + job.UserID.String() + ":" + job.ThreadID.String(),
@@ -44,22 +43,19 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 		}
 		_ = h.Cache.Delete(ctx, keys...)
 	}
-	// Invalidate content cache if job produces media content
 	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" || job.Type == "audio" {
 		_ = h.Cache.DeleteByPrefix(ctx, "content:"+job.UserID.String()+":")
 	}
-	// Recent prompts chips on dashboard
 	_ = h.Cache.DeleteByPrefix(ctx, "prompts:recent:"+job.UserID.String()+":")
 }
 
-// Context strategy (research-based): user questions = topic anchor; full assistant replies = token-heavy.
-// We send: (1) list of user questions = what was discussed; (2) last 2 full exchanges = immediate follow-up.
-const maxUserQuestions = 12      // older: only user prompts (topics)
-const maxRecentFullExchanges = 2 // last N: full user+assistant for "explică mai simplu" etc
-const maxUserQuestionLen = 120   // truncate very long user prompts in topics list
-const maxRecentOutputLen = 800   // truncate assistant in recent exchanges (enough for follow-up)
+// Context strategy: topics from older turns; last N full exchanges including image/video.
+const maxUserQuestions = 14
+const maxRecentFullExchanges = 4
+const maxUserQuestionLen = 140
+const maxRecentOutputLen = 900
 
-// buildChatContext: older exchanges = user questions only; last 2 = full. Saves tokens, keeps context.
+// buildChatContext builds prompt history so follow-ups like "make it warmer" / "what did I generate?" work.
 func buildChatContext(db *store.DB, ctx context.Context, threadID *uuid.UUID, userID, currentJobID uuid.UUID) string {
 	if threadID == nil {
 		return ""
@@ -70,7 +66,10 @@ func buildChatContext(db *store.DB, ctx context.Context, threadID *uuid.UUID, us
 	}
 	var completed []store.Job
 	for _, j := range jobs {
-		if j.ID == currentJobID || j.Type != "chat" || j.Status != "completed" {
+		if j.ID == currentJobID || j.Status != "completed" {
+			continue
+		}
+		if j.Type != "chat" && j.Type != "image" && j.Type != "video" {
 			continue
 		}
 		completed = append(completed, j)
@@ -86,7 +85,6 @@ func buildChatContext(db *store.DB, ctx context.Context, threadID *uuid.UUID, us
 	recent := completed[split:]
 
 	var parts []string
-	// Older: user questions only (what was discussed)
 	if len(older) > 0 {
 		var questions []string
 		start := 0
@@ -94,48 +92,71 @@ func buildChatContext(db *store.DB, ctx context.Context, threadID *uuid.UUID, us
 			start = len(older) - maxUserQuestions
 		}
 		for _, j := range older[start:] {
-			var input map[string]interface{}
-			if len(j.Input) > 0 {
-				_ = json.Unmarshal(j.Input, &input)
-			}
-			if q, _ := input["prompt"].(string); q != "" {
-				q = strings.TrimSpace(q)
+			if q := jobPrompt(j); q != "" {
 				if len(q) > maxUserQuestionLen {
 					q = q[:maxUserQuestionLen] + "..."
 				}
-				questions = append(questions, "- "+q)
+				prefix := ""
+				switch j.Type {
+				case "image":
+					prefix = "[image] "
+				case "video":
+					prefix = "[video] "
+				}
+				questions = append(questions, "- "+prefix+q)
 			}
 		}
 		if len(questions) > 0 {
-			parts = append(parts, "Earlier in this conversation, the user asked about:\n"+strings.Join(questions, "\n"))
+			parts = append(parts, "Earlier in this conversation, the user asked about / generated:\n"+strings.Join(questions, "\n"))
 		}
 	}
-	// Recent: full exchanges (follow-up like "explică mai simplu" needs prior answer)
 	for i := range recent {
 		j := &recent[i]
-		var input map[string]interface{}
-		if len(j.Input) > 0 {
-			_ = json.Unmarshal(j.Input, &input)
-		}
-		userMsg, _ := input["prompt"].(string)
+		userMsg := jobPrompt(*j)
 		if userMsg == "" {
 			continue
 		}
-		var output map[string]interface{}
-		assistantMsg := ""
-		if len(j.Output) > 0 {
-			_ = json.Unmarshal(j.Output, &output)
-			assistantMsg, _ = output["output"].(string)
+		switch j.Type {
+		case "image":
+			parts = append(parts, "User asked to generate an image: "+userMsg+"\n\nAssistant: [Generated an image for that prompt.]")
+		case "video":
+			parts = append(parts, "User asked to generate a video: "+userMsg+"\n\nAssistant: [Generated a video for that prompt.]")
+		default:
+			assistantMsg := jobChatOutput(*j)
+			if len(assistantMsg) > maxRecentOutputLen {
+				assistantMsg = strings.TrimSpace(assistantMsg[:maxRecentOutputLen]) + "..."
+			}
+			parts = append(parts, "User: "+userMsg+"\n\nAssistant: "+assistantMsg)
 		}
-		if len(assistantMsg) > maxRecentOutputLen {
-			assistantMsg = strings.TrimSpace(assistantMsg[:maxRecentOutputLen]) + "..."
-		}
-		parts = append(parts, "User: "+userMsg+"\n\nAssistant: "+assistantMsg)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func jobPrompt(j store.Job) string {
+	var input map[string]interface{}
+	if len(j.Input) > 0 {
+		_ = json.Unmarshal(j.Input, &input)
+	}
+	if input == nil {
+		return ""
+	}
+	q, _ := input["prompt"].(string)
+	return strings.TrimSpace(q)
+}
+
+func jobChatOutput(j store.Job) string {
+	if len(j.Output) == 0 {
+		return ""
+	}
+	var output map[string]interface{}
+	if err := json.Unmarshal(j.Output, &output); err != nil {
+		return ""
+	}
+	s, _ := output["output"].(string)
+	return strings.TrimSpace(s)
 }
 
 type Handlers struct {

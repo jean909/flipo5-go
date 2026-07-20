@@ -86,6 +86,7 @@ func (s *Server) Routes() http.Handler {
 		r.Patch("/jobs/{id}/feedback", s.setJobFeedback)
 		r.Post("/jobs/{id}/cancel", s.cancelJob)
 		r.Post("/jobs/{id}/retry", s.retryJob)
+		r.Post("/jobs/{id}/edit", s.editResubmit)
 		r.Get("/jobs/stream", s.streamAllJobs)
 		r.Post("/seo", s.createSEO)
 		r.Post("/outline", s.createOutline)

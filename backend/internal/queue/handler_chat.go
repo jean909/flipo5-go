@@ -220,10 +220,17 @@ Voice and style:
 	}
 	if streamURL != "" {
 		var acc strings.Builder
+		var lastDBWrite time.Time
+		lastDBLen := 0
 		h.Repl.StreamOutput(ctx, streamURL, func(text string) {
 			acc.WriteString(text)
 			out := acc.String()
-			_ = h.DB.UpdateJobOutput(ctx, p.JobID, map[string]interface{}{"output": out})
+			now := time.Now()
+			if now.Sub(lastDBWrite) >= 400*time.Millisecond || acc.Len()-lastDBLen >= 400 {
+				lastDBWrite = now
+				lastDBLen = acc.Len()
+				_ = h.DB.UpdateJobOutput(ctx, p.JobID, map[string]interface{}{"output": out})
+			}
 			if h.Stream != nil {
 				_ = h.Stream.Publish(ctx, p.JobID, out, false)
 			}

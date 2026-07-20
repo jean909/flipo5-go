@@ -327,6 +327,19 @@ func (db *DB) ListJobsByThread(ctx context.Context, threadID, userID uuid.UUID) 
 	return list, rows.Err()
 }
 
+// DeleteJobsInThreadFrom deletes the given job and every later job in the same thread (for edit & resubmit).
+func (db *DB) DeleteJobsInThreadFrom(ctx context.Context, threadID, userID, fromJobID uuid.UUID) (int64, error) {
+	result, err := db.Pool.Exec(ctx,
+		`DELETE FROM jobs
+		 WHERE thread_id = $1 AND user_id = $2
+		   AND created_at >= (SELECT created_at FROM jobs WHERE id = $3 AND thread_id = $1 AND user_id = $2)`,
+		threadID, userID, fromJobID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 // ListStalePendingJobs returns jobs in pending/running for longer than maxAgeMinutes. Used for cleanup.
 func (db *DB) ListStalePendingJobs(ctx context.Context, maxAgeMinutes int) ([]Job, error) {
 	rows, err := db.Pool.Query(ctx,

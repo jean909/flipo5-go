@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -234,6 +235,14 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"cancel failed"}`, http.StatusInternalServerError)
 		return
 	}
+	if s.Stream != nil {
+		_ = s.Stream.Publish(r.Context(), id, "", true)
+		userJobsChannel := fmt.Sprintf("user:%s:jobs", userID.String())
+		_ = s.Stream.PublishRaw(r.Context(), userJobsChannel, fmt.Sprintf(`{"jobId":"%s","status":"cancelled","type":"%s"}`, id.String(), job.Type))
+	}
+	if job.ThreadID != nil {
+		s.invalidateThreadCache(r.Context(), *job.ThreadID, userID)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 }
@@ -310,6 +319,104 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"job_id": newJobID.String()})
+}
+
+// editResubmit truncates the thread from this job (inclusive) and creates a new job with the edited prompt.
+func (s *Server) editResubmit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	userID, _ := middleware.UserID(r.Context())
+	if userID == uuid.Nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	prompt := strings.TrimSpace(body.Prompt)
+	if prompt == "" {
+		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
+		return
+	}
+	if len([]rune(prompt)) > 8000 {
+		prompt = string([]rune(prompt)[:8000])
+	}
+	ctx := r.Context()
+	job, err := s.DB.GetJobForUser(ctx, id, userID)
+	if err != nil || job == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if job.ThreadID == nil {
+		http.Error(w, `{"error":"job has no thread"}`, http.StatusBadRequest)
+		return
+	}
+	if job.Type != "chat" && job.Type != "image" && job.Type != "video" {
+		http.Error(w, `{"error":"unsupported job type"}`, http.StatusBadRequest)
+		return
+	}
+	if job.Status == "pending" || job.Status == "running" {
+		http.Error(w, `{"error":"cannot edit while generating"}`, http.StatusConflict)
+		return
+	}
+	var input map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &input)
+	}
+	if input == nil {
+		input = make(map[string]interface{})
+	}
+	input["prompt"] = prompt
+
+	if _, err := s.DB.DeleteJobsInThreadFrom(ctx, *job.ThreadID, userID, id); err != nil {
+		http.Error(w, `{"error":"truncate failed"}`, http.StatusInternalServerError)
+		return
+	}
+	newJobID, err := s.DB.CreateJob(ctx, userID, job.Type, input, job.ThreadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	s.recordUserProfile(userID, job.Type, nil)
+	var task *asynq.Task
+	switch job.Type {
+	case "chat":
+		task, _ = queue.NewChatTask(newJobID, prompt)
+	case "image":
+		task, _ = queue.NewImageTask(newJobID)
+	case "video":
+		task, _ = queue.NewVideoTask(newJobID)
+	}
+	if task == nil {
+		_ = s.DB.UpdateJobStatus(ctx, newJobID, "failed", nil, "enqueue failed", 0, "")
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		_ = s.DB.UpdateJobStatus(ctx, newJobID, "failed", nil, "enqueue failed", 0, "")
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	s.invalidateThreadCache(ctx, *job.ThreadID, userID)
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"job_id":    newJobID.String(),
+		"thread_id": job.ThreadID.String(),
+	})
 }
 
 const (

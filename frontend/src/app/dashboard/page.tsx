@@ -10,7 +10,7 @@ import { useToast } from '@/app/components/ToastContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
-import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, getToken, getMediaDisplayUrl, updateProfile, listContent, listThreads, listRecentPrompts, type User, type Job, type Thread } from '@/lib/api';
+import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, getToken, getMediaDisplayUrl, updateProfile, listContent, listThreads, listRecentPrompts, editResubmitJob, type User, type Job, type Thread } from '@/lib/api';
 import { extractImageInputsFromJobInput } from '@/lib/promptIntent';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
@@ -519,6 +519,44 @@ export default function DashboardPage() {
       setError(e instanceof Error ? e.message : 'Failed');
     }
   }, [effectiveThreadId]);
+
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+
+  const handleEditResubmit = useCallback(async (fromJobId: string, prompt: string) => {
+    const trimmed = prompt.trim();
+    if (!trimmed || editSaving) return;
+    const source = threadJobs.find((j) => j.id === fromJobId);
+    const jobType = (source?.type === 'image' || source?.type === 'video' || source?.type === 'chat')
+      ? source.type
+      : 'chat';
+    setEditSaving(true);
+    setError('');
+    try {
+      const res = await editResubmitJob(fromJobId, trimmed);
+      setEditingJobId(null);
+      setEditDraft('');
+      setReplaceMap({});
+      setJobId(res.job_id);
+      setPendingJobThreadId(res.thread_id ?? effectiveThreadId);
+      setPendingJobType(jobType);
+      setLastSentPrompt(trimmed);
+      // Optimistically drop truncated jobs from UI until refresh lands
+      setThreadJobs((prev) => {
+        const idx = prev.findIndex((j) => j.id === fromJobId);
+        if (idx < 0) return prev;
+        return prev.slice(0, idx);
+      });
+      setTimeout(refreshThread, 400);
+      setTimeout(refreshThread, 2000);
+      showToast('toast.sent');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t(locale, 'error.generic'));
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editSaving, effectiveThreadId, refreshThread, showToast, locale, threadJobs]);
 
   // Regenerate image: re-run same prompt as new image job
   const handleRegenerateImage = useCallback(async (oldJobId: string, prompt: string, jobThreadId: string | null, imageInput?: string[]) => {
@@ -1658,10 +1696,54 @@ export default function DashboardPage() {
                   className="flex flex-col gap-2"
                 >
                   {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
-                    <div className="flex justify-end">
-                      <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
-                        {(job.input as { prompt: string }).prompt}
-                      </div>
+                    <div className="flex justify-end flex-col items-end gap-1 group/user">
+                      {editingJobId === job.id ? (
+                        <div className="w-full max-w-[85%] flex flex-col gap-2">
+                          <textarea
+                            value={editDraft}
+                            onChange={(e) => setEditDraft(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] leading-relaxed border border-theme-border outline-none focus:border-theme-accent resize-y min-h-[72px]"
+                            disabled={editSaving}
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              disabled={editSaving}
+                              onClick={() => { setEditingJobId(null); setEditDraft(''); }}
+                              className="btn-tap text-xs px-2.5 py-1 rounded-lg border border-theme-border text-theme-fg-muted hover:text-theme-fg"
+                            >
+                              {t(locale, 'dialog.cancel')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={editSaving || !editDraft.trim()}
+                              onClick={() => handleEditResubmit(job.id, editDraft)}
+                              className="btn-tap text-xs px-2.5 py-1 rounded-lg bg-theme-accent text-white disabled:opacity-50"
+                            >
+                              {editSaving ? t(locale, 'common.loading') : t(locale, 'chat.editResubmit')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-theme-bg-hover text-theme-fg text-[15px] whitespace-pre-wrap leading-relaxed">
+                            {(job.input as { prompt: string }).prompt}
+                          </div>
+                          {!isArchived && job.id !== '_pending' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingJobId(job.id);
+                                setEditDraft((job.input as { prompt?: string })?.prompt ?? '');
+                              }}
+                              className="text-xs text-theme-fg-subtle opacity-0 group-hover/user:opacity-100 focus:opacity-100 hover:text-theme-fg transition-opacity px-1"
+                            >
+                              {t(locale, 'chat.edit')}
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                   {job.id !== '_pending' && (
@@ -1671,6 +1753,7 @@ export default function DashboardPage() {
                     dark
                     variant="chat"
                     mediaToken={mediaToken}
+                    initialJob={job as Job}
                     onNotFound={job.id === jobId ? handleActiveJobNotFound : undefined}
                     onUseAsReference={addReferenceImage}
                     regenerateUsed={isRegeneratedSlot}

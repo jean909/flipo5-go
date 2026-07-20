@@ -78,6 +78,8 @@ type JobCardProps = {
   locale: Locale;
   dark?: boolean;
   mediaToken?: string | null;
+  /** Seed from thread payload to avoid N+1 getJob on open */
+  initialJob?: Job | null;
   onNotFound?: () => void;
   onUseAsReference?: (url: string) => void;
   onRegenerate?: () => void;
@@ -99,8 +101,9 @@ function areEqualJobCardProps(prev: JobCardProps, next: JobCardProps): boolean {
     prev.mediaToken === next.mediaToken &&
     prev.regenerateUsed === next.regenerateUsed &&
     prev.variant === next.variant &&
-    // Re-render only when callback availability toggles (affects UI controls),
-    // not when function identities change due to parent re-renders.
+    prev.initialJob?.id === next.initialJob?.id &&
+    prev.initialJob?.status === next.initialJob?.status &&
+    prev.initialJob?.updated_at === next.initialJob?.updated_at &&
     Boolean(prev.onNotFound) === Boolean(next.onNotFound) &&
     Boolean(prev.onUseAsReference) === Boolean(next.onUseAsReference) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
@@ -126,6 +129,7 @@ function JobCardInner({
   locale,
   dark,
   mediaToken = null,
+  initialJob = null,
   onNotFound,
   onUseAsReference,
   onRegenerate,
@@ -136,7 +140,9 @@ function JobCardInner({
   variant = 'card',
 }: JobCardProps) {
   const { showToast } = useToast();
-  const [job, setJob] = useState<Job | null>(null);
+  const [job, setJob] = useState<Job | null>(() =>
+    initialJob && initialJob.id === jobId ? initialJob : null
+  );
   const [cancelLoading, setCancelLoading] = useState(false);
   const [retryLoading, setRetryLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -183,12 +189,23 @@ function JobCardInner({
   };
 
   useEffect(() => {
+    if (!initialJob || initialJob.id !== jobId) return;
+    setJob((prev) => (isSameJobSnapshot(prev, initialJob) ? prev : initialJob));
+  }, [initialJob, jobId]);
+
+  useEffect(() => {
     let cancelled = false;
     setNotFound(false);
     setStreamOutput('');
     setStreamStatus(null);
     setRetryCount(0);
     streamBufferRef.current = '';
+    const seeded = initialJob && initialJob.id === jobId ? initialJob : null;
+    const terminal = seeded && (seeded.status === 'completed' || seeded.status === 'failed' || seeded.status === 'cancelled');
+    if (terminal) {
+      setJob((prev) => (isSameJobSnapshot(prev, seeded) ? prev : seeded));
+      return;
+    }
     const retryDelays = [0, 150, 400]; // retry on null (job just created, DB race)
     let attempt = 0;
     function poll() {
@@ -207,13 +224,19 @@ function JobCardInner({
           }
           setJob((prev) => (isSameJobSnapshot(prev, j) ? prev : j));
           if (j.status === 'pending' || j.status === 'running') {
-            setTimeout(poll, 4000); // 4s to reduce API load when multiple JobCards poll
+            setTimeout(poll, 5000);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && attempt < retryDelays.length - 1) {
+            attempt++;
+            setTimeout(poll, retryDelays[attempt]);
           }
         });
     }
     poll();
     return () => { cancelled = true; };
-  }, [jobId, retryKey]);
+  }, [jobId, retryKey, initialJob?.id, initialJob?.status]);
 
   // Retry fetch when completed image/video job has no URLs (mirror may still be updating)
   useEffect(() => {
@@ -254,7 +277,7 @@ function JobCardInner({
 
   // Auto-scroll streaming bubble into view (keep latest content visible)
   useEffect(() => {
-    if (streamOutput.length > 0 && streamStatus !== 'completed' && streamStatus !== 'failed' && bubbleRef.current) {
+    if (streamOutput.length > 0 && streamStatus !== 'completed' && streamStatus !== 'failed' && streamStatus !== 'cancelled' && bubbleRef.current) {
       const now = Date.now();
       // Avoid repeated layout work on every token; 120ms throttle feels responsive.
       if (now - lastAutoScrollRef.current >= 120) {
@@ -264,54 +287,91 @@ function JobCardInner({
     }
   }, [displayLen, streamOutput.length, streamStatus]);
 
-  // SSE stream for chat variant when job is pending/running
+  // SSE stream for chat variant when job is pending/running (with reconnect)
   useEffect(() => {
     if (variant !== 'chat' || !jobId || !job) return;
     if (job.status !== 'pending' && job.status !== 'running') return;
     const cancelledRef = { current: false };
-    getToken().then((token) => {
-      if (cancelledRef.current || !token) return;
-      const url = getJobStreamUrl(jobId, token);
-      if (!url) return;
-      const es = new EventSource(url);
-      esRef.current = es;
-      es.onmessage = (e) => {
-        if (cancelledRef.current) return;
-        try {
-          const d = JSON.parse(e.data) as { output?: string; status?: string };
-          if (d.output !== undefined) streamBufferRef.current = d.output;
-          if (d.status) setStreamStatus(d.status);
-          if (d.status === 'completed' || d.status === 'failed') {
-            if (cancelledRef.current) return;
-            if (d.output !== undefined) setStreamOutput(d.output);
-            es.close();
-            esRef.current = null;
-            setJob((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    status: d.status!,
-                    output: d.status === 'completed' ? { output: d.output ?? '' } : prev.output,
-                    error: d.status === 'failed' ? (prev.error ?? t(locale, 'common.failed')) : prev.error,
-                  }
-                : null
-            );
-          }
-        } catch (_) {}
-      };
-      es.onerror = () => {
-        es.close();
-        esRef.current = null;
-      };
-    });
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+
+    const applyTerminal = (status: string, output?: string) => {
+      if (cancelledRef.current) return;
+      if (output !== undefined) {
+        streamBufferRef.current = output;
+        setStreamOutput(output);
+      }
+      setStreamStatus(status);
+      setJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              status,
+              output: status === 'completed' ? { output: output ?? '' } : prev.output,
+              error: status === 'failed' ? (prev.error ?? t(locale, 'common.failed')) : prev.error,
+            }
+          : null
+      );
+    };
+
+    const connect = () => {
+      getToken().then((token) => {
+        if (cancelledRef.current || !token) return;
+        const url = getJobStreamUrl(jobId, token);
+        if (!url) return;
+        const es = new EventSource(url);
+        esRef.current = es;
+        es.onmessage = (e) => {
+          if (cancelledRef.current) return;
+          try {
+            const d = JSON.parse(e.data) as { output?: string; status?: string };
+            if (d.output !== undefined) streamBufferRef.current = d.output;
+            if (d.status) setStreamStatus(d.status);
+            if (d.status === 'completed' || d.status === 'failed' || d.status === 'cancelled') {
+              applyTerminal(d.status, d.output);
+              es.close();
+              esRef.current = null;
+            }
+          } catch (_) {}
+        };
+        es.onerror = () => {
+          es.close();
+          esRef.current = null;
+          if (cancelledRef.current) return;
+          getJob(jobId).then((j) => {
+            if (cancelledRef.current || !j) return;
+            setJob((prev) => (isSameJobSnapshot(prev, j) ? prev : j));
+            if (j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled') {
+              const out =
+                j.output && typeof j.output === 'object' && typeof (j.output as { output?: string }).output === 'string'
+                  ? (j.output as { output: string }).output
+                  : undefined;
+              applyTerminal(j.status, out);
+              return;
+            }
+            if (attempts < 5) {
+              attempts += 1;
+              reconnectTimer = setTimeout(connect, Math.min(1000 * attempts, 4000));
+            }
+          }).catch(() => {
+            if (attempts < 5) {
+              attempts += 1;
+              reconnectTimer = setTimeout(connect, Math.min(1000 * attempts, 4000));
+            }
+          });
+        };
+      });
+    };
+    connect();
     return () => {
       cancelledRef.current = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;
       }
     };
-  }, [jobId, variant, job?.status]);
+  }, [jobId, variant, job?.status, locale]);
 
   const isChat = variant === 'chat';
   const textCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';

@@ -755,6 +755,22 @@ export async function retryJob(jobId: string): Promise<{ job_id: string }> {
   return res.json();
 }
 
+/** Edit a user message: truncate thread from this job and resubmit with a new prompt. */
+export async function editResubmitJob(jobId: string, prompt: string): Promise<{ job_id: string; thread_id: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Edit failed');
+  }
+  return res.json();
+}
+
 export async function setJobFeedback(jobId: string, rating: 'like' | 'dislike' | null): Promise<void> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
