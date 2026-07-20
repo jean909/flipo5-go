@@ -59,6 +59,33 @@ func resolveMediaURL(h *Handlers, u string) string {
 	return u
 }
 
+// resolveJobMediaURLs rewrites uploads/ keys in common image/video input fields to public URLs.
+func resolveJobMediaURLs(h *Handlers, jobInput map[string]interface{}) {
+	if jobInput == nil || h.Store == nil {
+		return
+	}
+	for _, key := range []string{"image", "mask", "video", "start_image", "end_image"} {
+		if s, ok := jobInput[key].(string); ok && s != "" {
+			jobInput[key] = resolveMediaURL(h, s)
+		}
+	}
+	for _, key := range []string{"image_input", "input_images"} {
+		arr, ok := jobInput[key].([]interface{})
+		if !ok || len(arr) == 0 {
+			continue
+		}
+		out := make([]interface{}, 0, len(arr))
+		for _, u := range arr {
+			if s, ok := u.(string); ok && s != "" {
+				out = append(out, resolveMediaURL(h, s))
+			} else {
+				out = append(out, u)
+			}
+		}
+		jobInput[key] = out
+	}
+}
+
 func filenameFromURL(u string) string {
 	u = strings.TrimSpace(u)
 	if u == "" {

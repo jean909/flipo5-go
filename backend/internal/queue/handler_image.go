@@ -41,6 +41,8 @@ func (h *Handlers) ImageHandler(ctx context.Context, t *asynq.Task) error {
 	if jobInput == nil {
 		jobInput = make(map[string]interface{})
 	}
+	// Resolve uploads/ keys so Replicate can fetch reference images.
+	resolveJobMediaURLs(h, jobInput)
 	prompt, _ := jobInput["prompt"].(string)
 	if prompt == "" {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "prompt required", 0, "")

@@ -307,10 +307,14 @@ export interface Thread {
   updated_at: string;
 }
 
-export async function listThreads(archived?: boolean): Promise<{ threads: Thread[] }> {
+export async function listThreads(archived?: boolean, q?: string): Promise<{ threads: Thread[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
-  const url = archived ? `${API_URL}/api/threads?archived=true` : `${API_URL}/api/threads`;
+  const params = new URLSearchParams();
+  if (archived) params.set('archived', 'true');
+  if (q?.trim()) params.set('q', q.trim());
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/api/threads?${qs}` : `${API_URL}/api/threads`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error('Failed to load sessions');
   return res.json();
@@ -326,13 +330,19 @@ export class ThreadActionError extends Error {
   }
 }
 
-export async function patchThread(threadId: string, action: 'archive' | 'unarchive' | 'delete'): Promise<void> {
+export async function patchThread(
+  threadId: string,
+  action: 'archive' | 'unarchive' | 'delete' | 'rename',
+  title?: string
+): Promise<void> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
+  const body: { action: string; title?: string } = { action };
+  if (action === 'rename' && title != null) body.title = title;
   const res = await fetch(`${API_URL}/api/threads/${threadId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({})) as { error?: string; message?: string };

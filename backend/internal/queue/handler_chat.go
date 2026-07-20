@@ -333,7 +333,7 @@ Voice and style:
 	}
 	if job.ThreadID != nil && h.Asynq != nil {
 		if task, err := NewSummarizeThreadTask(*job.ThreadID); err == nil {
-			_, _ = h.Asynq.Enqueue(task, asynq.Queue("default"), asynq.ProcessIn(10*time.Minute), asynq.Unique(10*time.Minute))
+			_, _ = h.Asynq.Enqueue(task, asynq.Queue("default"), asynq.ProcessIn(90*time.Second), asynq.Unique(2*time.Minute))
 		}
 	}
 	return nil

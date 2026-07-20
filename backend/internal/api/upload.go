@@ -74,11 +74,11 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 }
 
 // ensureThread returns threadID for job. If threadID param is valid, uses it; otherwise creates new (normal or ephemeral).
-func (s *Server) ensureThread(ctx context.Context, w http.ResponseWriter, userID uuid.UUID, threadIDParam string, incognito bool) *uuid.UUID {
+func (s *Server) ensureThread(ctx context.Context, w http.ResponseWriter, userID uuid.UUID, threadIDParam string, incognito bool) (threadID *uuid.UUID, created bool) {
 	if threadIDParam != "" {
 		if id, err := uuid.Parse(threadIDParam); err == nil {
 			if t, _ := s.DB.GetThreadForUser(ctx, id, userID); t != nil {
-				return &id
+				return &id, false
 			}
 		}
 	}
@@ -87,7 +87,7 @@ func (s *Server) ensureThread(ctx context.Context, w http.ResponseWriter, userID
 	if err != nil {
 		log.Printf("create thread failed: %v", err)
 		http.Error(w, `{"error":"create thread"}`, http.StatusInternalServerError)
-		return nil
+		return nil, false
 	}
-	return &id
+	return &id, true
 }

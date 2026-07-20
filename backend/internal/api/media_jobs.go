@@ -53,9 +53,14 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
-	threadID := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
+	threadID, created := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
 	if threadID == nil {
 		return
+	}
+	if created {
+		if title := titleFromPrompt(req.Prompt); title != "" {
+			_ = s.DB.UpdateThreadTitle(ctx, *threadID, title)
+		}
 	}
 	input := map[string]interface{}{
 		"prompt":       req.Prompt,
@@ -95,6 +100,7 @@ func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {
 	s.recordUserProfile(userID, "image", nil)
 	task, _ := queue.NewImageTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
+		_ = s.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
 		return
 	}
@@ -351,9 +357,14 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
-	threadID := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
+	threadID, created := s.ensureThread(ctx, w, userID, req.ThreadID, req.Incognito)
 	if threadID == nil {
 		return
+	}
+	if created {
+		if title := titleFromPrompt(req.Prompt); title != "" {
+			_ = s.DB.UpdateThreadTitle(ctx, *threadID, title)
+		}
 	}
 	input := map[string]interface{}{
 		"prompt":       req.Prompt,
@@ -362,19 +373,26 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		"resolution":   req.Resolution,
 		"video_model":  req.VideoModel,
 	}
+	resolveURL := func(u string) string {
+		u = strings.TrimSpace(u)
+		if u != "" && strings.HasPrefix(u, "uploads/") && s.Store != nil {
+			return s.Store.URL(u)
+		}
+		return u
+	}
 	if req.VideoModel == "2" {
 		if req.StartImage != "" {
-			input["start_image"] = req.StartImage
+			input["start_image"] = resolveURL(req.StartImage)
 		}
 		if req.EndImage != "" {
-			input["end_image"] = req.EndImage
+			input["end_image"] = resolveURL(req.EndImage)
 		}
 	} else {
 		if req.Image != "" {
-			input["image"] = req.Image
+			input["image"] = resolveURL(req.Image)
 		}
 		if req.Video != "" {
-			input["video"] = req.Video
+			input["video"] = resolveURL(req.Video)
 		}
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)
@@ -385,6 +403,7 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	s.recordUserProfile(userID, "video", nil)
 	task, _ := queue.NewVideoTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
+		_ = s.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
 		return
 	}

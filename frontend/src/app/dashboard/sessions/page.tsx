@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
 import { useToast } from '@/app/components/ToastContext';
@@ -19,37 +19,82 @@ export default function SessionsPage() {
   const urlThreadId = searchParams.get('thread');
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [searching, setSearching] = useState(false);
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | null>(null);
   const [pendingDeleteThread, setPendingDeleteThread] = useState<Thread | null>(null);
   const [showArchivedDialog, setShowArchivedDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipEmptySearchReload = useRef(true);
 
-  const refresh = async () => {
+  const refresh = useCallback(async (q?: string) => {
     try {
-      const r = await listThreads();
+      const r = await listThreads(false, q?.trim() || undefined);
       setThreads(r.threads ?? []);
       setError(null);
     } catch {
       setThreads([]);
       setError(t(locale, 'sessions.loadError'));
     }
-  };
+  }, [locale]);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const q = search.trim();
+    if (!q) {
+      setSearching(false);
+      if (skipEmptySearchReload.current) {
+        skipEmptySearchReload.current = false;
+        return;
+      }
+      void refresh();
+      return;
+    }
+    skipEmptySearchReload.current = false;
+    setSearching(true);
+    searchTimer.current = setTimeout(() => {
+      refresh(q).finally(() => setSearching(false));
+    }, 280);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [search, refresh]);
+
+  const handleRename = async (thread: Thread, title: string) => {
+    await patchThread(thread.id, 'rename', title);
+    setThreads((prev) => prev.map((th) => (th.id === thread.id ? { ...th, title } : th)));
+    showToast('toast.saved');
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flipo5:threads-changed'));
+  };
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 scrollbar-subtle">
       <div className="max-w-3xl mx-auto">
         <h1 className="font-display text-2xl font-bold text-theme-fg mb-1">{t(locale, 'sessions.title')}</h1>
-        <p className="text-sm text-theme-fg-muted mb-6">{t(locale, 'sessions.sub')}</p>
+        <p className="text-sm text-theme-fg-muted mb-4">{t(locale, 'sessions.sub')}</p>
+
+        <div className="mb-5">
+          <label className="sr-only" htmlFor="sessions-search">{t(locale, 'sessions.search')}</label>
+          <input
+            id="sessions-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t(locale, 'sessions.searchPlaceholder')}
+            className="w-full rounded-xl border border-theme-border bg-theme-bg-subtle px-4 py-2.5 text-sm text-theme-fg placeholder:text-theme-fg-subtle outline-none focus:border-theme-accent"
+          />
+          {searching && <p className="mt-1.5 text-xs text-theme-fg-muted">{t(locale, 'common.loading')}</p>}
+        </div>
 
         {error && (
           <div className="mb-4 px-4 py-2 rounded-lg bg-theme-danger-muted text-theme-danger text-sm flex items-center justify-between gap-2">
             <span>{error}</span>
-            <button type="button" onClick={() => { setLoading(true); refresh().finally(() => setLoading(false)); }} className="underline shrink-0">
+            <button type="button" onClick={() => { setLoading(true); refresh(search).finally(() => setLoading(false)); }} className="underline shrink-0">
               {t(locale, 'common.refresh') || 'Retry'}
             </button>
           </div>
@@ -65,22 +110,28 @@ export default function SessionsPage() {
 
         {!loading && threads.length === 0 && !error && (
           <div className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-8 text-center">
-            <p className="text-theme-fg font-medium mb-1">{t(locale, 'sessions.empty')}</p>
-            <p className="text-sm text-theme-fg-muted mb-5">{t(locale, 'sessions.emptyHint')}</p>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <Link
-                href="/dashboard"
-                className="btn-tap inline-flex px-4 py-2 rounded-xl bg-theme-accent text-white text-sm font-medium"
-              >
-                {t(locale, 'sessions.startChat')}
-              </Link>
-              <Link
-                href="/dashboard?inspire=1"
-                className="btn-tap inline-flex px-4 py-2 rounded-xl border border-theme-border text-sm text-theme-fg hover:bg-theme-bg-hover"
-              >
-                {t(locale, 'collections.title')}
-              </Link>
-            </div>
+            <p className="text-theme-fg font-medium mb-1">
+              {search.trim() ? t(locale, 'sessions.noResults') : t(locale, 'sessions.empty')}
+            </p>
+            <p className="text-sm text-theme-fg-muted mb-5">
+              {search.trim() ? t(locale, 'sessions.noResultsHint') : t(locale, 'sessions.emptyHint')}
+            </p>
+            {!search.trim() && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Link
+                  href="/dashboard"
+                  className="btn-tap inline-flex px-4 py-2 rounded-xl bg-theme-accent text-white text-sm font-medium"
+                >
+                  {t(locale, 'sessions.startChat')}
+                </Link>
+                <Link
+                  href="/dashboard?inspire=1"
+                  className="btn-tap inline-flex px-4 py-2 rounded-xl border border-theme-border text-sm text-theme-fg hover:bg-theme-bg-hover"
+                >
+                  {t(locale, 'collections.title')}
+                </Link>
+              </div>
+            )}
           </div>
         )}
 
@@ -98,10 +149,12 @@ export default function SessionsPage() {
                   showArchive
                   showUnarchive={false}
                   showDelete
+                  showRename
+                  onRename={handleRename}
                   onArchive={async () => {
                     try {
                       await patchThread(thread.id, 'archive');
-                      await refresh();
+                      await refresh(search);
                       showToast('toast.archived');
                       if (urlThreadId === thread.id) router.replace('/dashboard');
                       setShowArchivedDialog(true);
@@ -130,7 +183,7 @@ export default function SessionsPage() {
           if (!pendingDeleteThread) return;
           try {
             await patchThread(pendingDeleteThread.id, 'delete');
-            await refresh();
+            await refresh(search);
             showToast('toast.deleted');
             if (urlThreadId === pendingDeleteThread.id) router.replace('/dashboard');
           } catch (e) {

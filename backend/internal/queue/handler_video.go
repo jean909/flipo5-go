@@ -39,6 +39,10 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	if len(job.Input) > 0 {
 		_ = json.Unmarshal(job.Input, &jobInput)
 	}
+	if jobInput == nil {
+		jobInput = make(map[string]interface{})
+	}
+	resolveJobMediaURLs(h, jobInput)
 	videoModel, _ := jobInput["video_model"].(string)
 	if videoModel != "2" {
 		videoModel = "1"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
@@ -40,9 +40,11 @@ type Props = {
   onUnarchive?: () => void;
   onDelete?: () => void;
   onDeleteRequest?: (thread: Thread) => void;
+  onRename?: (thread: Thread, title: string) => Promise<void> | void;
   showArchive?: boolean;
   showUnarchive?: boolean;
   showDelete?: boolean;
+  showRename?: boolean;
 };
 
 export function ThreadItem({
@@ -57,11 +59,17 @@ export function ThreadItem({
   onUnarchive,
   onDelete,
   onDeleteRequest,
+  onRename,
   showArchive = true,
   showUnarchive = false,
   showDelete = true,
+  showRename = true,
 }: Props) {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const menuOpen = openMenuThreadId === thread.id;
 
   const handleContextMenu = useCallback(
@@ -85,6 +93,35 @@ export function ThreadItem({
     };
   }, [menuOpen, onContextMenuOpen]);
 
+  useEffect(() => {
+    if (renaming) inputRef.current?.focus();
+  }, [renaming]);
+
+  const startRename = () => {
+    onContextMenuOpen(null);
+    setRenameValue(displayTitle(thread, t(locale, 'sessions.untitled')));
+    setRenaming(true);
+  };
+
+  const commitRename = async () => {
+    const next = renameValue.trim();
+    if (!next || !onRename) {
+      setRenaming(false);
+      return;
+    }
+    if (next === (thread.title?.trim() || '')) {
+      setRenaming(false);
+      return;
+    }
+    setRenameSaving(true);
+    try {
+      await onRename(thread, next);
+      setRenaming(false);
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
   const content = (
     <>
       <span className={`block truncate ${compact ? 'text-sm font-medium' : 'text-theme-fg font-medium'}`}>
@@ -104,6 +141,30 @@ export function ThreadItem({
         ? 'block px-2 py-2 rounded transition-colors text-theme-fg-muted hover:bg-theme-bg-elevated hover:text-theme-fg'
         : 'block px-2 py-2 rounded transition-colors text-theme-fg hover:bg-theme-bg-hover';
 
+  if (renaming) {
+    return (
+      <div className={card ? 'rounded-xl border border-theme-border bg-theme-bg-subtle p-3' : 'px-2 py-1.5'}>
+        <input
+          ref={inputRef}
+          value={renameValue}
+          disabled={renameSaving}
+          maxLength={80}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void commitRename();
+            }
+            if (e.key === 'Escape') setRenaming(false);
+          }}
+          onBlur={() => { void commitRename(); }}
+          className="w-full rounded-lg border border-theme-border bg-theme-bg-elevated px-2 py-1.5 text-sm text-theme-fg outline-none focus:border-theme-accent"
+          aria-label={t(locale, 'thread.rename')}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="relative" onContextMenu={handleContextMenu}>
       <Link href={`/dashboard?thread=${thread.id}`} className={linkCls}>
@@ -115,6 +176,15 @@ export function ThreadItem({
           style={{ left: menuPos.x, top: menuPos.y }}
           onClick={(e) => e.stopPropagation()}
         >
+          {showRename && onRename && (
+            <button
+              type="button"
+              onClick={startRename}
+              className="w-full px-3 py-2 text-left text-sm text-theme-fg-muted hover:bg-theme-bg-hover hover:text-theme-fg"
+            >
+              {t(locale, 'thread.rename')}
+            </button>
+          )}
           {showArchive && onArchive && (
             <button
               type="button"

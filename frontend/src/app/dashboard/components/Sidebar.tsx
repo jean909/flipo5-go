@@ -241,6 +241,12 @@ export function Sidebar({ overlay, open, onClose }: SidebarProps = {}) {
                           showArchive
                           showUnarchive={false}
                           showDelete
+                          showRename
+                          onRename={async (th, title) => {
+                            await patchThread(th.id, 'rename', title);
+                            setThreads((prev) => prev.map((x) => (x.id === th.id ? { ...x, title } : x)));
+                            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flipo5:threads-changed'));
+                          }}
                           onArchive={async () => {
                             try {
                               await patchThread(thread.id, 'archive');

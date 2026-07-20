@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"flipo5/backend/internal/middleware"
@@ -17,22 +18,33 @@ import (
 func (s *Server) listThreads(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	archived := r.URL.Query().Get("archived") == "true"
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	ctx := r.Context()
+	limit := 50
+	if q != "" {
+		limit = 100
+	}
 	cacheKey := "threads:" + userID.String() + ":archived:" + strconv.FormatBool(archived)
-	if s.Cache != nil {
+	if q == "" && s.Cache != nil {
 		if b, _ := s.Cache.Get(ctx, cacheKey); len(b) > 0 {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(b)
 			return
 		}
 	}
-	threads, err := s.DB.ListThreads(ctx, userID, 50, archived)
+	var threads []store.Thread
+	var err error
+	if q != "" {
+		threads, err = s.DB.SearchThreads(ctx, userID, q, limit, archived)
+	} else {
+		threads, err = s.DB.ListThreads(ctx, userID, limit, archived)
+	}
 	if err != nil {
 		http.Error(w, `{"error":"list threads"}`, http.StatusInternalServerError)
 		return
 	}
 	out := map[string]interface{}{"threads": threads}
-	if s.Cache != nil {
+	if q == "" && s.Cache != nil {
 		if b, err := json.Marshal(out); err == nil {
 			_ = s.Cache.Set(ctx, cacheKey, b)
 		}
@@ -51,6 +63,7 @@ func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.UserID(r.Context())
 	var body struct {
 		Action string `json:"action"`
+		Title  string `json:"title,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -62,6 +75,24 @@ func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch body.Action {
+	case "rename":
+		title := strings.Join(strings.Fields(strings.TrimSpace(body.Title)), " ")
+		if title == "" {
+			http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+			return
+		}
+		if len([]rune(title)) > 80 {
+			title = string([]rune(title)[:80])
+		}
+		if err := s.DB.UpdateThreadTitleForUser(r.Context(), id, userID, title); err != nil {
+			if err == pgx.ErrNoRows {
+				http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+				return
+			}
+			http.Error(w, `{"error":"rename failed"}`, http.StatusInternalServerError)
+			return
+		}
+		s.invalidateThreadCache(r.Context(), id, userID)
 	case "archive":
 		active, _ := s.DB.ThreadHasActiveJobs(r.Context(), id)
 		if active {
@@ -78,7 +109,6 @@ func (s *Server) patchThread(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"archive failed"}`, http.StatusInternalServerError)
 			return
 		}
-		s.invalidateThreadCache(r.Context(), id, userID)
 		s.invalidateThreadCache(r.Context(), id, userID)
 	case "unarchive":
 		if err := s.DB.UnarchiveThread(r.Context(), id, userID); err != nil {

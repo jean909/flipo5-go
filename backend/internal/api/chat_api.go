@@ -57,6 +57,9 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		threadID = &id
+		if title := titleFromPrompt(req.Prompt); title != "" {
+			_ = s.DB.UpdateThreadTitle(ctx, id, title)
+		}
 		if chatProjectID != nil {
 			_ = s.DB.AssignThreadToChatProject(ctx, id, userID, *chatProjectID)
 		}
@@ -69,6 +72,9 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		threadID = &id
+		if title := titleFromPrompt(req.Prompt); title != "" {
+			_ = s.DB.UpdateThreadTitle(ctx, id, title)
+		}
 	}
 	input := map[string]interface{}{"prompt": req.Prompt}
 	if len(req.AttachmentURLs) > 0 {
@@ -85,6 +91,7 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	s.recordUserProfile(userID, "chat", nil)
 	task, _ := queue.NewChatTask(jobID, req.Prompt)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
+		_ = s.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
 		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
 		return
 	}

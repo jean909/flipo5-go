@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,20 @@ func (db *DB) CreateThread(ctx context.Context, userID uuid.UUID, ephemeral bool
 func (db *DB) UpdateThreadTitle(ctx context.Context, threadID uuid.UUID, title string) error {
 	_, err := db.Pool.Exec(ctx, `UPDATE threads SET title = $2, updated_at = NOW() WHERE id = $1`, threadID, title)
 	return err
+}
+
+// UpdateThreadTitleForUser renames a thread owned by the user.
+func (db *DB) UpdateThreadTitleForUser(ctx context.Context, threadID, userID uuid.UUID, title string) error {
+	result, err := db.Pool.Exec(ctx,
+		`UPDATE threads SET title = $3, updated_at = NOW() WHERE id = $1 AND user_id = $2`,
+		threadID, userID, title)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (db *DB) GetThreadByID(ctx context.Context, threadID uuid.UUID) (*Thread, error) {
@@ -55,12 +70,27 @@ func (db *DB) GetThreadForUser(ctx context.Context, threadID, userID uuid.UUID) 
 }
 
 func (db *DB) ListThreads(ctx context.Context, userID uuid.UUID, limit int, archived bool) ([]Thread, error) {
+	return db.SearchThreads(ctx, userID, "", limit, archived)
+}
+
+// SearchThreads lists threads, optionally filtering by title (case-insensitive substring).
+func (db *DB) SearchThreads(ctx context.Context, userID uuid.UUID, q string, limit int, archived bool) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
 	}
 	archivedCond := "archived_at IS NULL"
 	if archived {
 		archivedCond = "archived_at IS NOT NULL"
+	}
+	q = strings.TrimSpace(q)
+	args := []interface{}{userID, limit}
+	titleCond := ""
+	if q != "" {
+		titleCond = " AND title ILIKE $3"
+		args = append(args, "%"+q+"%")
 	}
 	// Threads bound to a chat project are excluded — they live inside their project only.
 	rows, err := db.Pool.Query(ctx,
@@ -69,9 +99,9 @@ func (db *DB) ListThreads(ctx context.Context, userID uuid.UUID, limit int, arch
 		 WHERE user_id = $1
 		   AND (ephemeral IS NOT TRUE)
 		   AND chat_project_id IS NULL
-		   AND `+archivedCond+`
+		   AND `+archivedCond+titleCond+`
 		 ORDER BY updated_at DESC LIMIT $2`,
-		userID, limit)
+		args...)
 	if err != nil {
 		return nil, err
 	}
