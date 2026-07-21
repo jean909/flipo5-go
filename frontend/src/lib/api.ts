@@ -1263,15 +1263,23 @@ export async function createLogoJob(params: {
   return res.json();
 }
 
+export interface BrandingCampaign {
+  title: string;
+  concept: string;
+  cta?: string;
+}
+
 export interface BrandingDNA {
   brand_name: string;
   tagline?: string;
+  tagline_variants?: string[];
   tone?: string;
   voice?: string;
   audience?: string;
   colors?: { primary?: string; secondary?: string; accent?: string };
   fonts?: string;
-  assets?: Array<{ label?: string; type?: string; prompt?: string; aspect_ratio?: string }>;
+  campaigns?: BrandingCampaign[];
+  assets?: Array<{ label?: string; type?: string; prompt?: string; aspect_ratio?: string; caption?: string; hashtags?: string }>;
 }
 
 export interface BrandingJobRef {
@@ -1279,6 +1287,9 @@ export interface BrandingJobRef {
   type: string;
   label: string;
   aspect_ratio?: string;
+  prompt?: string;
+  caption?: string;
+  hashtags?: string;
 }
 
 export async function createBranding(params: {

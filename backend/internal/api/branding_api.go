@@ -75,10 +75,13 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 		Type        string `json:"type"`
 		Label       string `json:"label"`
 		AspectRatio string `json:"aspect_ratio,omitempty"`
+		Prompt      string `json:"prompt,omitempty"`
+		Caption     string `json:"caption,omitempty"`
+		Hashtags    string `json:"hashtags,omitempty"`
 	}
 	var created []jobRef
 
-	enqueue := func(jobType string, input map[string]interface{}, label string, newTask func(uuid.UUID) (*asynq.Task, error)) {
+	enqueue := func(jobType string, input map[string]interface{}, a brandingAsset, label string, newTask func(uuid.UUID) (*asynq.Task, error)) {
 		jid, err := s.DB.CreateJob(ctx, userID, jobType, input, nil)
 		if err != nil {
 			return
@@ -94,15 +97,18 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 		}
 		s.recordUserProfile(userID, jobType, nil)
 		ar, _ := input["aspect_ratio"].(string)
-		created = append(created, jobRef{JobID: jid.String(), Type: jobType, Label: label, AspectRatio: ar})
+		created = append(created, jobRef{
+			JobID: jid.String(), Type: jobType, Label: label, AspectRatio: ar,
+			Prompt: a.Prompt, Caption: strings.TrimSpace(a.Caption), Hashtags: strings.TrimSpace(a.Hashtags),
+		})
 	}
 
 	assets := dna.Assets
 	if len(assets) == 0 {
 		assets = defaultBrandingAssets(dna)
 	}
-	if len(assets) > 8 {
-		assets = assets[:8]
+	if len(assets) > 9 {
+		assets = assets[:9]
 	}
 
 	for _, a := range assets {
@@ -132,7 +138,7 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 			if dna.Colors.Secondary != "" {
 				input["secondary_color"] = dna.Colors.Secondary
 			}
-			enqueue("logo", input, label, queue.NewLogoTask)
+			enqueue("logo", input, a, label, queue.NewLogoTask)
 			continue
 		}
 		input := map[string]interface{}{
@@ -145,13 +151,13 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 		if len(refs) > 0 {
 			input["image_input"] = refs
 		}
-		enqueue("image", input, label, queue.NewImageTask)
+		enqueue("image", input, a, label, queue.NewImageTask)
 	}
 
 	brief := formatBrandBrief(dna)
-	fileName := "Brand DNA"
+	fileName := "Brand Book"
 	if dna.BrandName != "" {
-		fileName = dna.BrandName + " — Brand DNA"
+		fileName = dna.BrandName + " — Brand Book"
 	}
 	_, _ = s.DB.CreateUserFile(ctx, userID, fileName, brief, "text")
 
@@ -175,27 +181,42 @@ type brandingAsset struct {
 	Type        string `json:"type"`
 	Prompt      string `json:"prompt"`
 	AspectRatio string `json:"aspect_ratio"`
+	Caption     string `json:"caption,omitempty"`
+	Hashtags    string `json:"hashtags,omitempty"`
+}
+
+type brandingCampaign struct {
+	Title   string `json:"title"`
+	Concept string `json:"concept"`
+	CTA     string `json:"cta,omitempty"`
 }
 
 type businessDNA struct {
-	BrandName string          `json:"brand_name"`
-	Tagline   string          `json:"tagline"`
-	Tone      string          `json:"tone"`
-	Voice     string          `json:"voice"`
-	Audience  string          `json:"audience"`
-	Colors    brandingColors  `json:"colors"`
-	Fonts     string          `json:"fonts"`
-	Assets    []brandingAsset `json:"assets"`
+	BrandName       string             `json:"brand_name"`
+	Tagline         string             `json:"tagline"`
+	TaglineVariants []string           `json:"tagline_variants,omitempty"`
+	Tone            string             `json:"tone"`
+	Voice           string             `json:"voice"`
+	Audience        string             `json:"audience"`
+	Colors          brandingColors     `json:"colors"`
+	Fonts           string             `json:"fonts"`
+	Campaigns       []brandingCampaign `json:"campaigns,omitempty"`
+	Assets          []brandingAsset    `json:"assets"`
 }
 
 func (s *Server) buildBusinessDNA(ctx context.Context, brandName, desc string, imageURLs []string) *businessDNA {
 	if s.Repl == nil || strings.TrimSpace(s.ModelText) == "" {
 		return nil
 	}
-	system := `You are a brand strategist. Return ONLY valid JSON (no markdown) with this exact shape:
-{"brand_name":"","tagline":"","tone":"","voice":"","audience":"","colors":{"primary":"#hex","secondary":"#hex","accent":"#hex"},"fonts":"","assets":[{"label":"","type":"logo|image","prompt":"detailed image generation prompt","aspect_ratio":"1:1|4:5|16:9|9:16"}]}
-Create 5-6 assets: 1 logo (type logo, 1:1), 1 Instagram post (1:1), 1 story (9:16), 1 Facebook/LinkedIn cover (16:9), 1 product/hero shot (4:5), optional ad square (1:1).
-Prompts must be specific, on-brand, and ready for an image model. Include colors and style in each prompt.`
+	system := `You are a world-class brand strategist (like Google Pomelli). Return ONLY valid JSON (no markdown) with this exact shape:
+{"brand_name":"","tagline":"","tagline_variants":["",""],"tone":"","voice":"","audience":"","colors":{"primary":"#hex","secondary":"#hex","accent":"#hex"},"fonts":"","campaigns":[{"title":"","concept":"","cta":""}],"assets":[{"label":"","type":"logo|image","prompt":"detailed image generation prompt","aspect_ratio":"1:1|4:5|16:9|9:16|3:4","caption":"ready-to-post social caption in the brand voice","hashtags":"#tag1 #tag2 ..."}]}
+Rules:
+- tagline_variants: 3 alternative taglines (different angles: emotional, functional, bold).
+- campaigns: 3 concrete marketing campaign ideas (title, 1-2 sentence concept, call to action).
+- assets: exactly 8: 1 logo (type logo, 1:1), 1 Instagram post (1:1), 1 story/reel cover (9:16), 1 Facebook/LinkedIn cover (16:9), 1 product/hero shot (4:5), 1 square ad (1:1), 1 poster/flyer (3:4), 1 business card design (16:9).
+- Every image asset gets a caption (ready to post, brand voice, with a hook) and 5-8 hashtags. Logo caption can be a launch announcement.
+- Prompts must be specific, on-brand, ready for an image model; include the brand colors, style and mood in each prompt.
+- Match the language of captions to the language of the business description.`
 
 	user := "Business description:\n" + desc
 	if brandName != "" {
@@ -205,9 +226,9 @@ Prompts must be specific, on-brand, and ready for an image model. Include colors
 		user += fmt.Sprintf("\n\n%d reference photo(s) are attached — extract visual style from them.", len(imageURLs))
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	input := textmodel.BuildInput(s.ModelText, system, user, imageURLs, 4096)
+	input := textmodel.BuildInput(s.ModelText, system, user, imageURLs, 8192)
 	out, err := s.Repl.Run(runCtx, s.ModelText, input)
 	if err != nil {
 		return nil
@@ -319,14 +340,25 @@ func defaultBrandingAssets(dna *businessDNA) []brandingAsset {
 		{Label: "Cover / banner", Type: "image", AspectRatio: "16:9", Prompt: fmt.Sprintf("Wide brand banner for %s website or LinkedIn, %s, colors %s %s, premium photography, subtle product presence", name, tone, c.Primary, c.Secondary)},
 		{Label: "Hero / product", Type: "image", AspectRatio: "4:5", Prompt: fmt.Sprintf("Hero product or brand lifestyle image for %s, %s, studio or natural light, palette %s %s, e-commerce ready", name, tone, c.Primary, c.Accent)},
 		{Label: "Ad square", Type: "image", AspectRatio: "1:1", Prompt: fmt.Sprintf("Scroll-stopping square ad creative for %s, %s, clear focal product, brand colors %s %s, modern marketing layout", name, tone, c.Primary, c.Accent)},
+		{Label: "Poster / flyer", Type: "image", AspectRatio: "3:4", Prompt: fmt.Sprintf("Print-ready poster or flyer design for %s, %s, bold typography space, brand colors %s %s %s, striking composition", name, tone, c.Primary, c.Secondary, c.Accent)},
+		{Label: "Business card", Type: "image", AspectRatio: "16:9", Prompt: fmt.Sprintf("Elegant business card design mockup for %s, %s, brand colors %s and %s, clean layout with logo placement, premium paper look", name, tone, c.Primary, c.Accent)},
 	}
 }
 
 func formatBrandBrief(dna *businessDNA) string {
 	var b strings.Builder
-	b.WriteString("# " + dna.BrandName + " — Brand DNA\n\n")
+	b.WriteString("# " + dna.BrandName + " — Brand Book\n\n")
 	if dna.Tagline != "" {
 		b.WriteString("**Tagline:** " + dna.Tagline + "\n\n")
+	}
+	if len(dna.TaglineVariants) > 0 {
+		b.WriteString("**Tagline alternatives:**\n")
+		for _, v := range dna.TaglineVariants {
+			if strings.TrimSpace(v) != "" {
+				b.WriteString("- " + v + "\n")
+			}
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString("**Tone:** " + dna.Tone + "\n\n")
 	b.WriteString("**Voice:** " + dna.Voice + "\n\n")
@@ -337,6 +369,41 @@ func formatBrandBrief(dna *businessDNA) string {
 	b.WriteString("- Accent: " + dna.Colors.Accent + "\n\n")
 	if dna.Fonts != "" {
 		b.WriteString("**Typography:** " + dna.Fonts + "\n\n")
+	}
+	if len(dna.Campaigns) > 0 {
+		b.WriteString("## Campaign ideas\n\n")
+		for i, c := range dna.Campaigns {
+			if strings.TrimSpace(c.Title) == "" {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("%d. **%s** — %s", i+1, c.Title, c.Concept))
+			if strings.TrimSpace(c.CTA) != "" {
+				b.WriteString(" CTA: " + c.CTA)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	captions := false
+	for _, a := range dna.Assets {
+		if strings.TrimSpace(a.Caption) != "" {
+			captions = true
+			break
+		}
+	}
+	if captions {
+		b.WriteString("## Ready-to-post captions\n\n")
+		for _, a := range dna.Assets {
+			if strings.TrimSpace(a.Caption) == "" {
+				continue
+			}
+			b.WriteString("### " + a.Label + "\n")
+			b.WriteString(a.Caption + "\n")
+			if strings.TrimSpace(a.Hashtags) != "" {
+				b.WriteString(a.Hashtags + "\n")
+			}
+			b.WriteString("\n")
+		}
 	}
 	b.WriteString("Generated with Flipo5 1 Click Branding.\n")
 	return b.String()

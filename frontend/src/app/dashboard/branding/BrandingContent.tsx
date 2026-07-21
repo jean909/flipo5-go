@@ -7,15 +7,18 @@ import { useToast } from '@/app/components/ToastContext';
 import { t } from '@/lib/i18n';
 import {
   createBranding,
+  createImage,
+  createLogoJob,
   uploadAttachments,
   getToken,
   getMediaDisplayUrl,
   getJob,
-  downloadMediaUrl,
+  fetchBlobForJobRef,
   type BrandingDNA,
   type BrandingJobRef,
 } from '@/lib/api';
 import { getOutputUrls, getOutputRefs } from '@/lib/jobOutput';
+import { zipBlobsAndDownload, fetchBlobsConcurrent } from '@/lib/zipExport';
 import { useJobsInProgress } from '../components/JobsInProgressContext';
 import type { Locale } from '@/lib/i18n';
 
@@ -25,6 +28,7 @@ type PackItem = BrandingJobRef & {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   urls: string[];
   error?: string;
+  regenerating?: boolean;
 };
 
 export default function BrandingContent() {
@@ -40,8 +44,11 @@ export default function BrandingContent() {
   const [dna, setDna] = useState<BrandingDNA | null>(null);
   const [pack, setPack] = useState<PackItem[]>([]);
   const [mediaToken, setMediaToken] = useState<string | null>(null);
+  const [zipBusy, setZipBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const packRef = useRef<PackItem[]>([]);
+  packRef.current = pack;
 
   useEffect(() => {
     getToken().then(setMediaToken);
@@ -61,6 +68,47 @@ export default function BrandingContent() {
       pollRef.current = null;
     }
   };
+
+  const tickPoll = useCallback(async () => {
+    const items = packRef.current;
+    const pending = items.filter((i) => i.status === 'queued' || i.status === 'processing');
+    if (pending.length === 0) {
+      stopPoll();
+      return;
+    }
+    const results = await Promise.all(
+      pending.map(async (item) => {
+        try {
+          const job = await getJob(item.job_id);
+          if (!job) return null;
+          const status = mapJobStatus(job.status);
+          const refs = getOutputRefs(job.output ?? null);
+          const urls = getOutputUrls(job.output ?? null);
+          return { job_id: item.job_id, status, urls: refs.length > 0 ? refs : urls, error: job.error || undefined };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const byId = new Map(results.filter(Boolean).map((r) => [r!.job_id, r!]));
+    if (byId.size === 0) return;
+    setPack((prev) =>
+      prev.map((item) => {
+        const upd = byId.get(item.job_id);
+        if (!upd) return item;
+        if (upd.status === 'completed' || upd.status === 'failed') {
+          removeOptimisticJob(item.job_id);
+        }
+        return { ...item, status: upd.status, urls: upd.urls, error: upd.error };
+      })
+    );
+  }, [removeOptimisticJob]);
+
+  const ensurePolling = useCallback(() => {
+    if (pollRef.current) return;
+    void tickPoll();
+    pollRef.current = setInterval(() => void tickPoll(), 2500);
+  }, [tickPoll]);
 
   const addFiles = (files: FileList | File[]) => {
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
@@ -88,47 +136,14 @@ export default function BrandingContent() {
     });
   };
 
-  const pollJobs = useCallback((items: PackItem[]) => {
-    stopPoll();
-    if (items.length === 0) return;
-
-    const tick = async () => {
-      let allDone = true;
-      const updates: PackItem[] = [];
-      for (const item of items) {
-        try {
-          const job = await getJob(item.job_id);
-          if (!job) {
-            allDone = false;
-            updates.push(item);
-            continue;
-          }
-          const status = mapJobStatus(job.status);
-          if (status === 'queued' || status === 'processing') allDone = false;
-          const refs = getOutputRefs(job.output ?? null);
-          const urls = getOutputUrls(job.output ?? null);
-          const display = refs.length > 0 ? refs : urls;
-          updates.push({
-            ...item,
-            status,
-            urls: display,
-            error: job.error || undefined,
-          });
-          if (status === 'completed' || status === 'failed') {
-            removeOptimisticJob(item.job_id);
-          }
-        } catch {
-          allDone = false;
-          updates.push(item);
-        }
-      }
-      setPack(updates);
-      if (allDone) stopPoll();
-    };
-
-    void tick();
-    pollRef.current = setInterval(() => void tick(), 2500);
-  }, [removeOptimisticJob]);
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('toast.copied');
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
 
   const handleGenerate = async () => {
     const desc = description.trim();
@@ -155,17 +170,81 @@ export default function BrandingContent() {
         urls: [],
       }));
       setPack(items);
+      packRef.current = items;
       items.forEach((j) => {
         if (j.type === 'image' || j.type === 'logo') {
           addOptimisticJob({ id: j.job_id, type: 'image' });
         }
       });
       showToast('toast.created');
-      pollJobs(items);
+      ensurePolling();
     } catch (e) {
       setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRegenerate = async (item: PackItem) => {
+    if (!item.prompt || item.regenerating) return;
+    setPack((prev) => prev.map((p) => (p.job_id === item.job_id ? { ...p, regenerating: true } : p)));
+    try {
+      let newJobId: string;
+      if (item.type === 'logo') {
+        const r = await createLogoJob({
+          prompt: item.prompt,
+          logo_text: dna?.brand_name || '',
+          style: dna?.tone || '',
+          primary_color: dna?.colors?.primary || '',
+          secondary_color: dna?.colors?.secondary || '',
+          aspect_ratio: item.aspect_ratio || '1:1',
+        });
+        newJobId = r.job_id;
+      } else {
+        const r = await createImage({
+          prompt: item.prompt,
+          aspectRatio: item.aspect_ratio || '1:1',
+          maxImages: 1,
+        });
+        newJobId = r.job_id;
+      }
+      addOptimisticJob({ id: newJobId, type: 'image' });
+      setPack((prev) =>
+        prev.map((p) =>
+          p.job_id === item.job_id
+            ? { ...p, job_id: newJobId, status: 'queued', urls: [], error: undefined, regenerating: false }
+            : p
+        )
+      );
+      ensurePolling();
+    } catch (e) {
+      setPack((prev) => prev.map((p) => (p.job_id === item.job_id ? { ...p, regenerating: false } : p)));
+      setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (zipBusy) return;
+    const done = pack.filter((p) => p.status === 'completed' && p.urls[0]);
+    if (done.length === 0) return;
+    setZipBusy(true);
+    try {
+      const { entries } = await fetchBlobsConcurrent(
+        done.map((d) => d.urls[0]),
+        fetchBlobForJobRef,
+      );
+      const named = entries.map((e, i) => {
+        const label = done[done.findIndex((d) => d.urls[0] === e.ref)]?.label || `asset-${i + 1}`;
+        const ext = e.blob.type.includes('png') ? 'png' : e.blob.type.includes('webp') ? 'webp' : 'jpg';
+        return { name: `${slug(label)}.${ext}`, blob: e.blob };
+      });
+      if (named.length === 0) throw new Error('Download failed');
+      await zipBlobsAndDownload(named, `${slug(dna?.brand_name || 'brand')}-pack`);
+      showToast('toast.downloaded');
+    } catch {
+      setError(t(locale, 'branding.zipFailed'));
+    } finally {
+      setZipBusy(false);
     }
   };
 
@@ -269,12 +348,40 @@ export default function BrandingContent() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-theme-fg">{dna.brand_name || t(locale, 'branding.dnaTitle')}</h2>
-                {dna.tagline && <p className="text-sm text-theme-fg-muted mt-0.5">{dna.tagline}</p>}
+                {dna.tagline && (
+                  <button
+                    type="button"
+                    onClick={() => void copyText(dna.tagline!)}
+                    className="text-sm text-theme-fg-muted mt-0.5 hover:text-theme-fg text-left"
+                    title={t(locale, 'branding.copy')}
+                  >
+                    {dna.tagline}
+                  </button>
+                )}
               </div>
               <Link href="/dashboard/files" className="text-xs text-theme-accent hover:underline">
                 {t(locale, 'branding.seeInFiles')}
               </Link>
             </div>
+
+            {(dna.tagline_variants?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-2">{t(locale, 'branding.taglines')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {dna.tagline_variants!.filter(Boolean).map((v, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => void copyText(v)}
+                      className="px-3 py-1.5 rounded-full border border-theme-border bg-theme-bg text-xs text-theme-fg hover:bg-theme-bg-hover transition-colors"
+                      title={t(locale, 'branding.copy')}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
               {dna.tone && (
@@ -314,16 +421,22 @@ export default function BrandingContent() {
                     ['accent', colors.accent],
                   ] as const).map(([key, hex]) =>
                     hex ? (
-                      <div key={key} className="flex items-center gap-2">
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => void copyText(hex)}
+                        className="flex items-center gap-2 group"
+                        title={t(locale, 'branding.copy')}
+                      >
                         <span
                           className="w-8 h-8 rounded-lg border border-theme-border shrink-0"
                           style={{ backgroundColor: hex }}
                         />
-                        <div className="text-xs">
+                        <div className="text-xs text-left">
                           <p className="text-theme-fg-muted capitalize">{key}</p>
-                          <p className="font-mono text-theme-fg">{hex}</p>
+                          <p className="font-mono text-theme-fg group-hover:text-theme-accent">{hex}</p>
                         </div>
-                      </div>
+                      </button>
                     ) : null
                   )}
                 </div>
@@ -332,23 +445,62 @@ export default function BrandingContent() {
           </section>
         )}
 
+        {(dna?.campaigns?.length ?? 0) > 0 && (
+          <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5">
+            <h2 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'branding.campaigns')}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {dna!.campaigns!.filter((c) => c.title).map((c, i) => (
+                <div key={i} className="rounded-xl border border-theme-border bg-theme-bg p-3.5 flex flex-col gap-1.5">
+                  <p className="text-sm font-medium text-theme-fg">{c.title}</p>
+                  <p className="text-xs text-theme-fg-muted flex-1">{c.concept}</p>
+                  {c.cta && (
+                    <p className="text-xs text-theme-accent font-medium">{c.cta}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {pack.length > 0 && (
           <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <h2 className="text-sm font-semibold text-theme-fg">
                 {t(locale, 'branding.pack')} ({completedCount}/{pack.length})
               </h2>
-              <Link href="/dashboard/content" className="text-xs text-theme-accent hover:underline">
-                {t(locale, 'branding.seeInContent')}
-              </Link>
+              <div className="flex items-center gap-3">
+                {completedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadAll()}
+                    disabled={zipBusy}
+                    className="text-xs rounded-lg border border-theme-border bg-theme-bg px-3 py-1.5 text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 transition-colors"
+                  >
+                    {zipBusy ? t(locale, 'branding.zipPreparing') : t(locale, 'branding.downloadAll')}
+                  </button>
+                )}
+                <Link href="/dashboard/content" className="text-xs text-theme-accent hover:underline">
+                  {t(locale, 'branding.seeInContent')}
+                </Link>
+              </div>
             </div>
+            {pack.length > 0 && completedCount < pack.length && (
+              <div className="h-1.5 rounded-full bg-theme-bg-hover overflow-hidden">
+                <div
+                  className="h-full bg-theme-accent transition-all duration-500"
+                  style={{ width: `${Math.max(4, Math.round((completedCount / pack.length) * 100))}%` }}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {pack.map((item) => (
                 <AssetCard
                   key={item.job_id}
                   item={item}
                   mediaToken={mediaToken}
-                  localeLabel={statusLabel(locale, item.status)}
+                  locale={locale}
+                  onCopy={copyText}
+                  onRegenerate={() => void handleRegenerate(item)}
                 />
               ))}
             </div>
@@ -376,19 +528,25 @@ function statusLabel(locale: Locale, status: PackItem['status']): string {
 function AssetCard({
   item,
   mediaToken,
-  localeLabel,
+  locale,
+  onCopy,
+  onRegenerate,
 }: {
   item: PackItem;
   mediaToken: string | null;
-  localeLabel: string;
+  locale: Locale;
+  onCopy: (text: string) => Promise<void>;
+  onRegenerate: () => void;
 }) {
+  const [captionOpen, setCaptionOpen] = useState(false);
   const url = item.urls[0];
   const display = url && mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url;
+  const captionFull = [item.caption, item.hashtags].filter(Boolean).join('\n\n');
 
   const handleDownload = async () => {
     if (!url) return;
     try {
-      const blob = await downloadMediaUrl(url);
+      const blob = await fetchBlobForJobRef(url);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `${slug(item.label)}.png`;
@@ -400,33 +558,73 @@ function AssetCard({
   };
 
   return (
-    <div className="rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden">
+    <div className="rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden flex flex-col">
       <div className="aspect-square bg-theme-bg flex items-center justify-center relative">
         {display && item.status === 'completed' ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={display} alt={item.label} className="w-full h-full object-cover" />
+          <img src={display} alt={item.label} className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="text-center px-3">
-            <p className="text-xs text-theme-fg-muted animate-pulse-subtle">{localeLabel}</p>
+            <p className="text-xs text-theme-fg-muted animate-pulse-subtle">{statusLabel(locale, item.status)}</p>
             {item.error && <p className="text-[10px] text-red-500 mt-1 line-clamp-2">{item.error}</p>}
           </div>
         )}
       </div>
-      <div className="p-3 flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-theme-fg truncate">{item.label}</p>
-          {item.aspect_ratio && (
-            <p className="text-[10px] text-theme-fg-subtle">{item.aspect_ratio}</p>
-          )}
+      <div className="p-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-theme-fg truncate">{item.label}</p>
+            {item.aspect_ratio && (
+              <p className="text-[10px] text-theme-fg-subtle">{item.aspect_ratio}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {(item.status === 'completed' || item.status === 'failed') && item.prompt && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                disabled={item.regenerating}
+                className="text-xs text-theme-fg-muted hover:text-theme-fg disabled:opacity-50"
+                title={t(locale, 'branding.regenerate')}
+              >
+                {item.regenerating ? '…' : t(locale, 'branding.regenerate')}
+              </button>
+            )}
+            {item.status === 'completed' && url && (
+              <button
+                type="button"
+                onClick={() => void handleDownload()}
+                className="text-xs text-theme-accent hover:underline"
+              >
+                {t(locale, 'branding.download')}
+              </button>
+            )}
+          </div>
         </div>
-        {item.status === 'completed' && url && (
-          <button
-            type="button"
-            onClick={() => void handleDownload()}
-            className="text-xs text-theme-accent hover:underline shrink-0"
-          >
-            Download
-          </button>
+        {captionFull && (
+          <div className="border-t border-theme-border pt-2">
+            <button
+              type="button"
+              onClick={() => setCaptionOpen((v) => !v)}
+              className="flex items-center justify-between w-full text-[11px] font-medium text-theme-fg-muted hover:text-theme-fg"
+            >
+              <span>{t(locale, 'branding.caption')}</span>
+              <span>{captionOpen ? '−' : '+'}</span>
+            </button>
+            {captionOpen && (
+              <div className="mt-1.5 space-y-1.5">
+                <p className="text-xs text-theme-fg whitespace-pre-wrap">{item.caption}</p>
+                {item.hashtags && <p className="text-xs text-theme-accent break-words">{item.hashtags}</p>}
+                <button
+                  type="button"
+                  onClick={() => void onCopy(captionFull)}
+                  className="text-[11px] text-theme-accent hover:underline"
+                >
+                  {t(locale, 'branding.copyCaption')}
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
