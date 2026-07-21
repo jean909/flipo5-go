@@ -204,6 +204,117 @@ func (s *Server) createBrandCampaign(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type calendarItem struct {
+	Day         int    `json:"day"`
+	Platform    string `json:"platform"`
+	Format      string `json:"format"`
+	Idea        string `json:"idea"`
+	Caption     string `json:"caption"`
+	Hashtags    string `json:"hashtags,omitempty"`
+	ImagePrompt string `json:"image_prompt,omitempty"`
+}
+
+type contentCalendar struct {
+	Title string         `json:"title"`
+	Items []calendarItem `json:"items"`
+}
+
+// createBrandCalendar generates a 30-day content calendar from a saved brand's DNA.
+func (s *Server) createBrandCalendar(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserID(r.Context())
+	brandID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil || userID == uuid.Nil {
+		http.Error(w, `{"error":"invalid"}`, http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Focus string `json:"focus,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	focus := strings.TrimSpace(req.Focus)
+	if len([]rune(focus)) > 300 {
+		focus = string([]rune(focus)[:300])
+	}
+	brand, err := s.DB.GetBrand(r.Context(), brandID, userID)
+	if err != nil || brand == nil {
+		http.Error(w, `{"error":"brand not found"}`, http.StatusNotFound)
+		return
+	}
+	var dna businessDNA
+	if err := json.Unmarshal(brand.DNA, &dna); err != nil {
+		http.Error(w, `{"error":"corrupt dna"}`, http.StatusInternalServerError)
+		return
+	}
+
+	ctx := r.Context()
+	cal := s.buildContentCalendar(ctx, &dna, focus)
+	if cal == nil {
+		http.Error(w, `{"error":"calendar generation failed, try again"}`, http.StatusBadGateway)
+		return
+	}
+
+	// Save a readable copy in My Files.
+	var b strings.Builder
+	b.WriteString("# " + dna.BrandName + " — " + cal.Title + "\n\n")
+	for _, it := range cal.Items {
+		b.WriteString(fmt.Sprintf("## Day %d — %s (%s)\n", it.Day, it.Platform, it.Format))
+		b.WriteString(it.Idea + "\n\n")
+		if it.Caption != "" {
+			b.WriteString(it.Caption + "\n")
+		}
+		if it.Hashtags != "" {
+			b.WriteString(it.Hashtags + "\n")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("Generated with Flipo5 1 Click Branding.\n")
+	_, _ = s.DB.CreateUserFile(ctx, userID, dna.BrandName+" — Content Calendar", b.String(), "text")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cal)
+}
+
+func (s *Server) buildContentCalendar(ctx context.Context, dna *businessDNA, focus string) *contentCalendar {
+	if s.Repl == nil || strings.TrimSpace(s.ModelText) == "" {
+		return nil
+	}
+	dnaJSON, _ := json.Marshal(dna)
+	system := `You are a social media strategist. Return ONLY valid JSON (no markdown):
+{"title":"calendar name","items":[{"day":1,"platform":"Instagram|Facebook|LinkedIn|TikTok","format":"post|story|reel|carousel","idea":"short content idea","caption":"ready-to-post caption in brand voice","hashtags":"#...","image_prompt":"on-brand image generation prompt for this post"}]}
+Create a 30-day content calendar (30 items, day 1-30). Mix platforms and formats sensibly (3-5 posts/week feel, but fill all 30 days).
+Vary content pillars: product highlights, behind the scenes, tips/education, social proof, promos, engagement questions.
+Use the brand's exact colors, tone, and voice from the Business DNA. Captions in the brand's language with hooks and CTAs.`
+	user := "Business DNA:\n" + string(dnaJSON)
+	if focus != "" {
+		user += "\n\nMonthly focus: " + focus
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	input := textmodel.BuildInput(s.ModelText, system, user, nil, 16384)
+	out, err := s.Repl.Run(runCtx, s.ModelText, input)
+	if err != nil {
+		return nil
+	}
+	raw := strings.TrimSpace(brandingExtractText(out))
+	if i := strings.Index(raw, "{"); i >= 0 {
+		raw = raw[i:]
+	}
+	if j := strings.LastIndex(raw, "}"); j >= 0 {
+		raw = raw[:j+1]
+	}
+	var cal contentCalendar
+	if err := json.Unmarshal([]byte(raw), &cal); err != nil || len(cal.Items) == 0 {
+		return nil
+	}
+	if cal.Title == "" {
+		cal.Title = "30-day content calendar"
+	}
+	if len(cal.Items) > 31 {
+		cal.Items = cal.Items[:31]
+	}
+	return &cal
+}
+
 func (s *Server) buildCampaignPlan(ctx context.Context, dna *businessDNA, theme string) *campaignAssetPlan {
 	if s.Repl == nil || strings.TrimSpace(s.ModelText) == "" {
 		return nil

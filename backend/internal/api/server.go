@@ -99,6 +99,7 @@ func (s *Server) Routes() http.Handler {
 			r.Patch("/{id}", s.updateBrand)
 			r.Delete("/{id}", s.deleteBrand)
 			r.Post("/{id}/campaign", s.createBrandCampaign)
+			r.Post("/{id}/calendar", s.createBrandCalendar)
 		})
 		r.Post("/audio", s.createAudio)
 		r.Route("/products", func(r chi.Router) {

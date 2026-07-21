@@ -10,6 +10,7 @@ import {
   createImage,
   createLogoJob,
   createBrandCampaign,
+  createBrandCalendar,
   listBrands,
   updateBrand,
   deleteBrand,
@@ -21,6 +22,7 @@ import {
   type Brand,
   type BrandingDNA,
   type BrandingJobRef,
+  type CalendarItem,
 } from '@/lib/api';
 import { getOutputUrls, getOutputRefs } from '@/lib/jobOutput';
 import { zipBlobsAndDownload, fetchBlobsConcurrent } from '@/lib/zipExport';
@@ -62,6 +64,10 @@ export default function BrandingContent() {
   const [editingDna, setEditingDna] = useState(false);
   const [dnaDraft, setDnaDraft] = useState<BrandingDNA | null>(null);
   const [dnaSaving, setDnaSaving] = useState(false);
+  const [calendar, setCalendar] = useState<{ title: string; items: CalendarItem[] } | null>(null);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [calendarWeek, setCalendarWeek] = useState(0);
+  const [visualBusy, setVisualBusy] = useState<Set<number>>(() => new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const packRef = useRef<PackItem[]>([]);
@@ -260,6 +266,54 @@ export default function BrandingContent() {
       setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
     } finally {
       setCampaignBusy(false);
+    }
+  };
+
+  const handleCalendar = async () => {
+    if (!brandId || calendarBusy) return;
+    setCalendarBusy(true);
+    setError('');
+    try {
+      const result = await createBrandCalendar(brandId, campaignPrompt.trim() || undefined);
+      setCalendar(result);
+      setCalendarWeek(0);
+      showToast('toast.created');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
+
+  const handleCalendarVisual = async (item: CalendarItem) => {
+    if (!item.image_prompt || visualBusy.has(item.day)) return;
+    setVisualBusy((prev) => new Set(prev).add(item.day));
+    try {
+      const ar = item.format === 'story' || item.format === 'reel' ? '9:16' : '1:1';
+      const r = await createImage({ prompt: item.image_prompt, aspectRatio: ar, maxImages: 1 });
+      addOptimisticJob({ id: r.job_id, type: 'image' });
+      const packItem: PackItem = {
+        job_id: r.job_id,
+        type: 'image',
+        label: `Day ${item.day} — ${item.platform}`,
+        aspect_ratio: ar,
+        prompt: item.image_prompt,
+        caption: item.caption,
+        hashtags: item.hashtags,
+        status: 'queued',
+        urls: [],
+      };
+      setPack((prev) => [packItem, ...prev]);
+      showToast('toast.created');
+      ensurePolling();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
+    } finally {
+      setVisualBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(item.day);
+        return next;
+      });
     }
   };
 
@@ -574,12 +628,85 @@ export default function BrandingContent() {
               >
                 {campaignBusy ? t(locale, 'branding.campaignBusy') : t(locale, 'branding.campaignGo')}
               </button>
+              <button
+                type="button"
+                disabled={calendarBusy}
+                onClick={() => void handleCalendar()}
+                className="rounded-xl border border-theme-border bg-theme-bg px-4 py-2.5 text-sm text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 transition-colors shrink-0"
+              >
+                {calendarBusy ? t(locale, 'branding.calendarBusy') : t(locale, 'branding.calendarGo')}
+              </button>
             </div>
             {campaignTitle && (
               <p className="text-xs text-theme-fg-muted">
                 {t(locale, 'branding.campaignLast')}: <span className="text-theme-fg font-medium">{campaignTitle}</span>
               </p>
             )}
+          </section>
+        )}
+
+        {calendar && (
+          <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-theme-fg">{calendar.title}</h2>
+                <p className="text-xs text-theme-fg-muted mt-0.5">{t(locale, 'branding.calendarSub')}</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {[0, 1, 2, 3].map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setCalendarWeek(w)}
+                    className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                      calendarWeek === w
+                        ? 'border-theme-accent bg-theme-accent/15 text-theme-accent'
+                        : 'border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg'
+                    }`}
+                  >
+                    {t(locale, 'branding.week')} {w + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {calendar.items
+                .filter((it) => it.day > calendarWeek * 7 && it.day <= (calendarWeek + 1) * 7 + (calendarWeek === 3 ? 3 : 0))
+                .map((it) => (
+                  <div key={it.day} className="rounded-xl border border-theme-border bg-theme-bg p-3.5">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <span className="w-8 h-8 rounded-lg bg-theme-accent/15 text-theme-accent text-xs font-bold flex items-center justify-center shrink-0">
+                        {it.day}
+                      </span>
+                      <span className="text-xs font-medium text-theme-fg">{it.platform}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-theme-fg-subtle">{it.format}</span>
+                      <div className="ml-auto flex items-center gap-2">
+                        {(it.caption || it.hashtags) && (
+                          <button
+                            type="button"
+                            onClick={() => void copyText([it.caption, it.hashtags].filter(Boolean).join('\n\n'))}
+                            className="text-[11px] text-theme-accent hover:underline"
+                          >
+                            {t(locale, 'branding.copyCaption')}
+                          </button>
+                        )}
+                        {it.image_prompt && (
+                          <button
+                            type="button"
+                            disabled={visualBusy.has(it.day)}
+                            onClick={() => void handleCalendarVisual(it)}
+                            className="text-[11px] rounded-lg border border-theme-border bg-theme-bg-subtle px-2.5 py-1 text-theme-fg hover:bg-theme-bg-hover disabled:opacity-50 transition-colors"
+                          >
+                            {visualBusy.has(it.day) ? '…' : t(locale, 'branding.createVisual')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-theme-fg">{it.idea}</p>
+                    {it.caption && <p className="text-xs text-theme-fg-muted mt-1 line-clamp-2">{it.caption}</p>}
+                  </div>
+                ))}
+            </div>
           </section>
         )}
 

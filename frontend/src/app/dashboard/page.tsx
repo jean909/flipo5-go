@@ -10,7 +10,7 @@ import { useToast } from '@/app/components/ToastContext';
 import { useIncognito } from '@/app/components/IncognitoContext';
 import { t } from '@/lib/i18n';
 import { submitDashboardPrompt } from './hooks/useDashboardSubmit';
-import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, getToken, getMediaDisplayUrl, updateProfile, listContent, listThreads, listRecentPrompts, editResubmitJob, type User, type Job, type Thread } from '@/lib/api';
+import { createChat, createImage, createVideo, uploadAttachments, getMe, getThread, getToken, getMediaDisplayUrl, updateProfile, listContent, listThreads, editResubmitJob, type User, type Job, type Thread } from '@/lib/api';
 import { extractImageInputsFromJobInput } from '@/lib/promptIntent';
 import { getFriendlyPlaceholder } from '@/lib/placeholder';
 import { getOutputUrls } from '@/lib/jobOutput';
@@ -77,7 +77,6 @@ export default function DashboardPage() {
   const [contentTotal, setContentTotal] = useState(0);
   const [newsIndex, setNewsIndex] = useState(0);
   const [lastThreadPreview, setLastThreadPreview] = useState<{ threadId: string; lastPrompt?: string; thumbnailUrl?: string } | null>(null);
-  const [recentPrompts, setRecentPrompts] = useState<{ prompt: string; type: string }[]>([]);
   const [promoCarouselIndex, setPromoCarouselIndex] = useState(0);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [promptDragOver, setPromptDragOver] = useState(false);
@@ -301,19 +300,6 @@ export default function DashboardPage() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [profileLoaded, user, hasStarted, incognito]);
-
-  useEffect(() => {
-    if (!profileLoaded || !user || hasStarted || incognito) return;
-    let cancelled = false;
-    listRecentPrompts(6)
-      .then((p) => {
-        if (!cancelled) setRecentPrompts(p);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [profileLoaded, user, hasStarted, incognito]);
 
   useEffect(() => {
@@ -1234,108 +1220,6 @@ export default function DashboardPage() {
             </div>
           )}
           <h2 className="font-display text-2xl font-bold text-theme-fg mb-4 tracking-tight">FLIPO5</h2>
-          {(user?.profile?.stats?.job_counts || recentPrompts.length > 0) && (
-            <div className="w-full mb-4 flex flex-col gap-2">
-              {user?.profile?.stats?.job_counts && (
-                <div className="flex flex-wrap justify-center gap-2">
-                  {Object.entries(user.profile.stats.job_counts)
-                    .sort((a, b) => (b[1] as number) - (a[1] as number))
-                    .slice(0, 4)
-                    .map(([type]) => {
-                      const modeMap: Record<string, Mode | null> = {
-                        chat: 'chat',
-                        image: 'image',
-                        video: 'video',
-                        translate: null,
-                        logo: null,
-                        audio: null,
-                        seo: null,
-                      };
-                      const hrefMap: Record<string, string> = {
-                        translate: '/dashboard/translations',
-                        logo: '/dashboard/logo',
-                        audio: '/dashboard/audio',
-                        seo: '/dashboard/seo',
-                        product: '/dashboard/product-pictures',
-                        product_description: '/dashboard/product-pictures',
-                      };
-                      const label =
-                        type === 'chat'
-                          ? t(locale, 'jobs.type.chat')
-                          : type === 'image'
-                            ? t(locale, 'jobs.type.image')
-                            : type === 'video'
-                              ? t(locale, 'jobs.type.video')
-                              : type === 'translate'
-                                ? t(locale, 'jobs.type.translate')
-                                : type === 'logo'
-                                  ? t(locale, 'jobs.type.logo')
-                                  : type === 'audio'
-                                    ? t(locale, 'jobs.type.audio')
-                                    : type === 'seo'
-                                      ? t(locale, 'jobs.type.seo')
-                                      : type.startsWith('product')
-                                        ? t(locale, 'jobs.type.product')
-                                        : type;
-                      const m = modeMap[type];
-                      const href = hrefMap[type];
-                      if (m) {
-                        return (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => setMode(m)}
-                            className={`btn-tap px-3 py-1.5 rounded-full text-xs border transition-colors ${
-                              mode === m
-                                ? 'border-theme-accent bg-theme-accent/15 text-theme-accent'
-                                : 'border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      }
-                      if (href) {
-                        return (
-                          <Link
-                            key={type}
-                            href={href}
-                            className="btn-tap px-3 py-1.5 rounded-full text-xs border border-theme-border bg-theme-bg text-theme-fg-muted hover:text-theme-fg"
-                          >
-                            {label}
-                          </Link>
-                        );
-                      }
-                      return null;
-                    })}
-                </div>
-              )}
-              {recentPrompts.length > 0 && (
-                <div className="flex flex-wrap justify-center gap-1.5">
-                  {recentPrompts.slice(0, 4).map((rp) => (
-                    <button
-                      key={rp.prompt.slice(0, 48)}
-                      type="button"
-                      title={rp.prompt}
-                      onClick={() => {
-                        setPrompt(rp.prompt);
-                        if (rp.type === 'image' || rp.type === 'video' || rp.type === 'chat') {
-                          setMode(rp.type as Mode);
-                        }
-                        focusPromptInput();
-                      }}
-                      className="btn-tap max-w-[12rem] truncate px-2.5 py-1 rounded-lg text-[11px] border border-theme-border-subtle bg-theme-bg-subtle text-theme-fg-muted hover:text-theme-fg hover:border-theme-border"
-                    >
-                      {rp.prompt}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <p className="text-center text-[10px] text-theme-fg-subtle sr-only sm:not-sr-only sm:block">
-                / focus · 1 chat · 2 image · 3 video · Esc clear
-              </p>
-            </div>
-          )}
           <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="w-full flex flex-col items-center gap-4">
             {mode === 'image' && (
               <ImageSettingsRow locale={locale} settings={imageSettings} onChange={setImageSettings} />

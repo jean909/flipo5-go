@@ -1364,6 +1364,31 @@ export async function deleteBrand(brandId: string): Promise<void> {
   if (!res.ok) throw new Error('Delete failed');
 }
 
+export interface CalendarItem {
+  day: number;
+  platform: string;
+  format: string;
+  idea: string;
+  caption: string;
+  hashtags?: string;
+  image_prompt?: string;
+}
+
+export async function createBrandCalendar(brandId: string, focus?: string): Promise<{ title: string; items: CalendarItem[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/brands/${encodeURIComponent(brandId)}/calendar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ focus: focus?.trim() || '' }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Calendar failed');
+  }
+  return res.json();
+}
+
 export async function createBrandCampaign(brandId: string, prompt: string): Promise<{ title: string; jobs: BrandingJobRef[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');

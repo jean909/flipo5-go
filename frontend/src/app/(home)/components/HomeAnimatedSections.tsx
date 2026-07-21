@@ -6,12 +6,12 @@ import { motion, useInView } from 'framer-motion';
 import { useLocale } from '@/app/components/LocaleContext';
 import { t } from '@/lib/i18n';
 import { LazySectionVideo } from './LazySectionVideo';
-import { ArrowIcon, ChatIcon, EuropeMapIcon, ImageIcon, VideoIcon } from './HomeIcons';
+import { ArrowIcon, EuropeMapIcon } from './HomeIcons';
 
 const sections = [
-  { key: 'chat' as const, icon: ChatIcon, gradient: 'from-violet-500/25 to-fuchsia-500/15', label: '01' },
-  { key: 'image' as const, icon: ImageIcon, gradient: 'from-amber-500/25 to-orange-500/15', label: '02' },
-  { key: 'video' as const, icon: VideoIcon, gradient: 'from-cyan-500/25 to-blue-500/15', label: '03' },
+  { key: 'chat' as const, gradient: 'from-violet-500/25 to-fuchsia-500/15', label: '01', image: '/home/home-chat.webp' },
+  { key: 'image' as const, gradient: 'from-amber-500/25 to-orange-500/15', label: '02', image: '/home/home-image.webp' },
+  { key: 'video' as const, gradient: 'from-cyan-500/25 to-blue-500/15', label: '03', image: '/home/home-video.webp' },
 ];
 
 export default function HomeAnimatedSections() {
@@ -156,7 +156,7 @@ export default function HomeAnimatedSections() {
         </div>
       </section>
 
-      {sections.map(({ key, icon: Icon, gradient, label }, i) => {
+      {sections.map(({ key, gradient, label, image }, i) => {
         const textFirst = i % 2 === 0;
         const textFrom = textFirst ? -48 : 48;
         const visualFrom = textFirst ? 48 : -48;
@@ -198,8 +198,15 @@ export default function HomeAnimatedSections() {
                 transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
                 className={`relative rounded-2xl sm:rounded-3xl border border-white/10 bg-gradient-to-br ${gradient} aspect-[4/3] min-h-[200px] sm:min-h-[280px] flex items-center justify-center overflow-hidden ${textFirst ? 'lg:order-2' : 'lg:order-1'}`}
               >
-                <Icon className="w-24 h-24 sm:w-32 sm:h-32 text-white/25 relative z-10" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" aria-hidden />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={image}
+                  alt={t(locale, `home.section.${key}.title`)}
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" aria-hidden />
               </motion.div>
             </div>
           </motion.section>
