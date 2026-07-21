@@ -93,6 +93,13 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/translate", s.createTranslate)
 		r.Post("/logo", s.createLogo)
 		r.Post("/branding", s.createBranding)
+		r.Route("/brands", func(r chi.Router) {
+			r.Get("/", s.listBrands)
+			r.Get("/{id}", s.getBrand)
+			r.Patch("/{id}", s.updateBrand)
+			r.Delete("/{id}", s.deleteBrand)
+			r.Post("/{id}/campaign", s.createBrandCampaign)
+		})
 		r.Post("/audio", s.createAudio)
 		r.Route("/products", func(r chi.Router) {
 			r.Get("/", s.listProducts)

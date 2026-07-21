@@ -1296,9 +1296,10 @@ export interface BrandingJobRef {
 export async function createBranding(params: {
   description: string;
   brand_name?: string;
+  website_url?: string;
   image_urls?: string[];
   include_video?: boolean;
-}): Promise<{ dna: BrandingDNA; jobs: BrandingJobRef[] }> {
+}): Promise<{ dna: BrandingDNA; jobs: BrandingJobRef[]; brand_id?: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const res = await fetch(`${API_URL}/api/branding`, {
@@ -1307,6 +1308,7 @@ export async function createBranding(params: {
     body: JSON.stringify({
       description: params.description.trim(),
       brand_name: params.brand_name?.trim() || '',
+      website_url: params.website_url?.trim() || '',
       image_urls: params.image_urls ?? [],
       include_video: params.include_video === true,
     }),
@@ -1314,6 +1316,65 @@ export async function createBranding(params: {
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error((e as { error?: string }).error || 'Branding failed');
+  }
+  return res.json();
+}
+
+export interface Brand {
+  id: string;
+  user_id: string;
+  name: string;
+  dna: BrandingDNA;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listBrands(): Promise<{ brands: Brand[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/brands`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to list brands');
+  const data = (await res.json()) as { brands?: Brand[] | null };
+  return { brands: data.brands ?? [] };
+}
+
+export async function updateBrand(brandId: string, dna: BrandingDNA): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/brands/${encodeURIComponent(brandId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ dna }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Update failed');
+  }
+}
+
+export async function deleteBrand(brandId: string): Promise<void> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/brands/${encodeURIComponent(brandId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Delete failed');
+}
+
+export async function createBrandCampaign(brandId: string, prompt: string): Promise<{ title: string; jobs: BrandingJobRef[] }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not logged in');
+  const res = await fetch(`${API_URL}/api/brands/${encodeURIComponent(brandId)}/campaign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ prompt: prompt.trim() }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { error?: string }).error || 'Campaign failed');
   }
   return res.json();
 }

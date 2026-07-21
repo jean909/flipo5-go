@@ -28,6 +28,7 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description  string   `json:"description"`
 		BrandName    string   `json:"brand_name,omitempty"`
+		WebsiteURL   string   `json:"website_url,omitempty"`
 		ImageURLs    []string `json:"image_urls,omitempty"`
 		IncludeVideo bool     `json:"include_video,omitempty"`
 	}
@@ -36,8 +37,8 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	desc := strings.TrimSpace(req.Description)
-	if desc == "" {
-		http.Error(w, `{"error":"description required"}`, http.StatusBadRequest)
+	if desc == "" && strings.TrimSpace(req.WebsiteURL) == "" {
+		http.Error(w, `{"error":"description or website_url required"}`, http.StatusBadRequest)
 		return
 	}
 	if len([]rune(desc)) > 4000 {
@@ -49,6 +50,24 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// Pomelli-style website scan: pull brand context straight from the user's site.
+	if site := strings.TrimSpace(req.WebsiteURL); site != "" {
+		if siteText := fetchWebsiteText(ctx, site); siteText != "" {
+			if desc != "" {
+				desc = desc + "\n\n" + siteText
+			} else {
+				desc = siteText
+			}
+			if len([]rune(desc)) > 7000 {
+				desc = string([]rune(desc)[:7000])
+			}
+		} else if desc == "" {
+			http.Error(w, `{"error":"could not read website"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
 	resolve := func(u string) string {
 		u = strings.TrimSpace(u)
 		if u != "" && strings.HasPrefix(u, "uploads/") && s.Store != nil {
@@ -180,13 +199,20 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = s.DB.CreateUserFile(ctx, userID, fileName, brief, "text")
 
+	// Persist the brand so campaigns can reuse the DNA later.
+	brandID, _ := s.DB.CreateBrand(ctx, userID, dna.BrandName, dna)
+
 	s.invalidateContentCache(ctx, userID)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"dna":  dna,
 		"jobs": created,
-	})
+	}
+	if brandID != uuid.Nil {
+		resp["brand_id"] = brandID.String()
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 type brandingColors struct {

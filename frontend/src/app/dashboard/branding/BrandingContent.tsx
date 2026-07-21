@@ -9,11 +9,16 @@ import {
   createBranding,
   createImage,
   createLogoJob,
+  createBrandCampaign,
+  listBrands,
+  updateBrand,
+  deleteBrand,
   uploadAttachments,
   getToken,
   getMediaDisplayUrl,
   getJob,
   fetchBlobForJobRef,
+  type Brand,
   type BrandingDNA,
   type BrandingJobRef,
 } from '@/lib/api';
@@ -39,6 +44,7 @@ export default function BrandingContent() {
 
   const [brandName, setBrandName] = useState('');
   const [description, setDescription] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
   const [previews, setPreviews] = useState<LocalPreview[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -48,6 +54,14 @@ export default function BrandingContent() {
   const [zipBusy, setZipBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [includeVideo, setIncludeVideo] = useState(false);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const [campaignPrompt, setCampaignPrompt] = useState('');
+  const [campaignBusy, setCampaignBusy] = useState(false);
+  const [campaignTitle, setCampaignTitle] = useState('');
+  const [editingDna, setEditingDna] = useState(false);
+  const [dnaDraft, setDnaDraft] = useState<BrandingDNA | null>(null);
+  const [dnaSaving, setDnaSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const packRef = useRef<PackItem[]>([]);
@@ -55,6 +69,7 @@ export default function BrandingContent() {
 
   useEffect(() => {
     getToken().then(setMediaToken);
+    listBrands().then((r) => setBrands(r.brands)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -150,11 +165,15 @@ export default function BrandingContent() {
 
   const handleGenerate = async () => {
     const desc = description.trim();
-    if (!desc || loading) return;
+    const site = websiteUrl.trim();
+    if ((!desc && !site) || loading) return;
     setLoading(true);
     setError('');
     setDna(null);
     setPack([]);
+    setBrandId(null);
+    setCampaignTitle('');
+    setEditingDna(false);
     stopPoll();
     try {
       let imageUrls: string[] = [];
@@ -164,10 +183,15 @@ export default function BrandingContent() {
       const result = await createBranding({
         description: desc,
         brand_name: brandName.trim() || undefined,
+        website_url: site || undefined,
         image_urls: imageUrls,
         include_video: includeVideo,
       });
       setDna(result.dna);
+      if (result.brand_id) {
+        setBrandId(result.brand_id);
+        listBrands().then((r) => setBrands(r.brands)).catch(() => {});
+      }
       const items: PackItem[] = (result.jobs ?? []).map((j) => ({
         ...j,
         status: 'queued',
@@ -186,6 +210,78 @@ export default function BrandingContent() {
       setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectBrand = (b: Brand) => {
+    stopPoll();
+    setBrandId(b.id);
+    setDna(b.dna);
+    setBrandName(b.name);
+    setPack([]);
+    setCampaignTitle('');
+    setEditingDna(false);
+    setError('');
+  };
+
+  const handleDeleteBrand = async (id: string) => {
+    try {
+      await deleteBrand(id);
+      setBrands((prev) => prev.filter((b) => b.id !== id));
+      if (brandId === id) {
+        setBrandId(null);
+        setDna(null);
+        setPack([]);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleCampaign = async () => {
+    const prompt = campaignPrompt.trim();
+    if (!prompt || !brandId || campaignBusy) return;
+    setCampaignBusy(true);
+    setError('');
+    try {
+      const result = await createBrandCampaign(brandId, prompt);
+      setCampaignTitle(result.title || prompt);
+      const items: PackItem[] = (result.jobs ?? []).map((j) => ({
+        ...j,
+        status: 'queued',
+        urls: [],
+      }));
+      setPack((prev) => [...items, ...prev]);
+      items.forEach((j) => addOptimisticJob({ id: j.job_id, type: 'image' }));
+      setCampaignPrompt('');
+      showToast('toast.created');
+      ensurePolling();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
+    } finally {
+      setCampaignBusy(false);
+    }
+  };
+
+  const handleStartEditDna = () => {
+    if (!dna) return;
+    setDnaDraft(JSON.parse(JSON.stringify(dna)) as BrandingDNA);
+    setEditingDna(true);
+  };
+
+  const handleSaveDna = async () => {
+    if (!dnaDraft || !brandId || dnaSaving) return;
+    setDnaSaving(true);
+    try {
+      await updateBrand(brandId, dnaDraft);
+      setDna(dnaDraft);
+      setEditingDna(false);
+      listBrands().then((r) => setBrands(r.brands)).catch(() => {});
+      showToast('toast.saved');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t(locale, 'branding.failed'));
+    } finally {
+      setDnaSaving(false);
     }
   };
 
@@ -293,17 +389,66 @@ export default function BrandingContent() {
           <p className="text-sm text-theme-fg-muted">{t(locale, 'branding.sub')}</p>
         </div>
 
+        {brands.length > 0 && (
+          <section>
+            <p className="text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-2">{t(locale, 'branding.savedBrands')}</p>
+            <div className="flex flex-wrap gap-2">
+              {brands.map((b) => (
+                <div
+                  key={b.id}
+                  className={`group flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                    brandId === b.id
+                      ? 'border-theme-accent bg-theme-accent/15 text-theme-accent'
+                      : 'border-theme-border bg-theme-bg-subtle text-theme-fg hover:bg-theme-bg-hover'
+                  }`}
+                  onClick={() => handleSelectBrand(b)}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: b.dna?.colors?.primary || '#888' }}
+                  />
+                  <span className="font-medium">{b.name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleDeleteBrand(b.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-theme-fg-subtle hover:text-red-500 transition-opacity ml-0.5"
+                    aria-label="Delete brand"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'branding.brandName')}</label>
-            <input
-              type="text"
-              value={brandName}
-              onChange={(e) => setBrandName(e.target.value)}
-              placeholder={t(locale, 'branding.brandNamePlaceholder')}
-              maxLength={80}
-              className="w-full rounded-xl border border-theme-border bg-theme-bg px-3 py-2.5 text-sm text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-accent/40"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'branding.brandName')}</label>
+              <input
+                type="text"
+                value={brandName}
+                onChange={(e) => setBrandName(e.target.value)}
+                placeholder={t(locale, 'branding.brandNamePlaceholder')}
+                maxLength={80}
+                className="w-full rounded-xl border border-theme-border bg-theme-bg px-3 py-2.5 text-sm text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-accent/40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-theme-fg-muted mb-1.5">{t(locale, 'branding.website')}</label>
+              <input
+                type="url"
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+                placeholder={t(locale, 'branding.websitePlaceholder')}
+                maxLength={200}
+                className="w-full rounded-xl border border-theme-border bg-theme-bg px-3 py-2.5 text-sm text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-accent/40"
+              />
+            </div>
           </div>
 
           <div>
@@ -316,6 +461,7 @@ export default function BrandingContent() {
               maxLength={4000}
               className="w-full rounded-xl border border-theme-border bg-theme-bg px-3 py-2.5 text-sm text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-accent/40 resize-y min-h-[100px]"
             />
+            <p className="text-[11px] text-theme-fg-subtle mt-1">{t(locale, 'branding.descriptionOrSite')}</p>
           </div>
 
           <div>
@@ -380,7 +526,7 @@ export default function BrandingContent() {
 
           <button
             type="button"
-            disabled={!description.trim() || loading}
+            disabled={(!description.trim() && !websiteUrl.trim()) || loading}
             onClick={() => void handleGenerate()}
             className="w-full sm:w-auto rounded-xl bg-theme-accent px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
@@ -388,7 +534,56 @@ export default function BrandingContent() {
           </button>
         </section>
 
-        {dna && (
+        {brandId && dna && (
+          <section className="rounded-2xl border border-theme-accent/40 bg-theme-bg-subtle p-4 md:p-5 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-theme-fg">{t(locale, 'branding.campaignTitle')}</h2>
+              <p className="text-xs text-theme-fg-muted mt-0.5">{t(locale, 'branding.campaignSub')}</p>
+            </div>
+            {(dna.campaigns?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {dna.campaigns!.filter((c) => c.title).map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setCampaignPrompt(c.title + (c.concept ? ` — ${c.concept}` : ''))}
+                    className="px-3 py-1.5 rounded-full border border-theme-border bg-theme-bg text-xs text-theme-fg hover:bg-theme-bg-hover transition-colors"
+                  >
+                    {c.title}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={campaignPrompt}
+                onChange={(e) => setCampaignPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleCampaign();
+                }}
+                placeholder={t(locale, 'branding.campaignPlaceholder')}
+                maxLength={500}
+                className="flex-1 rounded-xl border border-theme-border bg-theme-bg px-3 py-2.5 text-sm text-theme-fg placeholder:text-theme-fg-subtle focus:outline-none focus:ring-2 focus:ring-theme-accent/40"
+              />
+              <button
+                type="button"
+                disabled={!campaignPrompt.trim() || campaignBusy}
+                onClick={() => void handleCampaign()}
+                className="rounded-xl bg-theme-accent px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 hover:opacity-90 transition-opacity shrink-0"
+              >
+                {campaignBusy ? t(locale, 'branding.campaignBusy') : t(locale, 'branding.campaignGo')}
+              </button>
+            </div>
+            {campaignTitle && (
+              <p className="text-xs text-theme-fg-muted">
+                {t(locale, 'branding.campaignLast')}: <span className="text-theme-fg font-medium">{campaignTitle}</span>
+              </p>
+            )}
+          </section>
+        )}
+
+        {dna && !editingDna && (
           <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -404,9 +599,20 @@ export default function BrandingContent() {
                   </button>
                 )}
               </div>
-              <Link href="/dashboard/files" className="text-xs text-theme-accent hover:underline">
-                {t(locale, 'branding.seeInFiles')}
-              </Link>
+              <div className="flex items-center gap-3">
+                {brandId && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditDna}
+                    className="text-xs rounded-lg border border-theme-border bg-theme-bg px-3 py-1.5 text-theme-fg hover:bg-theme-bg-hover transition-colors"
+                  >
+                    {t(locale, 'branding.editDna')}
+                  </button>
+                )}
+                <Link href="/dashboard/files" className="text-xs text-theme-accent hover:underline">
+                  {t(locale, 'branding.seeInFiles')}
+                </Link>
+              </div>
             </div>
 
             {(dna.tagline_variants?.length ?? 0) > 0 && (
@@ -490,7 +696,95 @@ export default function BrandingContent() {
           </section>
         )}
 
-        {(dna?.campaigns?.length ?? 0) > 0 && (
+        {editingDna && dnaDraft && (
+          <section className="rounded-2xl border border-theme-accent/40 bg-theme-bg-subtle p-4 md:p-5 space-y-3">
+            <h2 className="text-sm font-semibold text-theme-fg">{t(locale, 'branding.editDnaTitle')}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-1">{t(locale, 'branding.brandName')}</label>
+                <input
+                  type="text"
+                  value={dnaDraft.brand_name}
+                  onChange={(e) => setDnaDraft({ ...dnaDraft, brand_name: e.target.value })}
+                  className="w-full rounded-lg border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-fg"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-1">Tagline</label>
+                <input
+                  type="text"
+                  value={dnaDraft.tagline ?? ''}
+                  onChange={(e) => setDnaDraft({ ...dnaDraft, tagline: e.target.value })}
+                  className="w-full rounded-lg border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-fg"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-1">{t(locale, 'branding.tone')}</label>
+                <input
+                  type="text"
+                  value={dnaDraft.tone ?? ''}
+                  onChange={(e) => setDnaDraft({ ...dnaDraft, tone: e.target.value })}
+                  className="w-full rounded-lg border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-fg"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-1">{t(locale, 'branding.audience')}</label>
+                <input
+                  type="text"
+                  value={dnaDraft.audience ?? ''}
+                  onChange={(e) => setDnaDraft({ ...dnaDraft, audience: e.target.value })}
+                  className="w-full rounded-lg border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-fg"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-1">{t(locale, 'branding.voice')}</label>
+              <textarea
+                value={dnaDraft.voice ?? ''}
+                onChange={(e) => setDnaDraft({ ...dnaDraft, voice: e.target.value })}
+                rows={2}
+                className="w-full rounded-lg border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-fg resize-y"
+              />
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {(['primary', 'secondary', 'accent'] as const).map((key) => (
+                <div key={key}>
+                  <label className="block text-[10px] uppercase tracking-wider text-theme-fg-subtle mb-1 capitalize">{key}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(dnaDraft.colors?.[key] ?? '') ? dnaDraft.colors![key]! : '#888888'}
+                      onChange={(e) =>
+                        setDnaDraft({ ...dnaDraft, colors: { ...dnaDraft.colors, [key]: e.target.value } })
+                      }
+                      className="w-9 h-9 rounded-lg border border-theme-border bg-theme-bg cursor-pointer"
+                    />
+                    <span className="text-xs font-mono text-theme-fg">{dnaDraft.colors?.[key] ?? ''}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={dnaSaving || !dnaDraft.brand_name.trim()}
+                onClick={() => void handleSaveDna()}
+                className="rounded-xl bg-theme-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
+              >
+                {dnaSaving ? t(locale, 'branding.dnaSaving') : t(locale, 'branding.dnaSave')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingDna(false)}
+                className="rounded-xl border border-theme-border bg-theme-bg px-4 py-2 text-sm text-theme-fg hover:bg-theme-bg-hover transition-colors"
+              >
+                {t(locale, 'branding.dnaCancel')}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {(dna?.campaigns?.length ?? 0) > 0 && !editingDna && (
           <section className="rounded-2xl border border-theme-border bg-theme-bg-subtle p-4 md:p-5">
             <h2 className="text-sm font-semibold text-theme-fg mb-3">{t(locale, 'branding.campaigns')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
