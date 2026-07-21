@@ -268,11 +268,21 @@ input[type="search"]::-ms-clear {
 .animate-home-hero-in-delay-1 { animation-delay: 0.15s; }
 .animate-home-hero-in-delay-2 { animation-delay: 0.28s; }
 .animate-home-hero-in-delay-3 { animation-delay: 0.42s; }
+@keyframes homeScrollCue {
+  0%, 100% { opacity: 0.35; transform: translateY(0); }
+  50% { opacity: 0.9; transform: translateY(6px); }
+}
+.animate-home-scroll-cue {
+  animation: homeScrollCue 2.2s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .animate-home-hero-in {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+  .animate-home-scroll-cue {
+    animation: none;
   }
 }
 

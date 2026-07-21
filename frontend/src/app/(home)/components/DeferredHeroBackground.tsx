@@ -6,8 +6,8 @@ const HERO_VIDEO = '/home/herosection.mp4';
 const HERO_POSTER = '/home/herosection-poster.jpg';
 
 /**
- * Shows a light poster immediately, then swaps to compressed MP4 after idle.
- * Avoids shipping multi‑MB GIF fallbacks.
+ * Full-bleed hero video: poster first, then MP4 after idle.
+ * Edge-to-edge visual plane for the landing composition.
  */
 export function DeferredHeroBackground() {
   const [showVideo, setShowVideo] = useState(false);
@@ -18,13 +18,13 @@ export function DeferredHeroBackground() {
       if (!cancelled) setShowVideo(true);
     };
     if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(start, { timeout: 2000 });
+      const id = requestIdleCallback(start, { timeout: 1800 });
       return () => {
         cancelled = true;
         cancelIdleCallback(id);
       };
     }
-    const t = setTimeout(start, 150);
+    const t = setTimeout(start, 120);
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -32,21 +32,21 @@ export function DeferredHeroBackground() {
   }, []);
 
   return (
-    <div className="absolute inset-0 bg-black" aria-hidden>
+    <div className="absolute inset-0 bg-black overflow-hidden" aria-hidden>
       <img
         src={HERO_POSTER}
         alt=""
-        width={720}
+        width={1280}
         height={720}
         decoding="async"
-        fetchPriority="low"
-        className={`absolute inset-0 w-full h-full object-cover object-center transition-opacity duration-500 ${showVideo ? 'opacity-0' : 'opacity-100'}`}
+        fetchPriority="high"
+        className={`absolute inset-0 w-full h-full object-cover object-center scale-[1.02] transition-opacity duration-700 ${showVideo ? 'opacity-0' : 'opacity-100'}`}
       />
       {showVideo ? (
         <video
           src={HERO_VIDEO}
           poster={HERO_POSTER}
-          className="absolute inset-0 w-full h-full object-cover object-center"
+          className="absolute inset-0 w-full h-full object-cover object-center scale-[1.02]"
           autoPlay
           muted
           loop
