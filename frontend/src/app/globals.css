@@ -256,53 +256,58 @@ input[type="search"]::-ms-clear {
   animation: fadeInUp 0.22s ease-out;
 }
 
-/* Home hero — CSS-only entrance (keeps framer-motion off the critical path) */
-@keyframes homeHeroIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-home-hero-in {
-  opacity: 0;
-  animation: homeHeroIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-.animate-home-hero-in-delay-1 { animation-delay: 0.15s; }
-.animate-home-hero-in-delay-2 { animation-delay: 0.28s; }
-.animate-home-hero-in-delay-3 { animation-delay: 0.42s; }
 @keyframes homeScrollCue {
-  0%, 100% { opacity: 0.35; transform: translateY(0); }
-  50% { opacity: 0.9; transform: translateY(6px); }
+  0%, 100% { opacity: 0.28; transform: translate3d(0, 0, 0); }
+  50% { opacity: 1; transform: translate3d(0, 10px, 0); }
 }
 .animate-home-scroll-cue {
-  animation: homeScrollCue 2.2s ease-in-out infinite;
+  animation: homeScrollCue 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 @keyframes homeKenburns {
-  0% { transform: scale(1.02); }
-  100% { transform: scale(1.08); }
+  0% { transform: scale(1.04) translate3d(0, 0, 0); }
+  50% { transform: scale(1.1) translate3d(-1.2%, -0.6%, 0); }
+  100% { transform: scale(1.06) translate3d(0.8%, 0.4%, 0); }
 }
 .animate-home-kenburns {
-  animation: homeKenburns 28s ease-in-out alternate infinite;
+  animation: homeKenburns 32s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 @keyframes homeMarqueeFast {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }
 }
 .animate-home-marquee-fast {
-  animation: homeMarqueeFast 38s linear infinite;
+  animation: homeMarqueeFast 42s linear infinite;
+}
+@keyframes homeStrokePulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.animate-home-stroke-pulse {
+  animation: homeStrokePulse 4.5s ease-in-out infinite;
+}
+@keyframes homeLineGrow {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+.animate-home-line-grow {
+  transform-origin: left center;
+  animation: homeLineGrow 0.9s cubic-bezier(0.16, 1, 0.3, 1) 1.05s both;
 }
 .home-film-grain {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
   background-size: 180px 180px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-home-hero-in {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
   .animate-home-scroll-cue,
   .animate-home-kenburns,
-  .animate-home-marquee-fast {
+  .animate-home-marquee-fast,
+  .animate-home-stroke-pulse,
+  .animate-home-line-grow {
     animation: none;
+  }
+  .animate-home-line-grow {
+    opacity: 1;
+    transform: none;
   }
 }
 
