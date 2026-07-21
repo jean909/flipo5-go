@@ -110,6 +110,7 @@ export default function Home() {
           </motion.div>
         </section>
 
+        {/* Proof strip — each frame has its own living ken-burns */}
         <div className="relative border-y border-white/10 bg-black overflow-hidden group/marquee">
           <div className="flex w-max animate-home-marquee-fast will-change-transform group-hover/marquee:[animation-play-state:paused]">
             {[0, 1].map((copy) => (
@@ -125,10 +126,12 @@ export default function Home() {
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-[900ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-110"
+                      className="absolute inset-0 w-full h-full object-cover animate-home-img-drift will-change-transform group-hover:[animation-play-state:paused] group-hover:scale-110 transition-transform duration-700"
+                      style={{ animationDelay: `${(i % 6) * -2.4}s`, animationDuration: `${14 + (i % 3) * 3}s` }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
-                    <span className="absolute bottom-5 left-5 text-[11px] uppercase tracking-[0.32em] text-white/80 translate-y-1 opacity-80 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-y-0 group-hover:opacity-100">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(0,0,0,0.35))] pointer-events-none" />
+                    <span className="absolute bottom-5 left-5 text-[11px] uppercase tracking-[0.32em] text-white/80 translate-y-2 opacity-70 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-y-0 group-hover:opacity-100">
                       {item.label}
                     </span>
                   </div>

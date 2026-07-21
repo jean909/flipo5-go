@@ -39,18 +39,24 @@ function StickyCapability({
     offset: ['start start', 'end start'],
   });
 
-  const rawScale = useTransform(scrollYProgress, [0, 0.55, 1], [1, 1, 0.92]);
-  const rawOpacity = useTransform(scrollYProgress, [0, 0.55, 0.92], [1, 1, 0.35]);
-  const rawImgY = useTransform(scrollYProgress, [0, 1], ['0%', '-12%']);
-  const rawImgScale = useTransform(scrollYProgress, [0, 0.5, 1], [1.14, 1.04, 1.1]);
-  const rawTextY = useTransform(scrollYProgress, [0, 0.35, 0.85], [36, 0, -28]);
-  const rawTextOpacity = useTransform(scrollYProgress, [0, 0.18, 0.7, 0.95], [0, 1, 1, 0]);
-  const rawClip = useTransform(scrollYProgress, [0, 0.22], ['inset(12% 8% 12% 8%)', 'inset(0% 0% 0% 0%)']);
+  const rawScale = useTransform(scrollYProgress, [0, 0.5, 1], [1, 1, 0.88]);
+  const rawOpacity = useTransform(scrollYProgress, [0, 0.5, 0.95], [1, 1, 0.25]);
+  const rawImgY = useTransform(scrollYProgress, [0, 1], ['0%', '-18%']);
+  const rawImgScale = useTransform(scrollYProgress, [0, 0.45, 1], [1.22, 1.08, 1.16]);
+  const rawImgX = useTransform(scrollYProgress, [0, 1], ['0%', index % 2 === 0 ? '-4%' : '4%']);
+  const rawTextY = useTransform(scrollYProgress, [0, 0.3, 0.85], [48, 0, -36]);
+  const rawTextOpacity = useTransform(scrollYProgress, [0, 0.15, 0.68, 0.92], [0, 1, 1, 0]);
+  const rawClip = useTransform(
+    scrollYProgress,
+    [0, 0.28],
+    ['inset(18% 12% 18% 12% round 0px)', 'inset(0% 0% 0% 0% round 0px)'],
+  );
 
   const scale = useSpring(rawScale, { stiffness: 90, damping: 28 });
   const opacity = useSpring(rawOpacity, { stiffness: 90, damping: 28 });
-  const imgY = useSpring(rawImgY, { stiffness: 60, damping: 26 });
-  const imgScale = useSpring(rawImgScale, { stiffness: 60, damping: 26 });
+  const imgY = useSpring(rawImgY, { stiffness: 55, damping: 24 });
+  const imgX = useSpring(rawImgX, { stiffness: 55, damping: 24 });
+  const imgScale = useSpring(rawImgScale, { stiffness: 55, damping: 24 });
   const textY = useSpring(rawTextY, { stiffness: 100, damping: 24 });
   const textOpacity = useSpring(rawTextOpacity, { stiffness: 100, damping: 24 });
 
@@ -64,14 +70,18 @@ function StickyCapability({
           className="absolute inset-0 overflow-hidden"
           style={reduced ? undefined : { clipPath: rawClip }}
         >
-          <motion.div className="absolute inset-0" style={reduced ? undefined : { y: imgY, scale: imgScale }}>
+          <motion.div
+            className="absolute inset-[-8%]"
+            style={reduced ? undefined : { y: imgY, x: imgX, scale: imgScale }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={item.image}
               alt=""
               loading={index === 0 ? 'eager' : 'lazy'}
               decoding="async"
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover animate-home-img-drift"
+              style={{ animationDuration: `${18 + index * 4}s`, animationDelay: `${index * -3}s` }}
             />
           </motion.div>
         </motion.div>

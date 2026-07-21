@@ -1,47 +1,34 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion, useScroll, useSpring, useTransform } from 'framer-motion';
 
 const HERO_VIDEO = '/home/herosection.mp4';
 const HERO_POSTER = '/home/herosection-poster.jpg';
 
-function brandMaskUrl() {
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">` +
-    `<rect width="1600" height="900" fill="white"/>` +
-    `<text x="800" y="470" text-anchor="middle" dominant-baseline="middle" ` +
-    `font-family="Syne, Arial Black, Impact, sans-serif" font-weight="800" font-size="280" ` +
-    `letter-spacing="-18" fill="black">FLIPO5</text>` +
-    `</svg>`;
-  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
-}
-
 /**
- * Full-bleed hero: live video punched through FLIPO5.
- * Entrance scales the cutout open; scroll drifts the plate; cursor light follows.
+ * Full-bleed hero: video punched through FLIPO5 via mix-blend destination-out.
+ * Brand sits at optical center (~38% from top), above the CTA stack — not dead-center.
  */
 export function CinematicHeroBrand() {
   const rootRef = useRef<HTMLDivElement>(null);
   const spotRef = useRef<HTMLDivElement>(null);
   const [showVideo, setShowVideo] = useState(false);
   const reduced = useReducedMotion();
-  const mask = useMemo(() => brandMaskUrl(), []);
 
   const { scrollYProgress } = useScroll({
     target: rootRef,
     offset: ['start start', 'end start'],
   });
-  const driftY = useSpring(useTransform(scrollYProgress, [0, 1], [0, 120]), {
+  const driftY = useSpring(useTransform(scrollYProgress, [0, 1], [0, 90]), {
     stiffness: 80,
     damping: 28,
     mass: 0.6,
   });
-  const plateScale = useSpring(useTransform(scrollYProgress, [0, 1], [1, 1.08]), {
+  const plateScale = useSpring(useTransform(scrollYProgress, [0, 1], [1, 1.06]), {
     stiffness: 70,
     damping: 30,
   });
-  const plateOpacity = useTransform(scrollYProgress, [0, 0.85], [1, 0.35]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,9 +57,9 @@ export function CinematicHeroBrand() {
 
     let raf = 0;
     let tx = 50;
-    let ty = 42;
+    let ty = 38;
     let cx = 50;
-    let cy = 42;
+    let cy = 38;
 
     const onMove = (e: PointerEvent) => {
       const r = root.getBoundingClientRect();
@@ -83,7 +70,7 @@ export function CinematicHeroBrand() {
     const tick = () => {
       cx += (tx - cx) * 0.08;
       cy += (ty - cy) * 0.08;
-      spot.style.background = `radial-gradient(ellipse 52% 44% at ${cx}% ${cy}%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.1) 28%, transparent 65%)`;
+      spot.style.background = `radial-gradient(ellipse 52% 44% at ${cx}% ${cy}%, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 30%, transparent 65%)`;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -94,14 +81,15 @@ export function CinematicHeroBrand() {
     };
   }, [reduced]);
 
+  const brandClass =
+    'font-display font-extrabold tracking-[-0.07em] text-[clamp(3.75rem,15vw,12.5rem)] leading-none select-none whitespace-nowrap';
+
   return (
-    <motion.div
-      ref={rootRef}
-      className="absolute inset-0 overflow-hidden bg-black"
-      aria-hidden
-      style={{ opacity: plateOpacity }}
-    >
-      <motion.div className="absolute inset-0" style={{ y: reduced ? 0 : driftY, scale: reduced ? 1 : plateScale }}>
+    <div ref={rootRef} className="absolute inset-0 overflow-hidden bg-black isolate" aria-hidden>
+      <motion.div
+        className="absolute inset-0"
+        style={{ y: reduced ? 0 : driftY, scale: reduced ? 1 : plateScale }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={HERO_POSTER}
@@ -124,46 +112,40 @@ export function CinematicHeroBrand() {
             preload="metadata"
           />
         ) : null}
+        <div ref={spotRef} className="absolute inset-0 pointer-events-none mix-blend-soft-light opacity-95" />
       </motion.div>
 
-      <div ref={spotRef} className="absolute inset-0 pointer-events-none mix-blend-soft-light opacity-95" />
+      {/* Black plate — FLIPO5 punches through to video (same element = perfect alignment) */}
+      <div className="absolute inset-0 bg-black">
+        <motion.div
+          className="absolute left-0 right-0 top-[38%] sm:top-[36%] lg:top-[38%] -translate-y-1/2 flex justify-center px-3 sm:px-6"
+          initial={reduced ? false : { opacity: 0, scale: 1.12, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 1.25, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <span className={`${brandClass} text-white mix-blend-destination-out`}>FLIPO5</span>
+        </motion.div>
+      </div>
 
-      {/* Mask plate opens with a soft scale (brand cutout “reveals”) */}
+      {/* Hairline outline — same anchor as the cutout */}
       <motion.div
-        className="absolute inset-0 bg-black origin-center"
-        initial={reduced ? false : { scale: 1.18, opacity: 0.2 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.45, ease: [0.16, 1, 0.3, 1] }}
-        style={{
-          WebkitMaskImage: mask,
-          maskImage: mask,
-          WebkitMaskSize: 'cover',
-          maskSize: 'cover',
-          WebkitMaskPosition: 'center',
-          maskPosition: 'center',
-          WebkitMaskRepeat: 'no-repeat',
-          maskRepeat: 'no-repeat',
-        }}
-      />
-
-      <motion.div
-        className="absolute inset-0 flex items-center justify-center pointer-events-none px-4"
-        initial={reduced ? false : { opacity: 0, scale: 1.06 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 1.2, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+        className="absolute left-0 right-0 top-[38%] sm:top-[36%] lg:top-[38%] -translate-y-1/2 flex justify-center px-3 sm:px-6 pointer-events-none"
+        initial={reduced ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1, delay: 0.35 }}
       >
         <span
-          className="font-display font-extrabold tracking-[-0.07em] text-[clamp(4.5rem,18vw,14rem)] leading-none text-transparent select-none animate-home-stroke-pulse"
-          style={{ WebkitTextStroke: '1px rgba(255,255,255,0.22)' }}
+          className={`${brandClass} text-transparent animate-home-stroke-pulse`}
+          style={{ WebkitTextStroke: '1px rgba(255,255,255,0.2)' }}
         >
           FLIPO5
         </span>
       </motion.div>
 
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_65%_50%_at_50%_46%,transparent_15%,rgba(0,0,0,0.65)_100%)]" />
-      <div className="absolute inset-x-0 bottom-0 h-[42%] pointer-events-none bg-gradient-to-t from-black via-black/70 to-transparent" />
-      <div className="absolute inset-x-0 top-0 h-28 pointer-events-none bg-gradient-to-b from-black/80 to-transparent" />
-      <div className="absolute inset-0 pointer-events-none opacity-[0.08] mix-blend-overlay home-film-grain" />
-    </motion.div>
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_70%_55%_at_50%_38%,transparent_18%,rgba(0,0,0,0.55)_100%)]" />
+      <div className="absolute inset-x-0 bottom-0 h-[48%] pointer-events-none bg-gradient-to-t from-black via-black/75 to-transparent" />
+      <div className="absolute inset-x-0 top-0 h-24 pointer-events-none bg-gradient-to-b from-black/75 to-transparent" />
+      <div className="absolute inset-0 pointer-events-none opacity-[0.07] mix-blend-overlay home-film-grain" />
+    </div>
   );
 }

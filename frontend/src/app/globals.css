@@ -271,6 +271,15 @@ input[type="search"]::-ms-clear {
 .animate-home-kenburns {
   animation: homeKenburns 32s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
+@keyframes homeImgDrift {
+  0% { transform: scale(1.12) translate3d(0%, 0%, 0); }
+  33% { transform: scale(1.2) translate3d(-3.5%, -2%, 0); }
+  66% { transform: scale(1.16) translate3d(2.5%, -1%, 0); }
+  100% { transform: scale(1.12) translate3d(0%, 0%, 0); }
+}
+.animate-home-img-drift {
+  animation: homeImgDrift 16s ease-in-out infinite;
+}
 @keyframes homeMarqueeFast {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }
@@ -300,6 +309,7 @@ input[type="search"]::-ms-clear {
 @media (prefers-reduced-motion: reduce) {
   .animate-home-scroll-cue,
   .animate-home-kenburns,
+  .animate-home-img-drift,
   .animate-home-marquee-fast,
   .animate-home-stroke-pulse,
   .animate-home-line-grow {
@@ -308,6 +318,9 @@ input[type="search"]::-ms-clear {
   .animate-home-line-grow {
     opacity: 1;
     transform: none;
+  }
+  .animate-home-img-drift {
+    transform: scale(1.08);
   }
 }
 
