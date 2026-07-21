@@ -167,7 +167,6 @@ export default function HomeAnimatedSections() {
     stiffness: 50,
     damping: 22,
   });
-  const ghostOpacity = useTransform(ctaProgress, [0.12, 0.4, 0.8], [0.03, 0.1, 0.03]);
   const ghostScale = useSpring(useTransform(ctaProgress, [0, 0.5, 1], [0.92, 1.02, 1.08]), {
     stiffness: 50,
     damping: 22,
@@ -312,15 +311,15 @@ export default function HomeAnimatedSections() {
 
       <section ref={ctaRef} className="relative py-32 sm:py-40 lg:py-52 px-4 overflow-hidden bg-black border-t border-white/10">
         <motion.div
-          style={reduced ? undefined : { y: ghostY, opacity: ghostOpacity, scale: ghostScale }}
-          className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center select-none"
+          style={reduced ? undefined : { y: ghostY, scale: ghostScale }}
+          className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center select-none z-0 opacity-[0.05]"
           aria-hidden
         >
           <span className="font-display font-bold tracking-[-0.07em] text-[clamp(5rem,22vw,18rem)] text-white leading-none">
             FLIPO5
           </span>
         </motion.div>
-        <div className="relative max-w-3xl mx-auto text-center">
+        <div className="relative z-10 max-w-3xl mx-auto text-center">
           <h2 className="font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-[-0.04em] text-white leading-[0.95]">
             <ClipRevealLine>{t(locale, 'home.ctaSection.title')}</ClipRevealLine>
           </h2>
