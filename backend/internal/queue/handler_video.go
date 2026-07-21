@@ -44,12 +44,36 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 	}
 	resolveJobMediaURLs(h, jobInput)
 	videoModel, _ := jobInput["video_model"].(string)
-	if videoModel != "2" {
+	if videoModel != "2" && videoModel != "brand" {
 		videoModel = "1"
 	}
 	var model string
 	var input repgo.PredictionInput
-	if videoModel == "2" {
+	if videoModel == "brand" {
+		// Veo 3.1 Fast: text/image-to-video with native synchronized audio (music, ambience).
+		model = h.Cfg.ModelVideoBrand
+		if model == "" {
+			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO_BRAND not set", 0, "")
+			return nil
+		}
+		dur := 8 // Veo supports 4, 6, or 8 seconds
+		if v, ok := jobInput["duration"].(float64); ok && (v == 4 || v == 6 || v == 8) {
+			dur = int(v)
+		}
+		ar := "16:9"
+		if v, _ := jobInput["aspect_ratio"].(string); v == "9:16" {
+			ar = v
+		}
+		input = repgo.PredictionInput{
+			"prompt":       jobInput["prompt"],
+			"duration":     dur,
+			"aspect_ratio": ar,
+			"resolution":   "720p",
+		}
+		if s, _ := jobInput["image"].(string); s != "" {
+			input["image"] = s
+		}
+	} else if videoModel == "2" {
 		model = h.Cfg.ModelVideo2
 		if model == "" {
 			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO_2 not set", 0, "")

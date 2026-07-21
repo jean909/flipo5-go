@@ -19,6 +19,7 @@ import {
 } from '@/lib/api';
 import { getOutputUrls, getOutputRefs } from '@/lib/jobOutput';
 import { zipBlobsAndDownload, fetchBlobsConcurrent } from '@/lib/zipExport';
+import { exportBrandBookPdf } from './brandBookPdf';
 import { useJobsInProgress } from '../components/JobsInProgressContext';
 import type { Locale } from '@/lib/i18n';
 
@@ -45,6 +46,8 @@ export default function BrandingContent() {
   const [pack, setPack] = useState<PackItem[]>([]);
   const [mediaToken, setMediaToken] = useState<string | null>(null);
   const [zipBusy, setZipBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [includeVideo, setIncludeVideo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const packRef = useRef<PackItem[]>([]);
@@ -162,6 +165,7 @@ export default function BrandingContent() {
         description: desc,
         brand_name: brandName.trim() || undefined,
         image_urls: imageUrls,
+        include_video: includeVideo,
       });
       setDna(result.dna);
       const items: PackItem[] = (result.jobs ?? []).map((j) => ({
@@ -234,8 +238,11 @@ export default function BrandingContent() {
         fetchBlobForJobRef,
       );
       const named = entries.map((e, i) => {
-        const label = done[done.findIndex((d) => d.urls[0] === e.ref)]?.label || `asset-${i + 1}`;
-        const ext = e.blob.type.includes('png') ? 'png' : e.blob.type.includes('webp') ? 'webp' : 'jpg';
+        const item = done[done.findIndex((d) => d.urls[0] === e.ref)];
+        const label = item?.label || `asset-${i + 1}`;
+        const ext = e.blob.type.includes('mp4') || e.blob.type.includes('video')
+          ? 'mp4'
+          : e.blob.type.includes('png') ? 'png' : e.blob.type.includes('webp') ? 'webp' : 'jpg';
         return { name: `${slug(label)}.${ext}`, blob: e.blob };
       });
       if (named.length === 0) throw new Error('Download failed');
@@ -245,6 +252,33 @@ export default function BrandingContent() {
       setError(t(locale, 'branding.zipFailed'));
     } finally {
       setZipBusy(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!dna || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const imageItems = pack.filter((p) => p.status === 'completed' && p.urls[0] && p.type !== 'video');
+      const { entries } = await fetchBlobsConcurrent(
+        imageItems.map((d) => d.urls[0]),
+        fetchBlobForJobRef,
+      );
+      const blobByRef = new Map(entries.map((e) => [e.ref, e.blob]));
+      const assets = pack
+        .filter((p) => p.type !== 'video')
+        .map((p) => ({
+          label: p.label,
+          caption: p.caption,
+          hashtags: p.hashtags,
+          blob: p.urls[0] ? blobByRef.get(p.urls[0]) : undefined,
+        }));
+      await exportBrandBookPdf(dna, assets, `${slug(dna.brand_name || 'brand')}-brand-book`);
+      showToast('toast.downloaded');
+    } catch {
+      setError(t(locale, 'branding.pdfFailed'));
+    } finally {
+      setPdfBusy(false);
     }
   };
 
@@ -330,6 +364,17 @@ export default function BrandingContent() {
               </div>
             )}
           </div>
+
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeVideo}
+              onChange={(e) => setIncludeVideo(e.target.checked)}
+              className="w-4 h-4 rounded border-theme-border accent-[var(--theme-accent,#c45c26)]"
+            />
+            <span className="text-sm text-theme-fg">{t(locale, 'branding.includeVideo')}</span>
+            <span className="text-xs text-theme-fg-subtle">{t(locale, 'branding.includeVideoHint')}</span>
+          </label>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -469,6 +514,16 @@ export default function BrandingContent() {
                 {t(locale, 'branding.pack')} ({completedCount}/{pack.length})
               </h2>
               <div className="flex items-center gap-3">
+                {dna && (
+                  <button
+                    type="button"
+                    onClick={() => void handleExportPdf()}
+                    disabled={pdfBusy}
+                    className="text-xs rounded-lg bg-theme-accent px-3 py-1.5 text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                  >
+                    {pdfBusy ? t(locale, 'branding.pdfPreparing') : t(locale, 'branding.exportPdf')}
+                  </button>
+                )}
                 {completedCount > 0 && (
                   <button
                     type="button"
@@ -542,6 +597,7 @@ function AssetCard({
   const url = item.urls[0];
   const display = url && mediaToken ? getMediaDisplayUrl(url, mediaToken) || url : url;
   const captionFull = [item.caption, item.hashtags].filter(Boolean).join('\n\n');
+  const isVideo = item.type === 'video';
 
   const handleDownload = async () => {
     if (!url) return;
@@ -549,7 +605,7 @@ function AssetCard({
       const blob = await fetchBlobForJobRef(url);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `${slug(item.label)}.png`;
+      a.download = `${slug(item.label)}.${isVideo ? 'mp4' : 'png'}`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch {
@@ -559,13 +615,20 @@ function AssetCard({
 
   return (
     <div className="rounded-xl border border-theme-border bg-theme-bg-subtle overflow-hidden flex flex-col">
-      <div className="aspect-square bg-theme-bg flex items-center justify-center relative">
+      <div className={`${isVideo ? 'aspect-video' : 'aspect-square'} bg-theme-bg flex items-center justify-center relative`}>
         {display && item.status === 'completed' ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={display} alt={item.label} className="w-full h-full object-cover" loading="lazy" />
+          isVideo ? (
+            <video src={display} controls playsInline className="w-full h-full object-contain bg-black" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={display} alt={item.label} className="w-full h-full object-cover" loading="lazy" />
+          )
         ) : (
           <div className="text-center px-3">
             <p className="text-xs text-theme-fg-muted animate-pulse-subtle">{statusLabel(locale, item.status)}</p>
+            {isVideo && item.status !== 'failed' && (
+              <p className="text-[10px] text-theme-fg-subtle mt-1">{t(locale, 'branding.videoSlow')}</p>
+            )}
             {item.error && <p className="text-[10px] text-red-500 mt-1 line-clamp-2">{item.error}</p>}
           </div>
         )}
@@ -579,7 +642,7 @@ function AssetCard({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {(item.status === 'completed' || item.status === 'failed') && item.prompt && (
+            {(item.status === 'completed' || item.status === 'failed') && item.prompt && !isVideo && (
               <button
                 type="button"
                 onClick={onRegenerate}

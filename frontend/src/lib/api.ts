@@ -1279,6 +1279,7 @@ export interface BrandingDNA {
   colors?: { primary?: string; secondary?: string; accent?: string };
   fonts?: string;
   campaigns?: BrandingCampaign[];
+  video_prompt?: string;
   assets?: Array<{ label?: string; type?: string; prompt?: string; aspect_ratio?: string; caption?: string; hashtags?: string }>;
 }
 
@@ -1296,6 +1297,7 @@ export async function createBranding(params: {
   description: string;
   brand_name?: string;
   image_urls?: string[];
+  include_video?: boolean;
 }): Promise<{ dna: BrandingDNA; jobs: BrandingJobRef[] }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
@@ -1306,6 +1308,7 @@ export async function createBranding(params: {
       description: params.description.trim(),
       brand_name: params.brand_name?.trim() || '',
       image_urls: params.image_urls ?? [],
+      include_video: params.include_video === true,
     }),
   });
   if (!res.ok) {

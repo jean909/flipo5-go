@@ -26,9 +26,10 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Description string   `json:"description"`
-		BrandName   string   `json:"brand_name,omitempty"`
-		ImageURLs   []string `json:"image_urls,omitempty"`
+		Description  string   `json:"description"`
+		BrandName    string   `json:"brand_name,omitempty"`
+		ImageURLs    []string `json:"image_urls,omitempty"`
+		IncludeVideo bool     `json:"include_video,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -154,6 +155,24 @@ func (s *Server) createBranding(w http.ResponseWriter, r *http.Request) {
 		enqueue("image", input, a, label, queue.NewImageTask)
 	}
 
+	if req.IncludeVideo {
+		vp := strings.TrimSpace(dna.VideoPrompt)
+		if vp == "" {
+			vp = fmt.Sprintf("Cinematic 8-second brand video for %s: %s. Smooth camera moves, premium lighting, brand colors %s and %s, uplifting background music, ends on the brand name.", dna.BrandName, dna.Tagline, dna.Colors.Primary, dna.Colors.Accent)
+		}
+		videoInput := map[string]interface{}{
+			"prompt":       vp,
+			"video_model":  "brand",
+			"duration":     8,
+			"aspect_ratio": "16:9",
+			"branding":     true,
+		}
+		if len(refs) > 0 {
+			videoInput["image"] = refs[0]
+		}
+		enqueue("video", videoInput, brandingAsset{Prompt: vp}, "Brand video", queue.NewVideoTask)
+	}
+
 	brief := formatBrandBrief(dna)
 	fileName := "Brand Book"
 	if dna.BrandName != "" {
@@ -201,6 +220,7 @@ type businessDNA struct {
 	Colors          brandingColors     `json:"colors"`
 	Fonts           string             `json:"fonts"`
 	Campaigns       []brandingCampaign `json:"campaigns,omitempty"`
+	VideoPrompt     string             `json:"video_prompt,omitempty"`
 	Assets          []brandingAsset    `json:"assets"`
 }
 
@@ -209,7 +229,7 @@ func (s *Server) buildBusinessDNA(ctx context.Context, brandName, desc string, i
 		return nil
 	}
 	system := `You are a world-class brand strategist (like Google Pomelli). Return ONLY valid JSON (no markdown) with this exact shape:
-{"brand_name":"","tagline":"","tagline_variants":["",""],"tone":"","voice":"","audience":"","colors":{"primary":"#hex","secondary":"#hex","accent":"#hex"},"fonts":"","campaigns":[{"title":"","concept":"","cta":""}],"assets":[{"label":"","type":"logo|image","prompt":"detailed image generation prompt","aspect_ratio":"1:1|4:5|16:9|9:16|3:4","caption":"ready-to-post social caption in the brand voice","hashtags":"#tag1 #tag2 ..."}]}
+{"brand_name":"","tagline":"","tagline_variants":["",""],"tone":"","voice":"","audience":"","colors":{"primary":"#hex","secondary":"#hex","accent":"#hex"},"fonts":"","campaigns":[{"title":"","concept":"","cta":""}],"video_prompt":"8-second cinematic brand video prompt with camera moves, mood, music cue","assets":[{"label":"","type":"logo|image","prompt":"detailed image generation prompt","aspect_ratio":"1:1|4:5|16:9|9:16|3:4","caption":"ready-to-post social caption in the brand voice","hashtags":"#tag1 #tag2 ..."}]}
 Rules:
 - tagline_variants: 3 alternative taglines (different angles: emotional, functional, bold).
 - campaigns: 3 concrete marketing campaign ideas (title, 1-2 sentence concept, call to action).
