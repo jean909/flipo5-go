@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"flipo5/backend/internal/intent"
 	"flipo5/backend/internal/middleware"
 	"flipo5/backend/internal/queue"
 	"flipo5/backend/internal/textmodel"
@@ -18,10 +19,11 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Prompt                 string   `json:"prompt"`
 		AttachmentURLs         []string `json:"attachment_urls,omitempty"`
-		AttachmentContentTypes []string `json:"attachment_content_types,omitempty"` // e.g. "image/jpeg", "application/pdf" – only image/* are sent to Replicate
+		AttachmentContentTypes []string `json:"attachment_content_types,omitempty"` // e.g. "image/jpeg", "application/pdf"
 		ThreadID               string   `json:"thread_id,omitempty"`
 		Incognito              bool     `json:"incognito,omitempty"`
-		ChatProjectID          string   `json:"chat_project_id,omitempty"` // optional: bind new thread to a chat project
+		ChatProjectID          string   `json:"chat_project_id,omitempty"`
+		ForceSkill             string   `json:"force_skill,omitempty"` // "chat"|"image"|"video" — skip router
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
@@ -76,6 +78,55 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 			_ = s.DB.UpdateThreadTitle(ctx, id, title)
 		}
 	}
+
+	// Skill routing: chat by default; fast classifier may dispatch image/video.
+	// Incognito stays pure chat (no media skills).
+	skill := intent.SkillChat
+	routeSource := "default"
+	force := strings.ToLower(strings.TrimSpace(req.ForceSkill))
+	switch force {
+	case "chat", "image", "video":
+		skill = intent.Skill(force)
+		routeSource = "force"
+	default:
+		if !req.Incognito {
+			hints := intent.Hints{}
+			for _, ct := range req.AttachmentContentTypes {
+				ct = strings.ToLower(ct)
+				if strings.HasPrefix(ct, "image/") {
+					hints.HasImageAttachment = true
+				}
+				if strings.HasPrefix(ct, "video/") {
+					hints.HasVideoAttachment = true
+				}
+			}
+			for _, u := range req.AttachmentURLs {
+				lu := strings.ToLower(u)
+				if strings.Contains(lu, ".png") || strings.Contains(lu, ".jpg") || strings.Contains(lu, ".jpeg") || strings.Contains(lu, ".webp") || strings.Contains(lu, ".gif") {
+					hints.HasImageAttachment = true
+				}
+			}
+			model := strings.TrimSpace(s.ModelTextFallback)
+			if model == "" {
+				model = strings.TrimSpace(s.ModelText)
+			}
+			clf := &intent.Classifier{Repl: s.Repl, Model: model}
+			res := clf.Classify(ctx, req.Prompt, hints)
+			skill = res.Skill
+			routeSource = res.Source
+			log.Printf("intent route skill=%s source=%s conf=%.2f", skill, res.Source, res.Confidence)
+		}
+	}
+
+	switch skill {
+	case intent.SkillImage:
+		s.enqueueRoutedImage(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
+		return
+	case intent.SkillVideo:
+		s.enqueueRoutedVideo(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
+		return
+	}
+
 	input := map[string]interface{}{"prompt": req.Prompt}
 	if len(req.AttachmentURLs) > 0 {
 		input["attachment_urls"] = req.AttachmentURLs
@@ -100,11 +151,131 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	out := map[string]string{"job_id": jobID.String()}
+	out := map[string]string{"job_id": jobID.String(), "routed": "chat", "route_source": routeSource}
 	if threadID != nil {
 		out["thread_id"] = threadID.String()
 	}
 	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) enqueueRoutedImage(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"prompt":       prompt,
+		"size":         "2K",
+		"aspect_ratio": "1:1",
+		"max_images":   1,
+		"quality":      "high",
+		"output_format": "webp",
+		"number_of_images": 1,
+		"output_compression": 90,
+		"background":   "auto",
+		"moderation":   "auto",
+		"routed_from":  "chat",
+	}
+	imageInput := imageURLsFromAttachments(attachmentURLs, contentTypes, s)
+	if len(imageInput) > 0 {
+		input["image_input"] = imageInput
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "image", input, threadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	s.recordUserProfile(userID, "image", map[string]interface{}{"routed_from": "chat"})
+	task, _ := queue.NewImageTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		_ = s.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	if threadID != nil {
+		s.invalidateThreadCache(ctx, *threadID, userID)
+	}
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	out := map[string]string{"job_id": jobID.String(), "routed": "image", "route_source": routeSource}
+	if threadID != nil {
+		out["thread_id"] = threadID.String()
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) enqueueRoutedVideo(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {
+	ctx := r.Context()
+	input := map[string]interface{}{
+		"prompt":       prompt,
+		"duration":     5,
+		"aspect_ratio": "16:9",
+		"resolution":   "720p",
+		"video_model":  "1",
+		"routed_from":  "chat",
+	}
+	imgs := imageURLsFromAttachments(attachmentURLs, contentTypes, s)
+	if len(imgs) > 0 {
+		input["image"] = imgs[0]
+	}
+	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	s.recordUserProfile(userID, "video", map[string]interface{}{"routed_from": "chat"})
+	task, _ := queue.NewVideoTask(jobID)
+	if _, err := s.Asynq.Enqueue(task); err != nil {
+		_ = s.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
+		http.Error(w, `{"error":"enqueue"}`, http.StatusInternalServerError)
+		return
+	}
+	if threadID != nil {
+		s.invalidateThreadCache(ctx, *threadID, userID)
+	}
+	s.invalidateContentCache(ctx, userID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	out := map[string]string{"job_id": jobID.String(), "routed": "video", "route_source": routeSource}
+	if threadID != nil {
+		out["thread_id"] = threadID.String()
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+func imageURLsFromAttachments(urls, contentTypes []string, s *Server) []string {
+	out := make([]string, 0, len(urls))
+	for i, u := range urls {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		isImage := false
+		if i < len(contentTypes) && strings.HasPrefix(strings.ToLower(contentTypes[i]), "image/") {
+			isImage = true
+		}
+		lu := strings.ToLower(u)
+		if strings.Contains(lu, ".png") || strings.Contains(lu, ".jpg") || strings.Contains(lu, ".jpeg") || strings.Contains(lu, ".webp") || strings.Contains(lu, ".gif") {
+			isImage = true
+		}
+		if !isImage && i < len(contentTypes) {
+			continue
+		}
+		if !isImage && len(contentTypes) == 0 {
+			// no types: treat all as potential refs only if URL looks like image
+			continue
+		}
+		if !isImage {
+			continue
+		}
+		if strings.HasPrefix(u, "uploads/") && s.Store != nil {
+			out = append(out, s.Store.URL(u))
+		} else {
+			out = append(out, u)
+		}
+	}
+	if len(out) > 14 {
+		out = out[:14]
+	}
+	return out
 }
 
 func (s *Server) generatePromptVariants(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +331,6 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 	}
 	text := extractOutputText(out)
 	text = strings.TrimSpace(text)
-	// Strip markdown code block if present
 	if strings.HasPrefix(text, "```") {
 		text = strings.TrimPrefix(text, "```json")
 		text = strings.TrimPrefix(text, "```")
@@ -169,7 +339,6 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 	}
 	var prompts []string
 	if text != "" {
-		// Try to find JSON array in response (model might wrap in explanation)
 		jsonStr := text
 		if start := strings.Index(text, "["); start >= 0 {
 			if end := strings.LastIndex(text, "]"); end > start {
@@ -184,7 +353,6 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 			json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
 			return
 		}
-		// Truncated or malformed JSON: try to extract complete quoted strings
 		if extracted := extractQuotedStrings(text); len(extracted) > 0 {
 			for len(extracted) < 5 {
 				extracted = append(extracted, desc)
@@ -198,7 +366,7 @@ Generate exactly 5 different, creative prompt variants that could be used as the
 		}
 		log.Printf("prompt-variants parse failed (text len=%d, first 200: %q)", len(text), truncate(text, 200))
 	}
-	// Fallback: build 5 variants from description + angle + movement
+	// fallback: echo description
 	prompts = buildFallbackPrompts(desc, angle, movement, mediaType)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"prompts": prompts})
@@ -287,7 +455,6 @@ func buildFallbackPrompts(desc, angle, movement, mediaType string) []string {
 		list = append(list, movement+". "+desc)
 	}
 	list = append(list, desc+". High quality "+mediaType+".")
-	// Dedupe and cap at 5
 	seen := make(map[string]bool)
 	var out []string
 	for _, s := range list {

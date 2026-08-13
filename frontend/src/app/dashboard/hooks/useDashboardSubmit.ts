@@ -43,7 +43,7 @@ type SubmitCtx = {
   setReferenceImageUrls: (v: string[]) => void;
 
   uploadAttachments: (files: File[]) => Promise<string[]>;
-  createChat: (msg: string, urls?: string[], threadId?: string, incognito?: boolean, types?: string[], chatProjectId?: string) => Promise<{ job_id: string; thread_id?: string | null }>;
+  createChat: (msg: string, urls?: string[], threadId?: string, incognito?: boolean, types?: string[], chatProjectId?: string) => Promise<{ job_id: string; thread_id?: string | null; routed?: 'chat' | 'image' | 'video' }>;
   pendingChatProjectId?: string | null;
   createImage: (payload: any) => Promise<{ job_id: string; thread_id?: string | null }>;
   createVideo: (payload: any) => Promise<{ job_id: string; thread_id?: string | null }>;
@@ -69,10 +69,14 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
   const hasImageAttachment =
     ctx.referenceImageUrls.length > 0 || ctx.attachments.some((a) => a.file.type.startsWith('image/'));
   const hasVideoAttachment = !!ctx.videoFile || ctx.attachments.some((a) => a.file.type.startsWith('video/'));
-  const effectiveMode: 'chat' | 'image' | 'video' =
+  // Explicit Image/Video tabs still force that skill. Chat mode always hits /api/chat —
+  // the backend skill router decides chat vs image vs video.
+  const effectiveMode: 'chat' | 'image' | 'video' = ctx.mode;
+  // Soft preview for incognito gate only (backend also keeps incognito as chat-only).
+  const predictedMedia =
     ctx.mode === 'chat'
-      ? (getIntentFromPrompt(trimmed, { hasImageAttachment, hasVideoAttachment }) ?? 'chat')
-      : ctx.mode;
+      ? getIntentFromPrompt(trimmed, { hasImageAttachment, hasVideoAttachment })
+      : null;
   const requestKey = `${effectiveMode}-${trimmed}-${JSON.stringify({
     attachments: ctx.attachments.map((a) => a.file.name),
     imageSettings: effectiveMode === 'image' ? ctx.imageSettings : undefined,
@@ -100,7 +104,11 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
 
   const useNormalSession = ctx.pendingNormalSessionSubmit.current;
   if (useNormalSession) ctx.pendingNormalSessionSubmit.current = false;
-  if (!useNormalSession && ctx.incognito && (effectiveMode === 'image' || effectiveMode === 'video')) {
+  if (
+    !useNormalSession &&
+    ctx.incognito &&
+    (effectiveMode === 'image' || effectiveMode === 'video' || predictedMedia === 'image' || predictedMedia === 'video')
+  ) {
     ctx.setShowIncognitoMediaDialog(true);
     ctx.isSubmittingRef.current = false;
     return;
@@ -131,10 +139,14 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
       );
       ctx.setPendingUserMessage('');
       ctx.setPendingUserMessageThreadId(null);
+      const routed = res.routed === 'image' || res.routed === 'video' ? res.routed : 'chat';
       ctx.setJobId(res.job_id);
       ctx.setLastSentPrompt(msg);
       ctx.setPendingJobThreadId(res.thread_id ?? tid ?? null);
-      ctx.setPendingJobType('chat');
+      ctx.setPendingJobType(routed);
+      if (routed === 'image' || routed === 'video') {
+        ctx.addOptimisticJob({ id: res.job_id, type: routed, thread_id: res.thread_id ?? tid ?? null });
+      }
       if (res.thread_id) {
         ctx.setThreadId(res.thread_id);
         if (effectiveIncognito) ctx.setIncognitoThreadId(res.thread_id);

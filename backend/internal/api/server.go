@@ -27,6 +27,7 @@ type Server struct {
 	Repl                *replicate.Client
 	ModelRemoveBg       string
 	ModelText           string
+	ModelTextFallback   string // fast model for intent routing etc.
 	redisURL            string
 	supabaseJWTSecret   string
 	jwks                *keyfunc.JWKS
@@ -35,10 +36,10 @@ type Server struct {
 }
 
 // NewServer builds the API server.
-func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg, modelText string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
+func NewServer(db *store.DB, asynq *asynq.Client, store *storage.Store, streamSub *stream.Subscriber, cache *cache.Redis, repl *replicate.Client, modelRemoveBg, modelText, modelTextFallback string, redisURL, supabaseJWTSecret string, jwks *keyfunc.JWKS, supabaseURL, supabaseServiceRole string) *Server {
 	return &Server{
 		DB: db, Asynq: asynq, Store: store, Stream: streamSub, Cache: cache,
-		Repl: repl, ModelRemoveBg: modelRemoveBg, ModelText: modelText,
+		Repl: repl, ModelRemoveBg: modelRemoveBg, ModelText: modelText, ModelTextFallback: modelTextFallback,
 		redisURL: redisURL, supabaseJWTSecret: supabaseJWTSecret, jwks: jwks,
 		supabaseURL: supabaseURL, supabaseServiceRole: supabaseServiceRole,
 	}
