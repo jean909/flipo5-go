@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"flipo5/backend/internal/documents"
+	"flipo5/backend/internal/intent"
 	"flipo5/backend/internal/textmodel"
 
 	"github.com/hibiken/asynq"
@@ -36,7 +37,6 @@ func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// Safety net: if this landed in chat but the user asked for media, spawn the skill job.
 	var jobInput map[string]interface{}
 	if len(job.Input) > 0 {
 		_ = json.Unmarshal(job.Input, &jobInput)
@@ -50,9 +50,6 @@ func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
 			prompt = s
 		}
 	}
-	if h.maybeRerouteChatToSkill(ctx, p.JobID, prompt, jobInput, job.ThreadID, job.UserID) {
-		return nil
-	}
 
 	u, _ := h.DB.UserByID(ctx, job.UserID)
 	userName := ""
@@ -65,25 +62,35 @@ func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
 	// Build model input (Claude Fable or legacy Gemini).
 	system := `You are Flipo5, an AI assistant trained by Moise I. Jean.
 
-Capabilities:
-- You handle conversation, questions, and analysis in this chat.
-- Flipo5 can also create images and videos via separate generation skills. Never say you cannot generate images or videos, and never send users to Midjourney, DALL·E, or other external tools.
-- Do not pretend a generation has started unless the system already queued it. For pure Q&A, just answer.
+CRITICAL — first line (backend only, never discuss it with the user):
+Line 1 of EVERY reply MUST be exactly one of these tags and nothing else on that line:
+[[skill:chat]]
+[[skill:image]]
+[[skill:video]]
+[[skill:image_edit]]
+Then a newline, then your normal user-facing reply.
+
+How to choose the skill:
+- [[skill:image]] — user wants a NEW picture/photo generated (any language: "generează o poză", "make an image", "zeichne", "fă-mi o poză", etc.)
+- [[skill:video]] — user wants a NEW short video/clip
+- [[skill:image_edit]] — user wants to edit/change an existing photo (attached or previous)
+- [[skill:chat]] — questions, advice, conversation, analysis (no media creation)
+
+After the skill line:
+- For [[skill:image]] or [[skill:video]]: write 1 short sentence confirming you are generating (match user language). Do NOT invent that the image already exists. Do NOT mention Midjourney/DALL·E. Do NOT explain the skill tag.
+- For [[skill:image_edit]]: if no photo is available in context, ask them to attach one; otherwise confirm the edit briefly.
+- For [[skill:chat]]: answer normally.
 
 Identity:
 - Never introduce yourself unless the user explicitly asks who you are.
-- Stay strictly on the conversation topic and do not repeat your identity in every response.
+- Stay on topic; do not repeat your identity.
 
 Voice and style:
-- Sound like a knowledgeable, friendly human. Use natural, conversational language.
-- Match the user's language and register automatically. If they write casual, reply casual. If they write formal, reply formal.
-- Be concise by default. Short questions get short answers (often 1-3 sentences). Expand only when the topic clearly calls for depth.
-- Skip filler openings like "Great question!", "Sure!", "I'd be happy to help". Go straight to the answer.
-- Avoid unnecessary disclaimers, hedges, and meta talk ("As an AI...", "I cannot...", "It depends...", unless truly relevant).
-- Prefer flowing sentences over bullet lists for simple questions. Use lists/headings only when they genuinely help (how-tos, comparisons, long enumerations).
-- When you do not know something, say so plainly and suggest how to find out. Do not invent facts.
-- Never repeat the user's question back. Do not narrate what you are about to do.
-- Keep formatting light. Use bold or inline code where it adds clarity, not decoration.`
+- Sound like a knowledgeable, friendly human. Natural conversational language.
+- Match the user's language and register (casual ↔ formal).
+- Be concise by default (1–3 sentences for simple asks).
+- Skip filler ("Great question!", "I'd be happy to help").
+- Never claim you cannot create images/videos.`
 	if userName != "" {
 		system += "\n\nThe user's name is " + userName + ". Use it naturally when appropriate (e.g. when greeting or closing)."
 	}
@@ -239,16 +246,19 @@ Voice and style:
 		streamURL = pred.URLs["stream"]
 	}
 	if streamURL != "" {
-		var acc strings.Builder
+		filter := newSkillStreamFilter()
 		var lastDBWrite time.Time
 		lastDBLen := 0
 		h.Repl.StreamOutput(ctx, streamURL, func(text string) {
-			acc.WriteString(text)
-			out := acc.String()
+			visibleChunk := filter.Push(text)
+			if visibleChunk == "" {
+				return
+			}
+			out := filter.Visible()
 			now := time.Now()
-			if now.Sub(lastDBWrite) >= 400*time.Millisecond || acc.Len()-lastDBLen >= 400 {
+			if now.Sub(lastDBWrite) >= 400*time.Millisecond || len(out)-lastDBLen >= 400 {
 				lastDBWrite = now
-				lastDBLen = acc.Len()
+				lastDBLen = len(out)
 				_ = h.DB.UpdateJobOutput(ctx, p.JobID, map[string]interface{}{"output": out})
 			}
 			if h.Stream != nil {
@@ -256,7 +266,8 @@ Voice and style:
 			}
 		}, func() {})
 		// Use GetPrediction final output - Replicate returns complete output; stream can lose chunks
-		finalOutput := acc.String()
+		finalOutput := filter.Visible()
+		detectedSkill := filter.Skill()
 		var lastPred *repgo.Prediction
 		for i := 0; i < 5; i++ {
 			select {
@@ -299,7 +310,9 @@ Voice and style:
 			if out := normalizeChatOutput(predState.Output); out != nil {
 				if m, ok := out.(map[string]interface{}); ok {
 					if s, _ := m["output"].(string); s != "" {
-						finalOutput = s // API = source of truth, stream can truncate
+						sk, body := SplitSkillHeader(s)
+						detectedSkill = sk
+						finalOutput = body
 					}
 				}
 			}
@@ -308,11 +321,18 @@ Voice and style:
 		if lastPred != nil && (lastPred.Status == "failed" || lastPred.Status == "canceled") {
 			return nil // already updated above
 		}
-		final := map[string]interface{}{"output": finalOutput}
+		// Ensure header stripped even if we only had the stream accumulator.
+		if sk, body := SplitSkillHeader(finalOutput); body != finalOutput || sk != intent.SkillChat {
+			// If filter already stripped, SplitSkillHeader on visible body stays chat + body.
+			if strings.HasPrefix(strings.TrimSpace(finalOutput), "[[skill:") || strings.HasPrefix(strings.TrimSpace(finalOutput), "[skill:") {
+				detectedSkill = sk
+				finalOutput = body
+			}
+		}
+		final := map[string]interface{}{"output": finalOutput, "detected_skill": string(detectedSkill)}
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
 		if h.Stream != nil {
 			_ = h.Stream.Publish(ctx, p.JobID, finalOutput, true)
-			// Also publish to user-specific channel for streamAllJobs (chat jobs)
 			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
 				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
 				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"chat"}`, p.JobID.String())
@@ -322,6 +342,7 @@ Voice and style:
 		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
 			h.invalidateJobCaches(ctx, job)
 		}
+		h.applyDetectedSkill(ctx, p.JobID, prompt, jobInput, job.ThreadID, job.UserID, detectedSkill)
 	} else {
 		// Fallback: model doesn't support stream; poll until done
 		jobID := p.JobID
@@ -341,7 +362,23 @@ Voice and style:
 			switch predState.Status {
 			case "succeeded":
 				normalized := normalizeChatOutput(predState.Output)
+				detectedSkill := intent.SkillChat
+				visible := ""
+				if m, ok := normalized.(map[string]interface{}); ok {
+					if s, _ := m["output"].(string); s != "" {
+						sk, body := SplitSkillHeader(s)
+						detectedSkill = sk
+						visible = body
+						m["output"] = visible
+						m["detected_skill"] = string(detectedSkill)
+						normalized = m
+					}
+				}
 				_ = h.DB.UpdateJobStatus(ctx, jobID, "completed", normalized, "", 0, pred.ID)
+				if h.Stream != nil && visible != "" {
+					_ = h.Stream.Publish(ctx, jobID, visible, true)
+				}
+				h.applyDetectedSkill(ctx, jobID, prompt, jobInput, job.ThreadID, job.UserID, detectedSkill)
 				goto done
 			case "failed", "canceled":
 				_ = h.Repl.CancelPrediction(ctx, pred.ID)

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"flipo5/backend/internal/intent"
 	"flipo5/backend/internal/middleware"
 	"flipo5/backend/internal/queue"
 	"flipo5/backend/internal/textmodel"
@@ -80,64 +79,22 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Skill routing: fast LLM (+ Redis cache). Incognito = chat only.
-	skill := intent.SkillChat
-	routeSource := "default"
+	// Always enqueue chat. The chat model labels the skill on line 1 ([[skill:…]]);
+	// the worker strips that line for the UI and starts image/video when needed.
+	// Explicit force_skill still allows API clients to bypass (tabs use /api/image|/api/video).
 	force := strings.ToLower(strings.TrimSpace(req.ForceSkill))
-	switch force {
-	case "chat", "image", "video", "image_edit":
-		skill = intent.Skill(force)
-		routeSource = "force"
-	default:
-		if !req.Incognito {
-			hints := intent.Hints{}
-			for _, ct := range req.AttachmentContentTypes {
-				ct = strings.ToLower(ct)
-				if strings.HasPrefix(ct, "image/") {
-					hints.HasImageAttachment = true
-				}
-				if strings.HasPrefix(ct, "video/") {
-					hints.HasVideoAttachment = true
-				}
-			}
-			for _, u := range req.AttachmentURLs {
-				lu := strings.ToLower(u)
-				if strings.Contains(lu, ".png") || strings.Contains(lu, ".jpg") || strings.Contains(lu, ".jpeg") || strings.Contains(lu, ".webp") || strings.Contains(lu, ".gif") {
-					hints.HasImageAttachment = true
-				}
-			}
-			if threadID != nil {
-				if url := s.lastImageURLInThread(ctx, *threadID, userID); url != "" {
-					hints.HasPriorImage = true
-				}
-			}
-			model := strings.TrimSpace(s.ModelTextFallback)
-			fallbacks := []string{}
-			if primary := strings.TrimSpace(s.ModelText); primary != "" {
-				if model == "" {
-					model = primary
-				} else {
-					fallbacks = append(fallbacks, primary)
-				}
-			}
-			clf := &intent.Classifier{Repl: s.Repl, Model: model, Fallbacks: fallbacks, Cache: s.Cache}
-			res := clf.Classify(ctx, req.Prompt, hints)
-			skill = res.Skill
-			routeSource = res.Source
-			log.Printf("intent route skill=%s source=%s conf=%.2f", skill, res.Source, res.Confidence)
+	if !req.Incognito {
+		switch force {
+		case "image":
+			s.enqueueRoutedImage(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, "force", false)
+			return
+		case "image_edit":
+			s.enqueueRoutedImageEdit(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, "force")
+			return
+		case "video":
+			s.enqueueRoutedVideo(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, "force")
+			return
 		}
-	}
-
-	switch skill {
-	case intent.SkillImage:
-		s.enqueueRoutedImage(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource, false)
-		return
-	case intent.SkillImageEdit:
-		s.enqueueRoutedImageEdit(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
-		return
-	case intent.SkillVideo:
-		s.enqueueRoutedVideo(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
-		return
 	}
 
 	input := map[string]interface{}{"prompt": req.Prompt}
@@ -164,7 +121,7 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	out := map[string]string{"job_id": jobID.String(), "routed": "chat", "route_source": routeSource}
+	out := map[string]string{"job_id": jobID.String(), "routed": "chat", "route_source": "skill_header"}
 	if threadID != nil {
 		out["thread_id"] = threadID.String()
 	}

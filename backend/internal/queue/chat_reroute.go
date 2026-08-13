@@ -12,65 +12,25 @@ import (
 	"github.com/google/uuid"
 )
 
-// maybeRerouteChatToSkill re-classifies a chat job; if the user wanted media,
-// enqueues the real image/video job and completes the chat turn with a short ack.
-// Returns true when the chat handler should stop (media was started).
-func (h *Handlers) maybeRerouteChatToSkill(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID) bool {
-	if h.Repl == nil || h.Asynq == nil || strings.TrimSpace(prompt) == "" {
-		return false
-	}
-	if needs, _ := jobInput["needs_image"].(bool); needs {
-		return false
-	}
-
-	hints := intent.Hints{}
-	if urls, ok := jobInput["attachment_urls"].([]interface{}); ok {
-		for _, u := range urls {
-			if s, ok := u.(string); ok && looksLikeImageURLQueue(s) {
-				hints.HasImageAttachment = true
-			}
-		}
-	}
-	if cts, ok := jobInput["attachment_content_types"].([]interface{}); ok {
-		for _, c := range cts {
-			if s, ok := c.(string); ok && strings.HasPrefix(strings.ToLower(s), "image/") {
-				hints.HasImageAttachment = true
-			}
-			if s, ok := c.(string); ok && strings.HasPrefix(strings.ToLower(s), "video/") {
-				hints.HasVideoAttachment = true
-			}
-		}
-	}
-	if threadID != nil {
-		if u := h.lastImageURLInThread(ctx, *threadID, userID); u != "" {
-			hints.HasPriorImage = true
-		}
-	}
-
-	model := strings.TrimSpace(h.Cfg.ModelTextFallback)
-	fallbacks := []string{}
-	if primary := strings.TrimSpace(h.Cfg.ModelText); primary != "" {
-		if model == "" {
-			model = primary
-		} else {
-			fallbacks = append(fallbacks, primary)
-		}
-	}
-	clf := &intent.Classifier{Repl: h.Repl, Model: model, Fallbacks: fallbacks, Cache: h.Cache}
-	res := clf.Classify(ctx, prompt, hints)
-	log.Printf("chat reroute check job=%s skill=%s source=%s", chatJobID, res.Skill, res.Source)
-
-	switch res.Skill {
-	case intent.SkillImage, intent.SkillImageEdit:
-		return h.spawnImageFromChat(ctx, chatJobID, prompt, jobInput, threadID, userID, res.Skill == intent.SkillImageEdit)
+// applyDetectedSkill starts the media skill after the chat model labeled the turn.
+// The chat reply (already saved, skill line stripped) is left as-is for the UI.
+func (h *Handlers) applyDetectedSkill(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, skill intent.Skill) {
+	switch skill {
+	case intent.SkillImage:
+		h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, false)
+	case intent.SkillImageEdit:
+		h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, true)
 	case intent.SkillVideo:
-		return h.spawnVideoFromChat(ctx, chatJobID, prompt, jobInput, threadID, userID)
+		h.enqueueSiblingVideo(ctx, chatJobID, prompt, jobInput, threadID, userID)
 	default:
-		return false
+		return
 	}
 }
 
-func (h *Handlers) spawnImageFromChat(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, isEdit bool) bool {
+func (h *Handlers) enqueueSiblingImage(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, isEdit bool) {
+	if h.Asynq == nil {
+		return
+	}
 	input := map[string]interface{}{
 		"prompt":             prompt,
 		"size":               "2K",
@@ -82,7 +42,7 @@ func (h *Handlers) spawnImageFromChat(ctx context.Context, chatJobID uuid.UUID, 
 		"output_compression": 90,
 		"background":         "auto",
 		"moderation":         "auto",
-		"routed_from":        "chat_reroute",
+		"routed_from":        "skill_header",
 	}
 	if isEdit {
 		input["size"] = "HD"
@@ -96,41 +56,39 @@ func (h *Handlers) spawnImageFromChat(ctx context.Context, chatJobID uuid.UUID, 
 		}
 	}
 	if isEdit && len(refs) == 0 {
-		msg := "Atașează o poză de editat (sau generează una mai întâi), apoi spune-mi ce să schimb."
-		_ = h.DB.UpdateJobStatus(ctx, chatJobID, "completed", map[string]interface{}{"output": msg}, "", 0, "")
-		h.publishJobDone(ctx, chatJobID, userID, "chat")
-		return true
+		log.Printf("skill_header image_edit skipped — no source image chat=%s", chatJobID)
+		return
 	}
 	if len(refs) > 0 {
 		input["image_input"] = refs
 	}
 	imageJobID, err := h.DB.CreateJob(ctx, userID, "image", input, threadID)
 	if err != nil {
-		log.Printf("chat reroute create image job: %v", err)
-		return false
+		log.Printf("skill_header create image: %v", err)
+		return
 	}
 	task, _ := NewImageTask(imageJobID)
 	if _, err := h.Asynq.Enqueue(task); err != nil {
-		log.Printf("chat reroute enqueue image: %v", err)
+		log.Printf("skill_header enqueue image: %v", err)
 		_ = h.DB.UpdateJobStatus(ctx, imageJobID, "failed", nil, "enqueue failed", 0, "")
-		return false
+		return
 	}
-	ack := mediaAckMessage(prompt, "image")
-	_ = h.DB.UpdateJobStatus(ctx, chatJobID, "completed", map[string]interface{}{"output": ack, "spawned_job_id": imageJobID.String()}, "", 0, "")
-	h.publishJobDone(ctx, chatJobID, userID, "chat")
+	h.tagSpawnedJob(ctx, chatJobID, imageJobID)
 	h.publishJobRunning(ctx, imageJobID, userID, "image")
-	log.Printf("chat reroute spawned image job=%s from chat=%s", imageJobID, chatJobID)
-	return true
+	log.Printf("skill_header spawned image job=%s from chat=%s edit=%v", imageJobID, chatJobID, isEdit)
 }
 
-func (h *Handlers) spawnVideoFromChat(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID) bool {
+func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID) {
+	if h.Asynq == nil {
+		return
+	}
 	input := map[string]interface{}{
 		"prompt":       prompt,
 		"duration":     5,
 		"aspect_ratio": "16:9",
 		"resolution":   "720p",
 		"video_model":  "1",
-		"routed_from":  "chat_reroute",
+		"routed_from":  "skill_header",
 	}
 	refs := attachmentImageURLs(jobInput, h)
 	if len(refs) > 0 {
@@ -138,30 +96,34 @@ func (h *Handlers) spawnVideoFromChat(ctx context.Context, chatJobID uuid.UUID, 
 	}
 	videoJobID, err := h.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {
-		log.Printf("chat reroute create video job: %v", err)
-		return false
+		log.Printf("skill_header create video: %v", err)
+		return
 	}
 	task, _ := NewVideoTask(videoJobID)
 	if _, err := h.Asynq.Enqueue(task); err != nil {
-		log.Printf("chat reroute enqueue video: %v", err)
+		log.Printf("skill_header enqueue video: %v", err)
 		_ = h.DB.UpdateJobStatus(ctx, videoJobID, "failed", nil, "enqueue failed", 0, "")
-		return false
-	}
-	ack := mediaAckMessage(prompt, "video")
-	_ = h.DB.UpdateJobStatus(ctx, chatJobID, "completed", map[string]interface{}{"output": ack, "spawned_job_id": videoJobID.String()}, "", 0, "")
-	h.publishJobDone(ctx, chatJobID, userID, "chat")
-	h.publishJobRunning(ctx, videoJobID, userID, "video")
-	log.Printf("chat reroute spawned video job=%s from chat=%s", videoJobID, chatJobID)
-	return true
-}
-
-func (h *Handlers) publishJobDone(ctx context.Context, jobID, userID uuid.UUID, jobType string) {
-	if h.Stream == nil {
 		return
 	}
-	_ = h.Stream.Publish(ctx, jobID, `{"status":"completed"}`, true)
-	_ = h.Stream.PublishRaw(ctx, fmt.Sprintf("user:%s:jobs", userID.String()),
-		fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"%s"}`, jobID.String(), jobType))
+	h.tagSpawnedJob(ctx, chatJobID, videoJobID)
+	h.publishJobRunning(ctx, videoJobID, userID, "video")
+	log.Printf("skill_header spawned video job=%s from chat=%s", videoJobID, chatJobID)
+}
+
+func (h *Handlers) tagSpawnedJob(ctx context.Context, chatJobID, mediaJobID uuid.UUID) {
+	job, err := h.DB.GetJob(ctx, chatJobID)
+	if err != nil || job == nil || len(job.Output) == 0 {
+		return
+	}
+	var out map[string]interface{}
+	if json.Unmarshal(job.Output, &out) != nil {
+		return
+	}
+	if out == nil {
+		out = map[string]interface{}{}
+	}
+	out["spawned_job_id"] = mediaJobID.String()
+	_ = h.DB.UpdateJobOutput(ctx, chatJobID, out)
 }
 
 func (h *Handlers) publishJobRunning(ctx context.Context, jobID, userID uuid.UUID, jobType string) {
@@ -171,22 +133,6 @@ func (h *Handlers) publishJobRunning(ctx context.Context, jobID, userID uuid.UUI
 	_ = h.Stream.Publish(ctx, jobID, `{"status":"running"}`, false)
 	_ = h.Stream.PublishRaw(ctx, fmt.Sprintf("user:%s:jobs", userID.String()),
 		fmt.Sprintf(`{"jobId":"%s","status":"running","type":"%s"}`, jobID.String(), jobType))
-}
-
-func mediaAckMessage(prompt, kind string) string {
-	p := strings.ToLower(prompt)
-	ro := strings.Contains(p, "ă") || strings.Contains(p, "â") || strings.Contains(p, "î") || strings.Contains(p, "ș") || strings.Contains(p, "ț") ||
-		strings.Contains(p, "poza") || strings.Contains(p, "genereaza") || strings.Contains(p, "generează") || strings.Contains(p, "vreau") || strings.Contains(p, "faci")
-	if kind == "video" {
-		if ro {
-			return "Sigur — pornesc generarea video-ului acum."
-		}
-		return "On it — starting the video now."
-	}
-	if ro {
-		return "Sigur — pornesc generarea imaginii acum."
-	}
-	return "On it — starting the image now."
 }
 
 func attachmentImageURLs(jobInput map[string]interface{}, h *Handlers) []string {
