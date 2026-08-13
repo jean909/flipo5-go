@@ -35,6 +35,25 @@ func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "job not found", 0, "")
 		return nil
 	}
+
+	// Safety net: if this landed in chat but the user asked for media, spawn the skill job.
+	var jobInput map[string]interface{}
+	if len(job.Input) > 0 {
+		_ = json.Unmarshal(job.Input, &jobInput)
+	}
+	if jobInput == nil {
+		jobInput = map[string]interface{}{}
+	}
+	prompt := p.Prompt
+	if prompt == "" {
+		if s, ok := jobInput["prompt"].(string); ok {
+			prompt = s
+		}
+	}
+	if h.maybeRerouteChatToSkill(ctx, p.JobID, prompt, jobInput, job.ThreadID, job.UserID) {
+		return nil
+	}
+
 	u, _ := h.DB.UserByID(ctx, job.UserID)
 	userName := ""
 	if u != nil && strings.TrimSpace(u.FullName) != "" {
@@ -48,8 +67,8 @@ func (h *Handlers) ChatHandler(ctx context.Context, t *asynq.Task) error {
 
 Capabilities:
 - You handle conversation, questions, and analysis in this chat.
-- Flipo5 can also create images and videos. When a user asks to generate or edit media, the system routes that request to the image/video skills automatically — never say you cannot generate images or videos, and never send users to Midjourney, DALL·E, or other external tools.
-- If a media request somehow lands in chat without being generated, reply briefly that you are starting the creation, or ask for a clearer description / an attached photo for edits.
+- Flipo5 can also create images and videos via separate generation skills. Never say you cannot generate images or videos, and never send users to Midjourney, DALL·E, or other external tools.
+- Do not pretend a generation has started unless the system already queued it. For pure Q&A, just answer.
 
 Identity:
 - Never introduce yourself unless the user explicitly asks who you are.
@@ -164,10 +183,6 @@ Voice and style:
 		userPrompt = contextBlock + "\n\nUser: " + p.Prompt
 	} else {
 		userPrompt = "User: " + p.Prompt
-	}
-	var jobInput map[string]interface{}
-	if len(job.Input) > 0 {
-		_ = json.Unmarshal(job.Input, &jobInput)
 	}
 	// Vision model accepts images only; PDFs/docs are text-extracted server-side and appended to the prompt.
 	images := make([]string, 0, len(projectImageURLs)+4)

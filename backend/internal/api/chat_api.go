@@ -112,10 +112,15 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			model := strings.TrimSpace(s.ModelTextFallback)
-			if model == "" {
-				model = strings.TrimSpace(s.ModelText)
+			fallbacks := []string{}
+			if primary := strings.TrimSpace(s.ModelText); primary != "" {
+				if model == "" {
+					model = primary
+				} else {
+					fallbacks = append(fallbacks, primary)
+				}
 			}
-			clf := &intent.Classifier{Repl: s.Repl, Model: model, Cache: s.Cache}
+			clf := &intent.Classifier{Repl: s.Repl, Model: model, Fallbacks: fallbacks, Cache: s.Cache}
 			res := clf.Classify(ctx, req.Prompt, hints)
 			skill = res.Skill
 			routeSource = res.Source

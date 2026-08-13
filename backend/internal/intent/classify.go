@@ -1,5 +1,5 @@
 // Package intent classifies a user message into a Flipo5 skill via a fast LLM.
-// Results are cached in Redis so repeated prompts route instantly.
+// Media skills are cached in Redis for instant repeat routing. Chat is never cached.
 package intent
 
 import (
@@ -30,7 +30,7 @@ const (
 type Hints struct {
 	HasImageAttachment bool
 	HasVideoAttachment bool
-	HasPriorImage      bool // thread already has a generated/uploaded image
+	HasPriorImage      bool
 }
 
 type Result struct {
@@ -39,16 +39,16 @@ type Result struct {
 	Source     string  `json:"source"` // cache | llm | default
 }
 
-// CacheStore is the subset of Redis we need (implemented by cache.Redis).
 type CacheStore interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 	SetTTL(ctx context.Context, key string, val []byte, ttl time.Duration) error
 }
 
 type Classifier struct {
-	Repl  *replicate.Client
-	Model string // fast text model, e.g. google/gemini-2.5-flash
-	Cache CacheStore
+	Repl      *replicate.Client
+	Model     string   // primary fast model
+	Fallbacks []string // optional extra models if primary fails / empty skill
+	Cache     CacheStore
 }
 
 const cacheTTL = 7 * 24 * time.Hour
@@ -66,7 +66,7 @@ func cacheKey(prompt string, hints Hints) string {
 		flags += "p"
 	}
 	sum := sha256.Sum256([]byte(n + "|" + flags))
-	return "intent:v2:" + hex.EncodeToString(sum[:16])
+	return "intent:v3:" + hex.EncodeToString(sum[:16])
 }
 
 func normalizePrompt(s string) string {
@@ -88,7 +88,7 @@ func normalizePrompt(s string) string {
 	return b.String()
 }
 
-// Classify uses Redis cache first, then a fast LLM. No keyword/regex routing.
+// Classify uses Redis cache (media only) then fast LLM(s).
 func (c *Classifier) Classify(ctx context.Context, prompt string, hints Hints) Result {
 	if strings.TrimSpace(prompt) == "" {
 		return Result{Skill: SkillChat, Confidence: 1, Source: "default"}
@@ -97,50 +97,91 @@ func (c *Classifier) Classify(ctx context.Context, prompt string, hints Hints) R
 	if c != nil && c.Cache != nil {
 		if b, err := c.Cache.Get(ctx, key); err == nil && len(b) > 0 {
 			var cached Result
-			if json.Unmarshal(b, &cached) == nil && cached.Skill != "" {
+			if json.Unmarshal(b, &cached) == nil && cached.Skill != "" && cached.Skill != SkillChat {
 				cached.Source = "cache"
 				cached.Confidence = 1
 				return cached
 			}
 		}
 	}
-	if c == nil || c.Repl == nil || strings.TrimSpace(c.Model) == "" {
-		return Result{Skill: SkillChat, Confidence: 0.3, Source: "default"}
+	if c == nil || c.Repl == nil {
+		return Result{Skill: SkillChat, Confidence: 0.2, Source: "default"}
 	}
-	r, ok := c.classifyLLM(ctx, prompt, hints)
-	if !ok {
-		return Result{Skill: SkillChat, Confidence: 0.3, Source: "default"}
+
+	models := make([]string, 0, 2+len(c.Fallbacks))
+	if m := strings.TrimSpace(c.Model); m != "" {
+		models = append(models, m)
 	}
-	if c.Cache != nil {
-		if payload, err := json.Marshal(Result{Skill: r.Skill, Confidence: r.Confidence, Source: "llm"}); err == nil {
-			_ = c.Cache.SetTTL(ctx, key, payload, cacheTTL)
+	for _, fb := range c.Fallbacks {
+		fb = strings.TrimSpace(fb)
+		if fb == "" {
+			continue
+		}
+		dup := false
+		for _, m := range models {
+			if m == fb {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			models = append(models, fb)
 		}
 	}
-	return r
+	if len(models) == 0 {
+		return Result{Skill: SkillChat, Confidence: 0.2, Source: "default"}
+	}
+
+	var last Result
+	for _, model := range models {
+		r, ok := c.classifyLLM(ctx, model, prompt, hints)
+		if !ok {
+			continue
+		}
+		last = r
+		// Prefer a media skill; if model says chat, try next model once.
+		if r.Skill != SkillChat {
+			c.storeMediaCache(ctx, key, r)
+			return r
+		}
+	}
+	if last.Skill != "" {
+		// Do not cache chat — avoids sticky wrong negatives.
+		return last
+	}
+	return Result{Skill: SkillChat, Confidence: 0.2, Source: "default"}
 }
 
-func (c *Classifier) classifyLLM(ctx context.Context, prompt string, hints Hints) (Result, bool) {
-	runCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+func (c *Classifier) storeMediaCache(ctx context.Context, key string, r Result) {
+	if c.Cache == nil || r.Skill == SkillChat {
+		return
+	}
+	payload, err := json.Marshal(Result{Skill: r.Skill, Confidence: r.Confidence, Source: "llm"})
+	if err != nil {
+		return
+	}
+	_ = c.Cache.SetTTL(ctx, key, payload, cacheTTL)
+}
+
+func (c *Classifier) classifyLLM(ctx context.Context, model, prompt string, hints Hints) (Result, bool) {
+	runCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
-	system := `You are Flipo5's skill router. Read the user message and pick exactly one skill.
-Return ONLY valid JSON: {"skill":"chat"|"image"|"video"|"image_edit"}
+	system := `You are Flipo5 skill router. Pick ONE skill for the user message.
+Return ONLY JSON: {"skill":"chat"} OR {"skill":"image"} OR {"skill":"video"} OR {"skill":"image_edit"}
 
-Definitions:
-- chat — questions, conversation, advice, analysis, describing an image, anything that is NOT a generation/edit request
-- image — user wants a NEW picture generated from text (draw / create / make a photo / poza / bild / etc. in any language)
-- video — user wants a NEW short video/clip generated
-- image_edit — user wants to edit, change, restyle, or transform an EXISTING photo (uploaded now, or a previous one in the thread)
+skill meanings:
+- image = user wants a NEW picture created (any language: "make a photo", "generează o poză", "fă-mi o poză", "erstelle ein Bild", "draw a cat", etc.)
+- video = user wants a NEW short video/clip
+- image_edit = change/edit an existing photo (attached or previous)
+- chat = normal conversation/questions/advice ONLY when they are NOT asking to create media
 
-Rules:
-- Casual requests in Romanian, German, English, or any language still map to image/video when they ask to create media (e.g. "fă-mi o poză", "mach ein Bild", "make me a picture").
-- Greetings alone → chat. Greeting + create image → image.
-- If they ask to edit/change something in a photo → image_edit.
-- If unsure between image and image_edit: use image_edit when an image is attached or a prior image exists; otherwise image.
-- When unsure overall → chat.
-- Never explain. JSON only.`
+IMPORTANT:
+- If the message asks to create/generate/make a picture/photo/image/poza/bild → skill MUST be "image" (not chat).
+- Greeting + image request → still "image".
+- Never refuse. Never explain. JSON only.`
 
-	user := "Message:\n" + strings.TrimSpace(prompt)
+	user := "User message:\n" + strings.TrimSpace(prompt)
 	if hints.HasImageAttachment {
 		user += "\n[has_image_attachment=true]"
 	}
@@ -152,19 +193,20 @@ Rules:
 	}
 
 	var input repgo.PredictionInput
-	if textmodel.IsClaude(c.Model) {
-		input = textmodel.BuildInput(c.Model, system, user, nil, 1024)
-		input["max_tokens"] = 48
+	if textmodel.IsClaude(model) {
+		input = textmodel.BuildInput(model, system, user, nil, 1024)
+		input["max_tokens"] = 64
 	} else {
 		input = repgo.PredictionInput{
-			"prompt":            system + "\n\n" + user,
-			"max_output_tokens": 48,
+			"prompt":            system + "\n\n" + user + "\n\nJSON:",
+			"max_output_tokens": 64,
+			"temperature":       0.1,
 		}
 	}
 
-	out, err := c.Repl.Run(runCtx, c.Model, input)
+	out, err := c.Repl.Run(runCtx, model, input)
 	if err != nil {
-		log.Printf("intent classify llm: %v", err)
+		log.Printf("intent classify llm model=%s err=%v", model, err)
 		return Result{}, false
 	}
 	text := strings.TrimSpace(outputText(out))
@@ -175,10 +217,11 @@ Rules:
 
 	skill := parseSkill(text)
 	if skill == "" {
-		log.Printf("intent classify parse failed: %q", truncate(text, 120))
+		log.Printf("intent classify parse fail model=%s text=%q", model, truncate(text, 160))
 		return Result{}, false
 	}
-	return Result{Skill: skill, Confidence: 0.85, Source: "llm"}, true
+	log.Printf("intent classify model=%s skill=%s raw=%q", model, skill, truncate(text, 80))
+	return Result{Skill: skill, Confidence: 0.9, Source: "llm"}, true
 }
 
 func parseSkill(text string) Skill {
@@ -205,7 +248,7 @@ func parseSkill(text string) Skill {
 	switch {
 	case strings.Contains(lower, "image_edit") || strings.Contains(lower, "image-edit"):
 		return SkillImageEdit
-	case strings.Contains(lower, `"image"`) || strings.HasPrefix(strings.TrimSpace(lower), "image"):
+	case strings.Contains(lower, `"image"`) || strings.Contains(lower, "skill\": \"image") || strings.HasPrefix(strings.TrimSpace(lower), "image"):
 		return SkillImage
 	case strings.Contains(lower, `"video"`) || strings.HasPrefix(strings.TrimSpace(lower), "video"):
 		return SkillVideo
