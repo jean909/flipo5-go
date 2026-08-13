@@ -258,7 +258,7 @@ func (s *Server) lastImageURLInThread(ctx context.Context, threadID, userID uuid
 		if j.Status != "completed" {
 			continue
 		}
-		if j.Type == "image" || j.Type == "logo" || j.Type == "upscale" {
+		if j.Type == "image" || j.Type == "logo" || j.Type == "upscale" || j.Type == "remove_bg" {
 			if u := firstURLFromJobOutput(j.Output); u != "" {
 				return u
 			}

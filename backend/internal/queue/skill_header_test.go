@@ -14,6 +14,10 @@ func TestSplitSkillHeader(t *testing.T) {
 	if sk != "chat" || body != "Salut!" {
 		t.Fatalf("got skill=%s body=%q", sk, body)
 	}
+	sk, body = SplitSkillHeader("[[skill:remove_bg]]\nScot fundalul acum.")
+	if sk != "remove_bg" || body != "Scot fundalul acum." {
+		t.Fatalf("got skill=%s body=%q", sk, body)
+	}
 	sk, body = SplitSkillHeader("Just a normal reply")
 	if sk != "chat" || body != "Just a normal reply" {
 		t.Fatalf("got skill=%s body=%q", sk, body)

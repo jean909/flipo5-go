@@ -13,6 +13,7 @@ const (
 	TypeImage               = "image"
 	TypeVideo               = "video"
 	TypeUpscale             = "upscale"
+	TypeRemoveBg            = "remove_bg"
 	TypeSEO                 = "seo"
 	TypeOutline             = "outline"
 	TypeTranslate           = "translate"
@@ -77,6 +78,18 @@ func NewUpscaleTask(jobID uuid.UUID) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeUpscale, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
+}
+
+type RemoveBgPayload struct {
+	JobID uuid.UUID `json:"job_id"`
+}
+
+func NewRemoveBgTask(jobID uuid.UUID) (*asynq.Task, error) {
+	payload, err := json.Marshal(RemoveBgPayload{JobID: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeRemoveBg, payload, asynq.Queue("default"), asynq.MaxRetry(3), taskTimeout), nil
 }
 
 type SEOPayload struct {

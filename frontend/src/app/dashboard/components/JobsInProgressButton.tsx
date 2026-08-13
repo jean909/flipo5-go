@@ -72,6 +72,7 @@ function completionMessageKey(type: string): string {
   if (type === 'vectorize') return 'jobsInProgress.vectorizeReady';
   if (type.startsWith('product')) return 'jobsInProgress.productReady';
   if (type === 'upscale') return 'jobsInProgress.upscaleReady';
+  if (type === 'remove_bg') return 'jobsInProgress.removeBgReady';
   return 'jobsInProgress.readyGeneric';
 }
 
@@ -411,6 +412,7 @@ export function JobsInProgressButton() {
     if (type === 'video') return t(locale, 'jobs.type.video');
     if (type === 'zip') return t(locale, 'jobs.type.zip');
     if (type === 'upscale') return t(locale, 'jobs.type.upscale');
+    if (type === 'remove_bg') return t(locale, 'jobs.type.remove_bg');
     if (type === 'seo') return t(locale, 'jobs.type.seo');
     if (type === 'outline') return t(locale, 'jobs.type.outline');
     if (type === 'translate') return t(locale, 'jobs.type.translate');

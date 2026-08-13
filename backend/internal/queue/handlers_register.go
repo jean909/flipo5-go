@@ -9,6 +9,7 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeImage, h.ImageHandler)
 	mux.HandleFunc(TypeVideo, h.VideoHandler)
 	mux.HandleFunc(TypeUpscale, h.UpscaleHandler)
+	mux.HandleFunc(TypeRemoveBg, h.RemoveBgHandler)
 	mux.HandleFunc(TypeSEO, h.SEOHandler)
 	mux.HandleFunc(TypeOutline, h.OutlineHandler)
 	mux.HandleFunc(TypeTranslate, h.TranslateHandler)

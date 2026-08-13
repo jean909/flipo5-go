@@ -89,8 +89,8 @@ type JobCardProps = {
   onCancel?: () => void;
   /** Called with (oldJobId, newJobId) after retry is enqueued (failed jobs) */
   onRetry?: (oldJobId: string, newJobId: string) => void;
-  /** Chat skill spawn: show sibling image/video processing card in-thread */
-  onSpawnedMediaJob?: (jobId: string, type: 'image' | 'video') => void;
+  /** Chat skill spawn: show sibling image/video/remove-bg processing card in-thread */
+  onSpawnedMediaJob?: (jobId: string, type: 'image' | 'video' | 'remove_bg') => void;
   regenerateUsed?: boolean;
   variant?: 'card' | 'chat';
 };
@@ -193,8 +193,12 @@ function JobCardInner({
     if (!sid || typeof sid !== 'string') return;
     if (spawnedNotifiedRef.current === sid) return;
     spawnedNotifiedRef.current = sid;
-    const mediaType: 'image' | 'video' =
-      out?.spawned_job_type === 'video' || out?.detected_skill === 'video' ? 'video' : 'image';
+    const mediaType: 'image' | 'video' | 'remove_bg' =
+      out?.spawned_job_type === 'video' || out?.detected_skill === 'video'
+        ? 'video'
+        : out?.spawned_job_type === 'remove_bg' || out?.detected_skill === 'remove_bg'
+          ? 'remove_bg'
+          : 'image';
     onSpawnedMediaJobRef.current?.(sid, mediaType);
   }, [job?.id, job?.type, job?.output, job?.status]);
 
@@ -276,7 +280,7 @@ function JobCardInner({
 
   // Retry fetch when completed image/video job has no URLs (mirror may still be updating)
   useEffect(() => {
-    if (!job || (job.type !== 'image' && job.type !== 'video') || job.status !== 'completed' || retryCount >= 3) return;
+    if (!job || (job.type !== 'image' && job.type !== 'video' && job.type !== 'remove_bg') || job.status !== 'completed' || retryCount >= 3) return;
     const urls = getOutputRefs(job.output);
     if (urls.length > 0) return;
     let cancelled = false;
@@ -470,14 +474,16 @@ function JobCardInner({
     );
   }
 
-  // Image job: pending/running = ChatGPT-style gradient loader card
-  if (job && job.type === 'image' && (job.status === 'pending' || job.status === 'running')) {
+  // Image / remove-bg job: pending/running = ChatGPT-style gradient loader card
+  if (job && (job.type === 'image' || job.type === 'remove_bg') && (job.status === 'pending' || job.status === 'running')) {
     return (
       <div className="flex justify-start flex-col items-start gap-2">
         <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
           <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
             <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
-            <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
+            <p className="text-sm text-theme-fg/80">
+              {t(locale, job.type === 'remove_bg' ? 'image.removingBg' : 'image.creating')}
+            </p>
           </div>
         </div>
         {onCancel && (
@@ -600,8 +606,8 @@ function JobCardInner({
   const linkCls = dark ? 'text-theme-fg hover:underline' : 'text-theme-fg underline';
   const preCls = dark ? 'text-theme-fg-muted' : 'text-theme-fg-muted';
 
-  // Image job: completed = gallery (1 large + thumbnails to swap)
-  if (job && job.type === 'image' && job.status === 'completed') {
+  // Image / remove-bg job: completed = gallery (1 large + thumbnails to swap)
+  if (job && (job.type === 'image' || job.type === 'remove_bg') && job.status === 'completed') {
     const urls = imageUrls;
     if (urls.length > 0) {
       return (
@@ -618,8 +624,8 @@ function JobCardInner({
             initialRating={job.rating === 'like' || job.rating === 'dislike' ? job.rating : undefined}
             mediaUrls={urls}
             threadId={job.thread_id ?? null}
-            showRegenerate={!!(job.input as { prompt?: string })?.prompt}
-            onRegenerate={onRegenerate}
+            showRegenerate={job.type === 'image' && !!(job.input as { prompt?: string })?.prompt}
+            onRegenerate={job.type === 'image' ? onRegenerate : undefined}
             locale={locale}
           />
         </div>
@@ -632,7 +638,9 @@ function JobCardInner({
           <div className="max-w-[min(340px,85vw)] rounded-2xl rounded-tl-md overflow-hidden">
             <div className="aspect-[4/3] bg-gradient-to-br from-amber-900/40 via-purple-900/30 to-pink-900/40 flex flex-col items-center justify-center gap-3 p-6">
               <div className="w-10 h-10 rounded-full border-2 border-theme-border-hover border-t-theme-fg animate-spin" />
-              <p className="text-sm text-theme-fg/80">{t(locale, 'image.creating')}</p>
+              <p className="text-sm text-theme-fg/80">
+                {t(locale, job.type === 'remove_bg' ? 'image.removingBg' : 'image.creating')}
+              </p>
             </div>
           </div>
         </div>
@@ -645,8 +653,8 @@ function JobCardInner({
     );
   }
 
-  // Image job: failed
-  if (job && job.type === 'image' && job.status === 'failed') {
+  // Image / remove-bg job: failed
+  if (job && (job.type === 'image' || job.type === 'remove_bg') && job.status === 'failed') {
     return (
       <div className="flex justify-start flex-col items-start gap-2">
         <p className={`rounded-2xl rounded-tl-md bg-theme-danger-muted px-4 py-2 text-sm ${errCls}`}>{jobErrorDisplay(job.error, locale)}</p>

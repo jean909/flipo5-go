@@ -43,7 +43,7 @@ func (h *Handlers) invalidateJobCaches(ctx context.Context, job *store.Job) {
 		}
 		_ = h.Cache.Delete(ctx, keys...)
 	}
-	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" || job.Type == "audio" {
+	if job.Type == "image" || job.Type == "video" || job.Type == "upscale" || job.Type == "audio" || job.Type == "remove_bg" {
 		_ = h.Cache.DeleteByPrefix(ctx, "content:"+job.UserID.String()+":")
 	}
 	_ = h.Cache.DeleteByPrefix(ctx, "prompts:recent:"+job.UserID.String()+":")

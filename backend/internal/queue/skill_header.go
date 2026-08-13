@@ -13,6 +13,7 @@ import (
 //	[[skill:image]]
 //	[[skill:video]]
 //	[[skill:image_edit]]
+//	[[skill:remove_bg]]
 //
 // Returns the skill and the user-visible body (first line removed).
 func SplitSkillHeader(raw string) (intent.Skill, string) {
@@ -59,6 +60,8 @@ func parseSkillTag(line string) (intent.Skill, bool) {
 		return intent.SkillVideo, true
 	case "image_edit", "image-edit", "edit", "image_editing":
 		return intent.SkillImageEdit, true
+	case "remove_bg", "remove-bg", "removebg", "remove_background", "background_remove":
+		return intent.SkillRemoveBg, true
 	default:
 		return "", false
 	}

@@ -25,6 +25,7 @@ const (
 	SkillImage     Skill = "image"
 	SkillVideo     Skill = "video"
 	SkillImageEdit Skill = "image_edit"
+	SkillRemoveBg  Skill = "remove_bg"
 )
 
 type Hints struct {
@@ -168,16 +169,18 @@ func (c *Classifier) classifyLLM(ctx context.Context, model, prompt string, hint
 	defer cancel()
 
 	system := `You are Flipo5 skill router. Pick ONE skill for the user message.
-Return ONLY JSON: {"skill":"chat"} OR {"skill":"image"} OR {"skill":"video"} OR {"skill":"image_edit"}
+Return ONLY JSON: {"skill":"chat"} OR {"skill":"image"} OR {"skill":"video"} OR {"skill":"image_edit"} OR {"skill":"remove_bg"}
 
 skill meanings:
 - image = user wants a NEW picture created (any language: "make a photo", "generează o poză", "fă-mi o poză", "erstelle ein Bild", "draw a cat", etc.)
 - video = user wants a NEW short video/clip
-- image_edit = change/edit an existing photo (attached or previous)
+- remove_bg = remove/cut out background of an existing photo ("remove background", "scoate fundalul", "fără fundal", "transparent background")
+- image_edit = change/edit an existing photo in other ways (not pure background removal)
 - chat = normal conversation/questions/advice ONLY when they are NOT asking to create media
 
 IMPORTANT:
 - If the message asks to create/generate/make a picture/photo/image/poza/bild → skill MUST be "image" (not chat).
+- If the message asks specifically to remove background → skill MUST be "remove_bg".
 - Greeting + image request → still "image".
 - Never refuse. Never explain. JSON only.`
 
@@ -239,6 +242,8 @@ func parseSkill(text string) Skill {
 					return SkillVideo
 				case "image_edit", "image-edit", "edit", "image_editing":
 					return SkillImageEdit
+				case "remove_bg", "remove-bg", "removebg", "remove_background", "background_remove":
+					return SkillRemoveBg
 				case "chat":
 					return SkillChat
 				}
@@ -246,6 +251,8 @@ func parseSkill(text string) Skill {
 		}
 	}
 	switch {
+	case strings.Contains(lower, "remove_bg") || strings.Contains(lower, "remove-bg") || strings.Contains(lower, "remove_background"):
+		return SkillRemoveBg
 	case strings.Contains(lower, "image_edit") || strings.Contains(lower, "image-edit"):
 		return SkillImageEdit
 	case strings.Contains(lower, `"image"`) || strings.Contains(lower, "skill\": \"image") || strings.HasPrefix(strings.TrimSpace(lower), "image"):

@@ -20,6 +20,8 @@ func (h *Handlers) applyDetectedSkill(ctx context.Context, chatJobID uuid.UUID, 
 		return h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, false)
 	case intent.SkillImageEdit:
 		return h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, true)
+	case intent.SkillRemoveBg:
+		return h.enqueueSiblingRemoveBg(ctx, chatJobID, prompt, jobInput, threadID, userID)
 	case intent.SkillVideo:
 		return h.enqueueSiblingVideo(ctx, chatJobID, prompt, jobInput, threadID, userID)
 	default:
@@ -110,6 +112,44 @@ func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID,
 	return &videoJobID, "video"
 }
 
+func (h *Handlers) enqueueSiblingRemoveBg(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID) (*uuid.UUID, string) {
+	if h.Asynq == nil {
+		return nil, ""
+	}
+	refs := attachmentImageURLs(jobInput, h)
+	imageURL := ""
+	if len(refs) > 0 {
+		imageURL = refs[0]
+	}
+	if imageURL == "" && threadID != nil {
+		imageURL = h.lastImageURLInThread(ctx, *threadID, userID)
+	}
+	if imageURL == "" {
+		log.Printf("skill_header remove_bg skipped — no source image chat=%s", chatJobID)
+		return nil, ""
+	}
+	input := map[string]interface{}{
+		"prompt":      prompt,
+		"image_url":   imageURL,
+		"routed_from": "skill_header",
+		"routed_skill": "remove_bg",
+	}
+	jobID, err := h.DB.CreateJob(ctx, userID, "remove_bg", input, threadID)
+	if err != nil {
+		log.Printf("skill_header create remove_bg: %v", err)
+		return nil, ""
+	}
+	task, _ := NewRemoveBgTask(jobID)
+	if _, err := h.Asynq.Enqueue(task); err != nil {
+		log.Printf("skill_header enqueue remove_bg: %v", err)
+		_ = h.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
+		return nil, ""
+	}
+	h.publishJobRunning(ctx, jobID, userID, "remove_bg")
+	log.Printf("skill_header spawned remove_bg job=%s from chat=%s", jobID, chatJobID)
+	return &jobID, "remove_bg"
+}
+
 func (h *Handlers) publishJobRunning(ctx context.Context, jobID, userID uuid.UUID, jobType string) {
 	if h.Stream == nil {
 		return
@@ -156,7 +196,7 @@ func (h *Handlers) lastImageURLInThread(ctx context.Context, threadID, userID uu
 		if j.Status != "completed" {
 			continue
 		}
-		if j.Type == "image" || j.Type == "logo" || j.Type == "upscale" {
+		if j.Type == "image" || j.Type == "logo" || j.Type == "upscale" || j.Type == "remove_bg" {
 			if u := firstURLFromOutput(j.Output); u != "" {
 				return u
 			}

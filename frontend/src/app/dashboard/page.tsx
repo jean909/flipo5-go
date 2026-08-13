@@ -465,9 +465,13 @@ export default function DashboardPage() {
 
   /** Show the same image/video processing card in chat when a skill spawns a sibling job. */
   const handleSpawnedMediaJob = useCallback(
-    (mediaJobId: string, type: 'image' | 'video') => {
+    (mediaJobId: string, type: 'image' | 'video' | 'remove_bg') => {
       const tid = effectiveThreadId;
-      addOptimisticJob({ id: mediaJobId, type, thread_id: tid ?? null });
+      addOptimisticJob({
+        id: mediaJobId,
+        type: type === 'remove_bg' ? 'image' : type,
+        thread_id: tid ?? null,
+      });
       setThreadJobs((prev) => {
         if (prev.some((j) => j.id === mediaJobId)) return prev;
         const now = new Date().toISOString();
@@ -1612,7 +1616,7 @@ export default function DashboardPage() {
                   transition={{ duration: 0.2, ease: 'easeOut' }}
                   className="flex flex-col gap-2"
                 >
-                  {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) &&
+                  {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video') || (job.type === 'remove_bg')) &&
                     (job.input as { prompt?: string; routed_from?: string })?.prompt &&
                     (job.input as { routed_from?: string }).routed_from !== 'skill_header' && (
                     <div className="flex justify-end flex-col items-end gap-1 group/user">

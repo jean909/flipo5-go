@@ -300,6 +300,8 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 		task, _ = queue.NewVideoTask(newJobID)
 	case "upscale":
 		task, _ = queue.NewUpscaleTask(newJobID)
+	case "remove_bg":
+		task, _ = queue.NewRemoveBgTask(newJobID)
 	default:
 		http.Error(w, `{"error":"unsupported job type"}`, http.StatusBadRequest)
 		return
@@ -398,6 +400,8 @@ func (s *Server) editResubmit(w http.ResponseWriter, r *http.Request) {
 		task, _ = queue.NewImageTask(newJobID)
 	case "video":
 		task, _ = queue.NewVideoTask(newJobID)
+	case "remove_bg":
+		task, _ = queue.NewRemoveBgTask(newJobID)
 	}
 	if task == nil {
 		_ = s.DB.UpdateJobStatus(ctx, newJobID, "failed", nil, "enqueue failed", 0, "")
