@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hibiken/asynq"
 	repgo "github.com/replicate/replicate-go"
@@ -104,18 +105,31 @@ func (h *Handlers) VideoHandler(ctx context.Context, t *asynq.Task) error {
 			_ = h.DB.UpdateJobStatus(ctx, p.JobID, "failed", nil, "REPLICATE_MODEL_VIDEO not set", 0, "")
 			return nil
 		}
-		input = make(repgo.PredictionInput)
-		for k, v := range jobInput {
-			input[k] = v
+		// Grok Imagine Video: text-to-video, image-to-video, or video edit.
+		// Only pass schema fields — do not forward internal keys (video_model, routed_from, …).
+		dur := 5
+		if v := durationFromJobInput(jobInput); v > 0 {
+			dur = v
 		}
-		if input["duration"] == nil {
-			input["duration"] = 5
+		ar := "16:9"
+		if v, _ := jobInput["aspect_ratio"].(string); strings.TrimSpace(v) != "" {
+			ar = strings.TrimSpace(v)
 		}
-		if input["aspect_ratio"] == nil || input["aspect_ratio"] == "" {
-			input["aspect_ratio"] = "16:9"
+		res := "720p"
+		if v, _ := jobInput["resolution"].(string); v == "480p" || v == "720p" {
+			res = v
 		}
-		if input["resolution"] == nil || input["resolution"] == "" {
-			input["resolution"] = "720p"
+		input = repgo.PredictionInput{
+			"prompt":       jobInput["prompt"],
+			"duration":     dur,
+			"aspect_ratio": ar,
+			"resolution":   res,
+		}
+		if img := imageURLFromVideoJobInput(jobInput); img != "" {
+			input["image"] = img
+		}
+		if vid, _ := jobInput["video"].(string); strings.TrimSpace(vid) != "" {
+			input["video"] = strings.TrimSpace(vid)
 		}
 	}
 	out, err := h.Repl.Run(ctx, model, input)

@@ -84,17 +84,25 @@ func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID,
 	if h.Asynq == nil {
 		return nil, ""
 	}
+	dur := ParseVideoDurationSeconds(prompt, 5)
 	input := map[string]interface{}{
 		"prompt":       prompt,
-		"duration":     5,
+		"duration":     dur,
 		"aspect_ratio": "16:9",
 		"resolution":   "720p",
 		"video_model":  "1",
 		"routed_from":  "skill_header",
 	}
 	refs := attachmentImageURLs(jobInput, h)
+	imageURL := ""
 	if len(refs) > 0 {
-		input["image"] = refs[0]
+		imageURL = refs[0]
+	}
+	if imageURL == "" && threadID != nil {
+		imageURL = h.lastImageURLInThread(ctx, *threadID, userID)
+	}
+	if imageURL != "" {
+		input["image"] = imageURL
 	}
 	videoJobID, err := h.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {
@@ -108,7 +116,7 @@ func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID,
 		return nil, ""
 	}
 	h.publishJobRunning(ctx, videoJobID, userID, "video")
-	log.Printf("skill_header spawned video job=%s from chat=%s", videoJobID, chatJobID)
+	log.Printf("skill_header spawned video job=%s from chat=%s image=%v duration=%d", videoJobID, chatJobID, imageURL != "", dur)
 	return &videoJobID, "video"
 }
 

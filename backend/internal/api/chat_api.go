@@ -308,17 +308,25 @@ func looksLikeImageURL(u string) bool {
 
 func (s *Server) enqueueRoutedVideo(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {
 	ctx := r.Context()
+	dur := queue.ParseVideoDurationSeconds(prompt, 5)
 	input := map[string]interface{}{
 		"prompt":       prompt,
-		"duration":     5,
+		"duration":     dur,
 		"aspect_ratio": "16:9",
 		"resolution":   "720p",
 		"video_model":  "1",
 		"routed_from":  "chat",
 	}
 	imgs := imageURLsFromAttachments(attachmentURLs, contentTypes, s)
+	imageURL := ""
 	if len(imgs) > 0 {
-		input["image"] = imgs[0]
+		imageURL = imgs[0]
+	}
+	if imageURL == "" && threadID != nil {
+		imageURL = s.lastImageURLInThread(ctx, *threadID, userID)
+	}
+	if imageURL != "" {
+		input["image"] = imageURL
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {

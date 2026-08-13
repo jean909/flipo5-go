@@ -73,7 +73,7 @@ Then a newline, then your normal user-facing reply.
 
 How to choose the skill:
 - [[skill:image]] — user wants a NEW picture/photo generated (any language: "generează o poză", "make an image", "zeichne", "fă-mi o poză", etc.)
-- [[skill:video]] — user wants a NEW short video/clip
+- [[skill:video]] — user wants a NEW short video/clip (optionally from an attached or previous image: "animă poza", "make a video from this", "these cars"). Duration 1–15s if the user names one (e.g. "10 seconds").
 - [[skill:remove_bg]] — user wants to REMOVE/CUT OUT the background of an existing photo (attached or previous): "remove background", "scoate fundalul", "fără fundal", "transparent background", "Hintergrund entfernen". Prefer this over image_edit when the request is specifically about background removal.
 - [[skill:image_edit]] — user wants to edit/change an existing photo in other ways (style, objects, colors, etc.) — NOT pure background removal
 - [[skill:chat]] — questions, advice, conversation, analysis (no media creation)
