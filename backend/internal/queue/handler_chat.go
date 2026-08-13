@@ -329,20 +329,24 @@ Voice and style:
 				finalOutput = body
 			}
 		}
+		spawnedID, mediaType := h.applyDetectedSkill(ctx, p.JobID, prompt, jobInput, job.ThreadID, job.UserID, detectedSkill)
 		final := map[string]interface{}{"output": finalOutput, "detected_skill": string(detectedSkill)}
+		if spawnedID != nil {
+			final["spawned_job_id"] = spawnedID.String()
+			final["spawned_job_type"] = mediaType
+		}
 		_ = h.DB.UpdateJobStatus(ctx, p.JobID, "completed", final, "", 0, pred.ID)
 		if h.Stream != nil {
 			_ = h.Stream.Publish(ctx, p.JobID, finalOutput, true)
-			if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
-				userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
-				updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"chat"}`, p.JobID.String())
-				_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
+			userJobsChannel := fmt.Sprintf("user:%s:jobs", job.UserID.String())
+			updateMsg := fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"chat"}`, p.JobID.String())
+			if spawnedID != nil {
+				updateMsg = fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"chat","spawned_job_id":"%s","spawned_job_type":"%s"}`,
+					p.JobID.String(), spawnedID.String(), mediaType)
 			}
+			_ = h.Stream.PublishRaw(ctx, userJobsChannel, updateMsg)
 		}
-		if job, _ := h.DB.GetJob(ctx, p.JobID); job != nil {
-			h.invalidateJobCaches(ctx, job)
-		}
-		h.applyDetectedSkill(ctx, p.JobID, prompt, jobInput, job.ThreadID, job.UserID, detectedSkill)
+		h.invalidateJobCaches(ctx, job)
 	} else {
 		// Fallback: model doesn't support stream; poll until done
 		jobID := p.JobID
@@ -374,11 +378,16 @@ Voice and style:
 						normalized = m
 					}
 				}
+				spawnedID, mediaType := h.applyDetectedSkill(ctx, jobID, prompt, jobInput, job.ThreadID, job.UserID, detectedSkill)
+				if m, ok := normalized.(map[string]interface{}); ok && spawnedID != nil {
+					m["spawned_job_id"] = spawnedID.String()
+					m["spawned_job_type"] = mediaType
+					normalized = m
+				}
 				_ = h.DB.UpdateJobStatus(ctx, jobID, "completed", normalized, "", 0, pred.ID)
 				if h.Stream != nil && visible != "" {
 					_ = h.Stream.Publish(ctx, jobID, visible, true)
 				}
-				h.applyDetectedSkill(ctx, jobID, prompt, jobInput, job.ThreadID, job.UserID, detectedSkill)
 				goto done
 			case "failed", "canceled":
 				_ = h.Repl.CancelPrediction(ctx, pred.ID)

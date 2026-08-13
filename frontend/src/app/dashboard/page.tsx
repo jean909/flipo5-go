@@ -463,6 +463,39 @@ export default function DashboardPage() {
     setTimeout(refreshThread, 2000);
   }, [refreshThread]);
 
+  /** Show the same image/video processing card in chat when a skill spawns a sibling job. */
+  const handleSpawnedMediaJob = useCallback(
+    (mediaJobId: string, type: 'image' | 'video') => {
+      const tid = effectiveThreadId;
+      addOptimisticJob({ id: mediaJobId, type, thread_id: tid ?? null });
+      setThreadJobs((prev) => {
+        if (prev.some((j) => j.id === mediaJobId)) return prev;
+        const now = new Date().toISOString();
+        return [
+          ...prev,
+          {
+            id: mediaJobId,
+            user_id: '',
+            thread_id: tid,
+            type,
+            status: 'running',
+            input: {
+              prompt: lastSentPrompt || undefined,
+              routed_from: 'skill_header',
+            },
+            output: null,
+            error: null,
+            cost_cents: 0,
+            created_at: now,
+            updated_at: now,
+          } as Job,
+        ];
+      });
+      scheduleThreadRefresh(tid);
+    },
+    [effectiveThreadId, addOptimisticJob, lastSentPrompt, scheduleThreadRefresh]
+  );
+
   // Start new subject from a chat message (text): prefill prompt and open new thread
   const handleStartThreadFromText = useCallback((text: string) => {
     setPrompt(text);
@@ -1579,7 +1612,9 @@ export default function DashboardPage() {
                   transition={{ duration: 0.2, ease: 'easeOut' }}
                   className="flex flex-col gap-2"
                 >
-                  {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) && (job.input as { prompt?: string })?.prompt && (
+                  {((job.type === 'chat') || (job.type === 'image') || (job.type === 'video')) &&
+                    (job.input as { prompt?: string; routed_from?: string })?.prompt &&
+                    (job.input as { routed_from?: string }).routed_from !== 'skill_header' && (
                     <div className="flex justify-end flex-col items-end gap-1 group/user">
                       {editingJobId === job.id ? (
                         <div className="w-full max-w-[85%] flex flex-col gap-2">
@@ -1659,6 +1694,7 @@ export default function DashboardPage() {
                     onRetry={handleJobRetry}
                     onCancel={handleJobCancel}
                     onStartThreadFromText={handleStartThreadFromText}
+                    onSpawnedMediaJob={job.type === 'chat' ? handleSpawnedMediaJob : undefined}
                   />
                   )}
                 </motion.div>

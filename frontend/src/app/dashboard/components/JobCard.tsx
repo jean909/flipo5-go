@@ -89,6 +89,8 @@ type JobCardProps = {
   onCancel?: () => void;
   /** Called with (oldJobId, newJobId) after retry is enqueued (failed jobs) */
   onRetry?: (oldJobId: string, newJobId: string) => void;
+  /** Chat skill spawn: show sibling image/video processing card in-thread */
+  onSpawnedMediaJob?: (jobId: string, type: 'image' | 'video') => void;
   regenerateUsed?: boolean;
   variant?: 'card' | 'chat';
 };
@@ -109,18 +111,28 @@ function areEqualJobCardProps(prev: JobCardProps, next: JobCardProps): boolean {
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onStartThreadFromText) === Boolean(next.onStartThreadFromText) &&
     Boolean(prev.onCancel) === Boolean(next.onCancel) &&
-    Boolean(prev.onRetry) === Boolean(next.onRetry)
+    Boolean(prev.onRetry) === Boolean(next.onRetry) &&
+    Boolean(prev.onSpawnedMediaJob) === Boolean(next.onSpawnedMediaJob)
   );
 }
 
 function isSameJobSnapshot(prev: Job | null, next: Job): boolean {
   if (!prev) return false;
+  const prevSpawn =
+    prev.output && typeof prev.output === 'object'
+      ? (prev.output as { spawned_job_id?: string }).spawned_job_id
+      : undefined;
+  const nextSpawn =
+    next.output && typeof next.output === 'object'
+      ? (next.output as { spawned_job_id?: string }).spawned_job_id
+      : undefined;
   return (
     prev.id === next.id &&
     prev.status === next.status &&
     prev.updated_at === next.updated_at &&
     prev.error === next.error &&
-    prev.rating === next.rating
+    prev.rating === next.rating &&
+    prevSpawn === nextSpawn
   );
 }
 
@@ -136,6 +148,7 @@ function JobCardInner({
   onStartThreadFromText,
   onCancel,
   onRetry,
+  onSpawnedMediaJob,
   regenerateUsed = false,
   variant = 'card',
 }: JobCardProps) {
@@ -152,6 +165,8 @@ function JobCardInner({
   const [displayLen, setDisplayLen] = useState(0); // typing animation
   const esRef = useRef<EventSource | null>(null);
   const onNotFoundRef = useRef<typeof onNotFound>(onNotFound);
+  const onSpawnedMediaJobRef = useRef(onSpawnedMediaJob);
+  const spawnedNotifiedRef = useRef<string | null>(null);
   const streamBufferRef = useRef('');
   const bubbleRef = useRef<HTMLDivElement>(null);
   const lastAutoScrollRef = useRef(0);
@@ -161,6 +176,27 @@ function JobCardInner({
   useEffect(() => {
     onNotFoundRef.current = onNotFound;
   }, [onNotFound]);
+
+  useEffect(() => {
+    onSpawnedMediaJobRef.current = onSpawnedMediaJob;
+  }, [onSpawnedMediaJob]);
+
+  // When chat completes with a spawned media skill, notify parent to show the processing card.
+  useEffect(() => {
+    if (!job || job.type !== 'chat') return;
+    const out = job.output as {
+      spawned_job_id?: string;
+      spawned_job_type?: string;
+      detected_skill?: string;
+    } | null;
+    const sid = out?.spawned_job_id;
+    if (!sid || typeof sid !== 'string') return;
+    if (spawnedNotifiedRef.current === sid) return;
+    spawnedNotifiedRef.current = sid;
+    const mediaType: 'image' | 'video' =
+      out?.spawned_job_type === 'video' || out?.detected_skill === 'video' ? 'video' : 'image';
+    onSpawnedMediaJobRef.current?.(sid, mediaType);
+  }, [job?.id, job?.type, job?.output, job?.status]);
 
   const handleCancel = async () => {
     if (cancelLoading) return;
@@ -331,6 +367,15 @@ function JobCardInner({
               applyTerminal(d.status, d.output);
               es.close();
               esRef.current = null;
+              // Refetch so skill-spawn fields (spawned_job_id) are available for the in-thread card.
+              if (d.status === 'completed') {
+                getJob(jobId)
+                  .then((j) => {
+                    if (cancelledRef.current || !j) return;
+                    setJob((prev) => (isSameJobSnapshot(prev, j) ? prev : j));
+                  })
+                  .catch(() => {});
+              }
             }
           } catch (_) {}
         };

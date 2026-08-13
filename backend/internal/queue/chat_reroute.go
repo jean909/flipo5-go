@@ -13,23 +13,23 @@ import (
 )
 
 // applyDetectedSkill starts the media skill after the chat model labeled the turn.
-// The chat reply (already saved, skill line stripped) is left as-is for the UI.
-func (h *Handlers) applyDetectedSkill(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, skill intent.Skill) {
+// Call before completing the chat job so spawned_job_id can be stored in the same output.
+func (h *Handlers) applyDetectedSkill(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, skill intent.Skill) (spawnedID *uuid.UUID, mediaType string) {
 	switch skill {
 	case intent.SkillImage:
-		h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, false)
+		return h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, false)
 	case intent.SkillImageEdit:
-		h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, true)
+		return h.enqueueSiblingImage(ctx, chatJobID, prompt, jobInput, threadID, userID, true)
 	case intent.SkillVideo:
-		h.enqueueSiblingVideo(ctx, chatJobID, prompt, jobInput, threadID, userID)
+		return h.enqueueSiblingVideo(ctx, chatJobID, prompt, jobInput, threadID, userID)
 	default:
-		return
+		return nil, ""
 	}
 }
 
-func (h *Handlers) enqueueSiblingImage(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, isEdit bool) {
+func (h *Handlers) enqueueSiblingImage(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID, isEdit bool) (*uuid.UUID, string) {
 	if h.Asynq == nil {
-		return
+		return nil, ""
 	}
 	input := map[string]interface{}{
 		"prompt":             prompt,
@@ -57,7 +57,7 @@ func (h *Handlers) enqueueSiblingImage(ctx context.Context, chatJobID uuid.UUID,
 	}
 	if isEdit && len(refs) == 0 {
 		log.Printf("skill_header image_edit skipped — no source image chat=%s", chatJobID)
-		return
+		return nil, ""
 	}
 	if len(refs) > 0 {
 		input["image_input"] = refs
@@ -65,22 +65,22 @@ func (h *Handlers) enqueueSiblingImage(ctx context.Context, chatJobID uuid.UUID,
 	imageJobID, err := h.DB.CreateJob(ctx, userID, "image", input, threadID)
 	if err != nil {
 		log.Printf("skill_header create image: %v", err)
-		return
+		return nil, ""
 	}
 	task, _ := NewImageTask(imageJobID)
 	if _, err := h.Asynq.Enqueue(task); err != nil {
 		log.Printf("skill_header enqueue image: %v", err)
 		_ = h.DB.UpdateJobStatus(ctx, imageJobID, "failed", nil, "enqueue failed", 0, "")
-		return
+		return nil, ""
 	}
-	h.tagSpawnedJob(ctx, chatJobID, imageJobID)
 	h.publishJobRunning(ctx, imageJobID, userID, "image")
 	log.Printf("skill_header spawned image job=%s from chat=%s edit=%v", imageJobID, chatJobID, isEdit)
+	return &imageJobID, "image"
 }
 
-func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID) {
+func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID, prompt string, jobInput map[string]interface{}, threadID *uuid.UUID, userID uuid.UUID) (*uuid.UUID, string) {
 	if h.Asynq == nil {
-		return
+		return nil, ""
 	}
 	input := map[string]interface{}{
 		"prompt":       prompt,
@@ -97,33 +97,17 @@ func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID,
 	videoJobID, err := h.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {
 		log.Printf("skill_header create video: %v", err)
-		return
+		return nil, ""
 	}
 	task, _ := NewVideoTask(videoJobID)
 	if _, err := h.Asynq.Enqueue(task); err != nil {
 		log.Printf("skill_header enqueue video: %v", err)
 		_ = h.DB.UpdateJobStatus(ctx, videoJobID, "failed", nil, "enqueue failed", 0, "")
-		return
+		return nil, ""
 	}
-	h.tagSpawnedJob(ctx, chatJobID, videoJobID)
 	h.publishJobRunning(ctx, videoJobID, userID, "video")
 	log.Printf("skill_header spawned video job=%s from chat=%s", videoJobID, chatJobID)
-}
-
-func (h *Handlers) tagSpawnedJob(ctx context.Context, chatJobID, mediaJobID uuid.UUID) {
-	job, err := h.DB.GetJob(ctx, chatJobID)
-	if err != nil || job == nil || len(job.Output) == 0 {
-		return
-	}
-	var out map[string]interface{}
-	if json.Unmarshal(job.Output, &out) != nil {
-		return
-	}
-	if out == nil {
-		out = map[string]interface{}{}
-	}
-	out["spawned_job_id"] = mediaJobID.String()
-	_ = h.DB.UpdateJobOutput(ctx, chatJobID, out)
+	return &videoJobID, "video"
 }
 
 func (h *Handlers) publishJobRunning(ctx context.Context, jobID, userID uuid.UUID, jobType string) {
