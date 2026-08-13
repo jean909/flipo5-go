@@ -43,7 +43,7 @@ type SubmitCtx = {
   setReferenceImageUrls: (v: string[]) => void;
 
   uploadAttachments: (files: File[]) => Promise<string[]>;
-  createChat: (msg: string, urls?: string[], threadId?: string, incognito?: boolean, types?: string[], chatProjectId?: string) => Promise<{ job_id: string; thread_id?: string | null; routed?: 'chat' | 'image' | 'video' }>;
+  createChat: (msg: string, urls?: string[], threadId?: string, incognito?: boolean, types?: string[], chatProjectId?: string) => Promise<{ job_id: string; thread_id?: string | null; routed?: 'chat' | 'image' | 'video' | 'image_edit' }>;
   pendingChatProjectId?: string | null;
   createImage: (payload: any) => Promise<{ job_id: string; thread_id?: string | null }>;
   createVideo: (payload: any) => Promise<{ job_id: string; thread_id?: string | null }>;
@@ -139,7 +139,13 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
       );
       ctx.setPendingUserMessage('');
       ctx.setPendingUserMessageThreadId(null);
-      const routed = res.routed === 'image' || res.routed === 'video' ? res.routed : 'chat';
+      const routedRaw = res.routed;
+      const routed: 'chat' | 'image' | 'video' =
+        routedRaw === 'image' || routedRaw === 'image_edit'
+          ? 'image'
+          : routedRaw === 'video'
+            ? 'video'
+            : 'chat';
       ctx.setJobId(res.job_id);
       ctx.setLastSentPrompt(msg);
       ctx.setPendingJobThreadId(res.thread_id ?? tid ?? null);

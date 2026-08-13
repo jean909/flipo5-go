@@ -40,6 +40,14 @@ func (r *Redis) Set(ctx context.Context, key string, val []byte) error {
 	return r.client.Set(ctx, key, val, r.ttl).Err()
 }
 
+// SetTTL stores a value with a custom TTL (e.g. long-lived intent cache).
+func (r *Redis) SetTTL(ctx context.Context, key string, val []byte, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = r.ttl
+	}
+	return r.client.Set(ctx, key, val, ttl).Err()
+}
+
 func (r *Redis) Delete(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {
 		return nil

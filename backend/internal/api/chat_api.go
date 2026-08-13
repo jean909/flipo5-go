@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -79,13 +80,12 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Skill routing: chat by default; fast classifier may dispatch image/video.
-	// Incognito stays pure chat (no media skills).
+	// Skill routing: fast LLM (+ Redis cache). Incognito = chat only.
 	skill := intent.SkillChat
 	routeSource := "default"
 	force := strings.ToLower(strings.TrimSpace(req.ForceSkill))
 	switch force {
-	case "chat", "image", "video":
+	case "chat", "image", "video", "image_edit":
 		skill = intent.Skill(force)
 		routeSource = "force"
 	default:
@@ -106,11 +106,16 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 					hints.HasImageAttachment = true
 				}
 			}
+			if threadID != nil {
+				if url := s.lastImageURLInThread(ctx, *threadID, userID); url != "" {
+					hints.HasPriorImage = true
+				}
+			}
 			model := strings.TrimSpace(s.ModelTextFallback)
 			if model == "" {
 				model = strings.TrimSpace(s.ModelText)
 			}
-			clf := &intent.Classifier{Repl: s.Repl, Model: model}
+			clf := &intent.Classifier{Repl: s.Repl, Model: model, Cache: s.Cache}
 			res := clf.Classify(ctx, req.Prompt, hints)
 			skill = res.Skill
 			routeSource = res.Source
@@ -120,7 +125,10 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 
 	switch skill {
 	case intent.SkillImage:
-		s.enqueueRoutedImage(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
+		s.enqueueRoutedImage(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource, false)
+		return
+	case intent.SkillImageEdit:
+		s.enqueueRoutedImageEdit(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
 		return
 	case intent.SkillVideo:
 		s.enqueueRoutedVideo(w, r, userID, threadID, req.Prompt, req.AttachmentURLs, req.AttachmentContentTypes, routeSource)
@@ -158,20 +166,25 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
-func (s *Server) enqueueRoutedImage(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {
+func (s *Server) enqueueRoutedImage(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string, isEdit bool) {
 	ctx := r.Context()
 	input := map[string]interface{}{
-		"prompt":       prompt,
-		"size":         "2K",
-		"aspect_ratio": "1:1",
-		"max_images":   1,
-		"quality":      "high",
-		"output_format": "webp",
-		"number_of_images": 1,
+		"prompt":             prompt,
+		"size":               "2K",
+		"aspect_ratio":       "1:1",
+		"max_images":         1,
+		"quality":            "high",
+		"output_format":      "webp",
+		"number_of_images":   1,
 		"output_compression": 90,
-		"background":   "auto",
-		"moderation":   "auto",
-		"routed_from":  "chat",
+		"background":         "auto",
+		"moderation":         "auto",
+		"routed_from":        "chat",
+	}
+	if isEdit {
+		input["routed_skill"] = "image_edit"
+		input["size"] = "HD" // reference-friendly edit model path
+		input["aspect_ratio"] = "match_input_image"
 	}
 	imageInput := imageURLsFromAttachments(attachmentURLs, contentTypes, s)
 	if len(imageInput) > 0 {
@@ -182,7 +195,7 @@ func (s *Server) enqueueRoutedImage(w http.ResponseWriter, r *http.Request, user
 		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
 		return
 	}
-	s.recordUserProfile(userID, "image", map[string]interface{}{"routed_from": "chat"})
+	s.recordUserProfile(userID, "image", map[string]interface{}{"routed_from": "chat", "edit": isEdit})
 	task, _ := queue.NewImageTask(jobID)
 	if _, err := s.Asynq.Enqueue(task); err != nil {
 		_ = s.DB.UpdateJobStatus(ctx, jobID, "failed", nil, "enqueue failed", 0, "")
@@ -193,13 +206,142 @@ func (s *Server) enqueueRoutedImage(w http.ResponseWriter, r *http.Request, user
 		s.invalidateThreadCache(ctx, *threadID, userID)
 	}
 	s.invalidateContentCache(ctx, userID)
+	routed := "image"
+	if isEdit {
+		routed = "image_edit"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	out := map[string]string{"job_id": jobID.String(), "routed": "image", "route_source": routeSource}
+	out := map[string]string{"job_id": jobID.String(), "routed": routed, "route_source": routeSource}
 	if threadID != nil {
 		out["thread_id"] = threadID.String()
 	}
 	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) enqueueRoutedImageEdit(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {
+	ctx := r.Context()
+	imageInput := imageURLsFromAttachments(attachmentURLs, contentTypes, s)
+	if len(imageInput) == 0 && threadID != nil {
+		if prev := s.lastImageURLInThread(ctx, *threadID, userID); prev != "" {
+			imageInput = []string{prev}
+		}
+	}
+	if len(imageInput) == 0 {
+		// Ask the user to attach / generate a photo first (instant chat reply, no LLM).
+		s.replyNeedImageForEdit(w, r, userID, threadID, prompt, routeSource)
+		return
+	}
+	// Reuse image enqueue with references filled.
+	reqURLs := imageInput
+	reqTypes := make([]string, len(imageInput))
+	for i := range reqTypes {
+		reqTypes[i] = "image/jpeg"
+	}
+	s.enqueueRoutedImage(w, r, userID, threadID, prompt, reqURLs, reqTypes, routeSource, true)
+}
+
+func (s *Server) replyNeedImageForEdit(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt, routeSource string) {
+	ctx := r.Context()
+	msg := needImageEditMessage(prompt)
+	input := map[string]interface{}{"prompt": prompt, "routed_from": "chat", "routed_skill": "image_edit", "needs_image": true}
+	jobID, err := s.DB.CreateJob(ctx, userID, "chat", input, threadID)
+	if err != nil {
+		http.Error(w, `{"error":"create job"}`, http.StatusInternalServerError)
+		return
+	}
+	out := map[string]interface{}{"output": msg}
+	_ = s.DB.UpdateJobStatus(ctx, jobID, "completed", out, "", 0, "")
+	if s.Stream != nil {
+		_ = s.Stream.Publish(ctx, jobID, `{"status":"completed"}`, true)
+		userCh := fmt.Sprintf("user:%s:jobs", userID.String())
+		_ = s.Stream.PublishRaw(ctx, userCh, fmt.Sprintf(`{"jobId":"%s","status":"completed","type":"chat"}`, jobID.String()))
+	}
+	if threadID != nil {
+		s.invalidateThreadCache(ctx, *threadID, userID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	resp := map[string]string{"job_id": jobID.String(), "routed": "chat", "route_source": routeSource, "route_note": "need_image"}
+	if threadID != nil {
+		resp["thread_id"] = threadID.String()
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func needImageEditMessage(prompt string) string {
+	p := strings.ToLower(prompt)
+	roHints := []string{"ă", "â", "î", "ș", "ț", "poza", "poză", "faci", "vreau", "editează", "editeaza", "schimbă", "schimba"}
+	for _, h := range roHints {
+		if strings.Contains(p, h) {
+			return "Sigur — ca să editez imaginea, atașează o poză (sau generează una mai întâi în acest chat), apoi spune-mi ce vrei schimbat."
+		}
+	}
+	deHints := []string{"bild", "foto", "ändere", "aendere", "bearbeite", "mach"}
+	for _, h := range deHints {
+		if strings.Contains(p, h) {
+			return "Klar — bitte hänge ein Bild an (oder erstelle zuerst eines in diesem Chat) und sag mir, was geändert werden soll."
+		}
+	}
+	return "Sure — attach a photo to edit (or generate one in this chat first), then tell me what to change."
+}
+
+func (s *Server) lastImageURLInThread(ctx context.Context, threadID, userID uuid.UUID) string {
+	jobs, err := s.DB.ListJobsByThread(ctx, threadID, userID)
+	if err != nil || len(jobs) == 0 {
+		return ""
+	}
+	for i := len(jobs) - 1; i >= 0; i-- {
+		j := jobs[i]
+		if j.Status != "completed" {
+			continue
+		}
+		if j.Type == "image" || j.Type == "logo" || j.Type == "upscale" {
+			if u := firstURLFromJobOutput(j.Output); u != "" {
+				return u
+			}
+		}
+		// Also accept image attachments on prior chat turns.
+		if j.Type == "chat" && len(j.Input) > 0 {
+			var in map[string]interface{}
+			if json.Unmarshal(j.Input, &in) == nil {
+				if urls, ok := in["attachment_urls"].([]interface{}); ok {
+					for k := len(urls) - 1; k >= 0; k-- {
+						if s, ok := urls[k].(string); ok && looksLikeImageURL(s) {
+							return s
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func firstURLFromJobOutput(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	if s, ok := m["output"].(string); ok && strings.HasPrefix(s, "http") {
+		return s
+	}
+	if arr, ok := m["output"].([]interface{}); ok {
+		for _, v := range arr {
+			if s, ok := v.(string); ok && strings.HasPrefix(s, "http") {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func looksLikeImageURL(u string) bool {
+	lu := strings.ToLower(u)
+	return strings.Contains(lu, ".png") || strings.Contains(lu, ".jpg") || strings.Contains(lu, ".jpeg") || strings.Contains(lu, ".webp") || strings.Contains(lu, ".gif") || strings.Contains(lu, "/image")
 }
 
 func (s *Server) enqueueRoutedVideo(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {

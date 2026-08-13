@@ -368,7 +368,7 @@ export async function createChat(
   incognito?: boolean,
   attachmentContentTypes?: string[],
   chatProjectId?: string
-): Promise<{ job_id: string; thread_id?: string; routed?: 'chat' | 'image' | 'video'; route_source?: string }> {
+): Promise<{ job_id: string; thread_id?: string; routed?: 'chat' | 'image' | 'video' | 'image_edit'; route_source?: string }> {
   const token = await getToken();
   if (!token) throw new Error('Not logged in');
   const body: { prompt: string; attachment_urls?: string[]; attachment_content_types?: string[]; thread_id?: string; incognito?: boolean; chat_project_id?: string } = { prompt };

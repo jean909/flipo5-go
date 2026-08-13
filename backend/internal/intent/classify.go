@@ -1,14 +1,16 @@
-// Package intent classifies a user message into a skill: chat, image, or video.
-// Fast path: heuristic. Ambiguous: tiny LLM (Gemini Flash) with short timeout.
+// Package intent classifies a user message into a Flipo5 skill via a fast LLM.
+// Results are cached in Redis so repeated prompts route instantly.
 package intent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log"
-	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"flipo5/backend/internal/replicate"
 	"flipo5/backend/internal/textmodel"
@@ -19,142 +21,124 @@ import (
 type Skill string
 
 const (
-	SkillChat  Skill = "chat"
-	SkillImage Skill = "image"
-	SkillVideo Skill = "video"
+	SkillChat      Skill = "chat"
+	SkillImage     Skill = "image"
+	SkillVideo     Skill = "video"
+	SkillImageEdit Skill = "image_edit"
 )
 
 type Hints struct {
 	HasImageAttachment bool
 	HasVideoAttachment bool
+	HasPriorImage      bool // thread already has a generated/uploaded image
 }
 
 type Result struct {
-	Skill      Skill  `json:"skill"`
+	Skill      Skill   `json:"skill"`
 	Confidence float64 `json:"confidence"`
-	Source     string  `json:"source"` // heuristic | llm | default
+	Source     string  `json:"source"` // cache | llm | default
+}
+
+// CacheStore is the subset of Redis we need (implemented by cache.Redis).
+type CacheStore interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	SetTTL(ctx context.Context, key string, val []byte, ttl time.Duration) error
 }
 
 type Classifier struct {
 	Repl  *replicate.Client
 	Model string // fast text model, e.g. google/gemini-2.5-flash
+	Cache CacheStore
 }
 
-var (
-	videoPrefixes = []string{
-		"create a video", "generate a video", "create video", "generate video", "make a video", "make video",
-		"creat a video", "generat a video", "develop a video",
-		"erstelle ein video", "generiere ein video", "erstelle video", "generiere video", "video erstellen",
-		"mach ein video", "mach video", "erschaffe ein video",
-		"create video of", "generate video of", "make video of",
-		"mach daraus ein video", "wandle das in ein video um", "erstelle daraus ein video",
-	}
-	imagePrefixes = []string{
-		"create a photo", "generate a photo", "create a picture", "generate a picture",
-		"create an image", "generate an image", "create photo", "generate photo",
-		"create picture", "generate picture", "create image", "generate image",
-		"creat a photo", "generat a photo", "creat image", "generat image",
-		"draw a ", "draw an ", "make a photo", "make a picture", "make an image",
-		"mach ein foto", "mach ein bild", "erstelle ein foto", "generiere ein foto",
-		"erstelle ein bild", "generiere ein bild", "foto erstellen", "bild erstellen",
-		"bild generieren", "erstelle mir ein bild", "mach mir ein bild",
-		"mach daraus ein bild", "wandle das in ein bild um", "erstelle daraus ein bild",
-	}
+const cacheTTL = 7 * 24 * time.Hour
 
-	analyzeRe  = mustBoundary(`analyze|analyse|describe|explain|identify|compare|what do you see|what is in|analysiere|beschreibe|erklaere|erklare|identifiziere|vergleiche|was siehst|was ist in`)
-	generateRe = mustBoundary(`create|generate|make|draw|render|design|erstelle|generiere|mach|zeichne|kreiere|visualisiere`)
-	imageRe    = mustBoundary(`image|picture|photo|drawing|blueprint|sketch|illustration|scenery|bild|foto|zeichnung|skizze|aufnahme|szene|mockup|thumbnail|banner|poster|cover|portrait|headshot`)
-	videoRe    = mustBoundary(`video|clip|animation|movie|reel|cinematic|film|sequenz|footage|trailer|timelapse|kamerafahrt|produktvideo`)
-)
-
-func mustBoundary(alt string) *regexp.Regexp {
-	return regexp.MustCompile(`(?i)\b(?:` + alt + `)\b`)
-}
-
-// Heuristic returns a confident skill when prefixes/scores are clear. ok=false → need LLM or default chat.
-func Heuristic(prompt string, hints Hints) (Result, bool) {
-	lower := strings.ToLower(strings.TrimSpace(prompt))
-	if lower == "" {
-		return Result{Skill: SkillChat, Confidence: 1, Source: "heuristic"}, true
-	}
-	for _, p := range videoPrefixes {
-		if strings.HasPrefix(lower, p) {
-			return Result{Skill: SkillVideo, Confidence: 0.95, Source: "heuristic"}, true
-		}
-	}
-	for _, p := range imagePrefixes {
-		if strings.HasPrefix(lower, p) {
-			return Result{Skill: SkillImage, Confidence: 0.95, Source: "heuristic"}, true
-		}
-	}
-
-	chatScore, imageScore, videoScore := 0, 0, 0
-	if analyzeRe.MatchString(lower) || strings.Contains(lower, "?") {
-		chatScore += 4
-	}
-	if generateRe.MatchString(lower) {
-		imageScore += 2
-		videoScore += 2
-	}
-	if imageRe.MatchString(lower) {
-		imageScore += 3
-	}
-	if videoRe.MatchString(lower) {
-		videoScore += 3
-	}
+func cacheKey(prompt string, hints Hints) string {
+	n := normalizePrompt(prompt)
+	flags := "0"
 	if hints.HasImageAttachment {
-		imageScore++
-		if analyzeRe.MatchString(lower) {
-			chatScore += 2
-		}
+		flags += "i"
 	}
 	if hints.HasVideoAttachment {
-		videoScore += 2
+		flags += "v"
 	}
-
-	top := imageScore
-	if videoScore > top {
-		top = videoScore
+	if hints.HasPriorImage {
+		flags += "p"
 	}
-	gap := imageScore - videoScore
-	if gap < 0 {
-		gap = -gap
-	}
-	if top < 4 || gap < 2 || chatScore >= top {
-		return Result{}, false
-	}
-	if imageScore > videoScore {
-		return Result{Skill: SkillImage, Confidence: 0.8, Source: "heuristic"}, true
-	}
-	return Result{Skill: SkillVideo, Confidence: 0.8, Source: "heuristic"}, true
+	sum := sha256.Sum256([]byte(n + "|" + flags))
+	return "intent:v2:" + hex.EncodeToString(sum[:16])
 }
 
-// Classify picks chat | image | video. Prefers instant heuristic; otherwise a fast LLM; else chat.
+func normalizePrompt(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	b.Grow(len(s))
+	prevSpace := false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			if !prevSpace {
+				b.WriteByte(' ')
+				prevSpace = true
+			}
+			continue
+		}
+		prevSpace = false
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// Classify uses Redis cache first, then a fast LLM. No keyword/regex routing.
 func (c *Classifier) Classify(ctx context.Context, prompt string, hints Hints) Result {
-	if r, ok := Heuristic(prompt, hints); ok {
-		return r
+	if strings.TrimSpace(prompt) == "" {
+		return Result{Skill: SkillChat, Confidence: 1, Source: "default"}
+	}
+	key := cacheKey(prompt, hints)
+	if c != nil && c.Cache != nil {
+		if b, err := c.Cache.Get(ctx, key); err == nil && len(b) > 0 {
+			var cached Result
+			if json.Unmarshal(b, &cached) == nil && cached.Skill != "" {
+				cached.Source = "cache"
+				cached.Confidence = 1
+				return cached
+			}
+		}
 	}
 	if c == nil || c.Repl == nil || strings.TrimSpace(c.Model) == "" {
-		return Result{Skill: SkillChat, Confidence: 0.5, Source: "default"}
+		return Result{Skill: SkillChat, Confidence: 0.3, Source: "default"}
 	}
-	if r, ok := c.classifyLLM(ctx, prompt, hints); ok {
-		return r
+	r, ok := c.classifyLLM(ctx, prompt, hints)
+	if !ok {
+		return Result{Skill: SkillChat, Confidence: 0.3, Source: "default"}
 	}
-	return Result{Skill: SkillChat, Confidence: 0.4, Source: "default"}
+	if c.Cache != nil {
+		if payload, err := json.Marshal(Result{Skill: r.Skill, Confidence: r.Confidence, Source: "llm"}); err == nil {
+			_ = c.Cache.SetTTL(ctx, key, payload, cacheTTL)
+		}
+	}
+	return r
 }
 
 func (c *Classifier) classifyLLM(ctx context.Context, prompt string, hints Hints) (Result, bool) {
-	runCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
+	runCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 
-	system := `You are a fast intent router for Flipo5. Classify the user message into exactly one skill.
-Reply with ONLY one JSON object: {"skill":"chat"|"image"|"video"}
+	system := `You are Flipo5's skill router. Read the user message and pick exactly one skill.
+Return ONLY valid JSON: {"skill":"chat"|"image"|"video"|"image_edit"}
+
+Definitions:
+- chat — questions, conversation, advice, analysis, describing an image, anything that is NOT a generation/edit request
+- image — user wants a NEW picture generated from text (draw / create / make a photo / poza / bild / etc. in any language)
+- video — user wants a NEW short video/clip generated
+- image_edit — user wants to edit, change, restyle, or transform an EXISTING photo (uploaded now, or a previous one in the thread)
+
 Rules:
-- chat = questions, advice, conversation, analysis, describing an attached image, anything that is not clearly a generation request
-- image = user wants a new picture/photo/illustration generated
-- video = user wants a short video/clip generated
-- When unsure, choose chat
-- Never explain.`
+- Casual requests in Romanian, German, English, or any language still map to image/video when they ask to create media (e.g. "fă-mi o poză", "mach ein Bild", "make me a picture").
+- Greetings alone → chat. Greeting + create image → image.
+- If they ask to edit/change something in a photo → image_edit.
+- If unsure between image and image_edit: use image_edit when an image is attached or a prior image exists; otherwise image.
+- When unsure overall → chat.
+- Never explain. JSON only.`
 
 	user := "Message:\n" + strings.TrimSpace(prompt)
 	if hints.HasImageAttachment {
@@ -163,15 +147,18 @@ Rules:
 	if hints.HasVideoAttachment {
 		user += "\n[has_video_attachment=true]"
 	}
+	if hints.HasPriorImage {
+		user += "\n[has_prior_image_in_thread=true]"
+	}
 
 	var input repgo.PredictionInput
 	if textmodel.IsClaude(c.Model) {
 		input = textmodel.BuildInput(c.Model, system, user, nil, 1024)
-		input["max_tokens"] = 32
+		input["max_tokens"] = 48
 	} else {
 		input = repgo.PredictionInput{
 			"prompt":            system + "\n\n" + user,
-			"max_output_tokens": 32,
+			"max_output_tokens": 48,
 		}
 	}
 
@@ -188,14 +175,14 @@ Rules:
 
 	skill := parseSkill(text)
 	if skill == "" {
+		log.Printf("intent classify parse failed: %q", truncate(text, 120))
 		return Result{}, false
 	}
-	return Result{Skill: skill, Confidence: 0.7, Source: "llm"}, true
+	return Result{Skill: skill, Confidence: 0.85, Source: "llm"}, true
 }
 
 func parseSkill(text string) Skill {
 	lower := strings.ToLower(text)
-	// Prefer JSON
 	if i := strings.Index(lower, "{"); i >= 0 {
 		if j := strings.LastIndex(lower, "}"); j > i {
 			var obj struct {
@@ -203,10 +190,12 @@ func parseSkill(text string) Skill {
 			}
 			if err := json.Unmarshal([]byte(text[i:j+1]), &obj); err == nil {
 				switch strings.ToLower(strings.TrimSpace(obj.Skill)) {
-				case "image":
+				case "image", "image_creation", "image-creation":
 					return SkillImage
-				case "video":
+				case "video", "video_creation", "video-creation":
 					return SkillVideo
+				case "image_edit", "image-edit", "edit", "image_editing":
+					return SkillImageEdit
 				case "chat":
 					return SkillChat
 				}
@@ -214,11 +203,13 @@ func parseSkill(text string) Skill {
 		}
 	}
 	switch {
-	case strings.Contains(lower, `"image"`) || strings.HasPrefix(lower, "image") || lower == "image":
+	case strings.Contains(lower, "image_edit") || strings.Contains(lower, "image-edit"):
+		return SkillImageEdit
+	case strings.Contains(lower, `"image"`) || strings.HasPrefix(strings.TrimSpace(lower), "image"):
 		return SkillImage
-	case strings.Contains(lower, `"video"`) || strings.HasPrefix(lower, "video") || lower == "video":
+	case strings.Contains(lower, `"video"`) || strings.HasPrefix(strings.TrimSpace(lower), "video"):
 		return SkillVideo
-	case strings.Contains(lower, `"chat"`) || strings.HasPrefix(lower, "chat") || lower == "chat":
+	case strings.Contains(lower, `"chat"`) || strings.HasPrefix(strings.TrimSpace(lower), "chat"):
 		return SkillChat
 	}
 	return ""
@@ -248,4 +239,11 @@ func outputText(out interface{}) string {
 		return string(b)
 	}
 	return ""
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
