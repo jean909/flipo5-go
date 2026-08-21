@@ -41,7 +41,8 @@ export function VideoSettingsRow({
   const isVeo = videoModel === '1';
   const r2vLocked = isVeo && referenceCount >= 2;
   const durationDisabled = (!!hasVideo && isVeo) || r2vLocked;
-  const aspectDisabled = ((!!hasVideo || !!hasImage) && isVeo) || r2vLocked;
+  // Model 1: aspect is always selectable (16:9 / 9:16), except R2V (2+ refs) which requires 16:9.
+  const aspectDisabled = r2vLocked;
   const resolutionDisabled = !!hasVideo;
   const disabledCls = 'opacity-60 pointer-events-none';
   const durationOptions = isVeo ? DURATIONS_VEO : DURATIONS_KLING;
