@@ -73,7 +73,7 @@ func Load() *Config {
 		ModelImage4K:   getEnv("REPLICATE_MODEL_IMAGE_4K", "bytedance/seedream-4.5"),
 		ModelImageHD:   getEnv("REPLICATE_MODEL_IMAGE_HD", "google/nano-banana"),
 		ModelFluxFill:   getEnv("REPLICATE_MODEL_FLUX_FILL", "black-forest-labs/flux-fill-pro"),
-		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "xai/grok-imagine-video"),
+		ModelVideo:     getEnv("REPLICATE_MODEL_VIDEO", "google/veo-3.1"),
 		ModelVideo2:    getEnv("REPLICATE_MODEL_VIDEO_2", "kwaivgi/kling-v2.5-turbo-pro"),
 		ModelVideoBrand: getEnv("REPLICATE_MODEL_VIDEO_BRAND", "google/veo-3.1-fast"),
 		ModelAudio:     getEnv("REPLICATE_MODEL_AUDIO", "suno-ai/bark"),

@@ -64,12 +64,12 @@ func resolveJobMediaURLs(h *Handlers, jobInput map[string]interface{}) {
 	if jobInput == nil || h.Store == nil {
 		return
 	}
-	for _, key := range []string{"image", "mask", "video", "start_image", "end_image"} {
+	for _, key := range []string{"image", "mask", "video", "start_image", "end_image", "last_frame"} {
 		if s, ok := jobInput[key].(string); ok && s != "" {
 			jobInput[key] = resolveMediaURL(h, s)
 		}
 	}
-	for _, key := range []string{"image_input", "input_images"} {
+	for _, key := range []string{"image_input", "input_images", "reference_images"} {
 		arr, ok := jobInput[key].([]interface{})
 		if !ok || len(arr) == 0 {
 			continue

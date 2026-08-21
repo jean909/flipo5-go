@@ -327,33 +327,44 @@ func (s *Server) createImageInpaint(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt      string `json:"prompt"`
-		ThreadID    string `json:"thread_id,omitempty"`
-		Incognito   bool   `json:"incognito,omitempty"`
-		Image       string `json:"image,omitempty"`
-		Video       string `json:"video,omitempty"`
-		Duration    int    `json:"duration,omitempty"`
-		AspectRatio string `json:"aspect_ratio,omitempty"`
-		Resolution  string `json:"resolution,omitempty"`
-		VideoModel  string `json:"video_model,omitempty"` // "1" = default, "2" = Kling
-		StartImage  string `json:"start_image,omitempty"`
-		EndImage    string `json:"end_image,omitempty"`
+		Prompt           string   `json:"prompt"`
+		ThreadID         string   `json:"thread_id,omitempty"`
+		Incognito        bool     `json:"incognito,omitempty"`
+		Image            string   `json:"image,omitempty"`
+		LastFrame        string   `json:"last_frame,omitempty"`
+		ReferenceImages  []string `json:"reference_images,omitempty"`
+		Video            string   `json:"video,omitempty"` // legacy (ignored for Veo)
+		Duration         int      `json:"duration,omitempty"`
+		AspectRatio      string   `json:"aspect_ratio,omitempty"`
+		Resolution       string   `json:"resolution,omitempty"`
+		VideoModel       string   `json:"video_model,omitempty"` // "1" = Veo 3.1, "2" = Kling
+		StartImage       string   `json:"start_image,omitempty"`
+		EndImage         string   `json:"end_image,omitempty"`
+		GenerateAudio    *bool    `json:"generate_audio,omitempty"`
+		NegativePrompt   string   `json:"negative_prompt,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
 		http.Error(w, `{"error":"prompt required"}`, http.StatusBadRequest)
 		return
 	}
-	if req.Duration < 1 || req.Duration > 15 {
-		req.Duration = 5
-	}
-	if req.Resolution != "720p" && req.Resolution != "480p" {
-		req.Resolution = "720p"
-	}
-	if req.AspectRatio == "" {
-		req.AspectRatio = "16:9"
-	}
 	if req.VideoModel != "2" {
 		req.VideoModel = "1"
+	}
+	if req.VideoModel == "1" {
+		req.Duration = queue.SnapVeoDuration(req.Duration)
+		if req.Resolution != "720p" && req.Resolution != "1080p" {
+			req.Resolution = "1080p"
+		}
+		if req.AspectRatio != "9:16" {
+			req.AspectRatio = "16:9"
+		}
+	} else {
+		if req.Duration != 5 && req.Duration != 10 {
+			req.Duration = 5
+		}
+		if req.AspectRatio == "" {
+			req.AspectRatio = "16:9"
+		}
 	}
 	userID, _ := middleware.UserID(r.Context())
 	ctx := r.Context()
@@ -370,8 +381,18 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		"prompt":       req.Prompt,
 		"duration":     req.Duration,
 		"aspect_ratio": req.AspectRatio,
-		"resolution":   req.Resolution,
 		"video_model":  req.VideoModel,
+	}
+	if req.VideoModel == "1" {
+		input["resolution"] = req.Resolution
+		genAudio := true
+		if req.GenerateAudio != nil {
+			genAudio = *req.GenerateAudio
+		}
+		input["generate_audio"] = genAudio
+		if strings.TrimSpace(req.NegativePrompt) != "" {
+			input["negative_prompt"] = strings.TrimSpace(req.NegativePrompt)
+		}
 	}
 	resolveURL := func(u string) string {
 		u = strings.TrimSpace(u)
@@ -388,11 +409,27 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 			input["end_image"] = resolveURL(req.EndImage)
 		}
 	} else {
-		if req.Image != "" {
+		refs := make([]string, 0, 3)
+		for _, u := range req.ReferenceImages {
+			if r := resolveURL(u); r != "" {
+				refs = append(refs, r)
+			}
+			if len(refs) >= 3 {
+				break
+			}
+		}
+		if len(refs) >= 2 {
+			// Multi-image → Veo reference-to-video (forces 16:9 + 8s in the worker).
+			input["reference_images"] = refs
+			input["duration"] = 8
+			input["aspect_ratio"] = "16:9"
+		} else if len(refs) == 1 {
+			input["image"] = refs[0]
+		} else if req.Image != "" {
 			input["image"] = resolveURL(req.Image)
 		}
-		if req.Video != "" {
-			input["video"] = resolveURL(req.Video)
+		if req.LastFrame != "" && input["reference_images"] == nil {
+			input["last_frame"] = resolveURL(req.LastFrame)
 		}
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)

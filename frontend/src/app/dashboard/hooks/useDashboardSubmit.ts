@@ -246,7 +246,7 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
       }
 
       let imageUrl: string | undefined;
-      let videoUrl: string | undefined;
+      let referenceImages: string[] | undefined;
       let startImageUrl: string | undefined;
       let endImageUrl: string | undefined;
       if (ctx.videoModel === '2') {
@@ -260,28 +260,31 @@ export async function submitDashboardPrompt(ctx: SubmitCtx): Promise<void> {
           if (ctx.endImageFile) endImageUrl = urls[i];
         }
       } else {
-        const refUrls = ctx.referenceImageUrls.length > 0 ? ctx.referenceImageUrls : undefined;
+        const allRefs: string[] = [...ctx.referenceImageUrls];
         if (ctx.attachments.length > 0) {
           const uploaded = await ctx.uploadAttachments(ctx.attachments.map((a) => a.file));
-          imageUrl = (refUrls ? [...refUrls, ...uploaded] : uploaded)[0];
-        } else if (refUrls?.[0]) {
-          imageUrl = refUrls[0];
+          allRefs.push(...uploaded);
         }
-        if (ctx.videoFile) {
-          const urls = await ctx.uploadAttachments([ctx.videoFile]);
-          videoUrl = urls[0];
+        const unique = [...new Set(allRefs.filter(Boolean))].slice(0, 3);
+        if (unique.length >= 2) {
+          referenceImages = unique;
+        } else if (unique.length === 1) {
+          imageUrl = unique[0];
         }
       }
 
+      const useR2V = (referenceImages?.length ?? 0) >= 2;
       const res = await ctx.createVideo({
         prompt: trimmed || ' ',
         threadId: useNormalSession ? undefined : tid ?? undefined,
         incognito: effectiveIncognito,
         videoModel: ctx.videoModel,
-        duration: ctx.videoSettings.duration,
-        aspectRatio: ctx.videoSettings.aspectRatio,
+        duration: useR2V ? 8 : ctx.videoSettings.duration,
+        aspectRatio: useR2V ? '16:9' : ctx.videoSettings.aspectRatio,
         resolution: ctx.videoSettings.resolution,
-        ...(ctx.videoModel === '2' ? { startImage: startImageUrl, endImage: endImageUrl } : { image: imageUrl, video: videoUrl }),
+        ...(ctx.videoModel === '2'
+          ? { startImage: startImageUrl, endImage: endImageUrl }
+          : { image: imageUrl, referenceImages }),
       });
       if (typeof window !== 'undefined') sessionStorage.setItem('flipo5_video_pending', JSON.stringify({ key: requestKey, t: Date.now() }));
       ctx.addOptimisticJob({ id: res.job_id, type: 'video', thread_id: res.thread_id ?? tid ?? null });

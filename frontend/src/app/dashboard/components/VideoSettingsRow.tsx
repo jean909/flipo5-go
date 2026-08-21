@@ -7,30 +7,62 @@ import { Select } from '@/components/Select';
 export interface VideoSettings {
   duration: number;
   aspectRatio: string;
-  resolution: '720p' | '480p';
+  resolution: '720p' | '1080p';
 }
 
-const DURATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] as const;
-const DURATIONS_KLING = [5, 10] as const; // Kling only supports 5s or 10s
-const ASPECT_RATIOS = ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'] as const;
+/** Veo 3.1 allowed durations */
+const DURATIONS_VEO = [4, 6, 8] as const;
+const DURATIONS_KLING = [5, 10] as const;
+const ASPECT_VEO = ['16:9', '9:16'] as const;
+const ASPECT_KLING = ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'] as const;
 
 interface VideoSettingsRowProps {
   locale: Locale;
   settings: VideoSettings;
   onChange: (s: VideoSettings) => void;
   hasImage?: boolean;
+  /** 2+ reference images → Veo R2V (forces 16:9 + 8s) */
+  referenceCount?: number;
   hasVideo?: boolean;
   videoModel?: '1' | '2';
   onVideoModelChange?: (m: '1' | '2') => void;
 }
 
-export function VideoSettingsRow({ locale, settings, onChange, hasImage, hasVideo, videoModel = '1', onVideoModelChange }: VideoSettingsRowProps) {
-  const durationDisabled = !!hasVideo && videoModel === '1';
-  const aspectDisabled = (!!hasVideo || !!hasImage) && videoModel === '1';
+export function VideoSettingsRow({
+  locale,
+  settings,
+  onChange,
+  hasImage,
+  referenceCount = 0,
+  hasVideo,
+  videoModel = '1',
+  onVideoModelChange,
+}: VideoSettingsRowProps) {
+  const isVeo = videoModel === '1';
+  const r2vLocked = isVeo && referenceCount >= 2;
+  const durationDisabled = (!!hasVideo && isVeo) || r2vLocked;
+  const aspectDisabled = ((!!hasVideo || !!hasImage) && isVeo) || r2vLocked;
   const resolutionDisabled = !!hasVideo;
   const disabledCls = 'opacity-60 pointer-events-none';
-  const durationOptions = videoModel === '2' ? DURATIONS_KLING : DURATIONS;
-  const durationValue = videoModel === '2' && !DURATIONS_KLING.includes(settings.duration as 5 | 10) ? 5 : settings.duration;
+  const durationOptions = isVeo ? DURATIONS_VEO : DURATIONS_KLING;
+  const aspectOptions = isVeo ? ASPECT_VEO : ASPECT_KLING;
+
+  let durationValue = settings.duration;
+  if (isVeo) {
+    if (r2vLocked) durationValue = 8;
+    else if (!(DURATIONS_VEO as readonly number[]).includes(settings.duration)) durationValue = 8;
+  } else if (!(DURATIONS_KLING as readonly number[]).includes(settings.duration as 5 | 10)) {
+    durationValue = 5;
+  }
+
+  let aspectValue = settings.aspectRatio;
+  if (isVeo) {
+    if (r2vLocked) aspectValue = '16:9';
+    else if (aspectValue !== '16:9' && aspectValue !== '9:16') aspectValue = '16:9';
+  }
+
+  const resolutionValue =
+    isVeo && settings.resolution !== '720p' && settings.resolution !== '1080p' ? '1080p' : settings.resolution;
 
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -61,23 +93,23 @@ export function VideoSettingsRow({ locale, settings, onChange, hasImage, hasVide
       <div className={`flex items-center gap-2 ${aspectDisabled ? disabledCls : ''}`}>
         <span className="text-theme-fg-muted">{t(locale, 'video.aspectRatio')}</span>
         <Select
-          value={settings.aspectRatio}
-          options={ASPECT_RATIOS.map((r) => ({ value: r, label: r }))}
+          value={aspectValue}
+          options={aspectOptions.map((r) => ({ value: r, label: r }))}
           onChange={(v) => onChange({ ...settings, aspectRatio: v })}
           size="sm"
           className="min-w-[80px]"
         />
       </div>
-      {videoModel === '1' && (
+      {isVeo && (
         <div className={`flex items-center gap-2 ${resolutionDisabled ? disabledCls : ''}`}>
           <span className="text-theme-fg-muted">{t(locale, 'video.resolution')}</span>
           <Select
-            value={settings.resolution}
+            value={resolutionValue}
             options={[
+              { value: '1080p', label: '1080p' },
               { value: '720p', label: '720p' },
-              { value: '480p', label: '480p' },
             ]}
-            onChange={(v) => onChange({ ...settings, resolution: v as '720p' | '480p' })}
+            onChange={(v) => onChange({ ...settings, resolution: v as '720p' | '1080p' })}
             size="sm"
             className="min-w-[70px]"
           />

@@ -105,9 +105,9 @@ export default function DashboardPage() {
     aspectRatio: '1:1',
   });
   const [videoSettings, setVideoSettings] = useState<VideoSettings>({
-    duration: 5,
+    duration: 8,
     aspectRatio: '16:9',
-    resolution: '720p',
+    resolution: '1080p',
   });
   const [videoModel, setVideoModel] = useState<'1' | '2'>('1');
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
@@ -1108,12 +1108,28 @@ export default function DashboardPage() {
             settings={videoSettings}
             onChange={setVideoSettings}
             hasImage={videoModel === '1' && (attachments.length > 0 || referenceImageUrls.length > 0)}
+            referenceCount={
+              videoModel === '1'
+                ? referenceImageUrls.length + attachments.filter((a) => a.file.type.startsWith('image/')).length
+                : 0
+            }
             hasVideo={!!videoFile}
             videoModel={videoModel}
             onVideoModelChange={(m) => {
               setVideoModel(m);
-              if (m === '1') { removeStartImageFile(); removeEndImageFile(); }
-              else { removeVideoFile(); setVideoSettings((s) => ({ ...s, duration: s.duration === 5 || s.duration === 10 ? s.duration : 5 })); }
+              if (m === '1') {
+                removeStartImageFile();
+                removeEndImageFile();
+                setVideoSettings((s) => ({
+                  ...s,
+                  duration: [4, 6, 8].includes(s.duration) ? s.duration : 8,
+                  resolution: s.resolution === '720p' || s.resolution === '1080p' ? s.resolution : '1080p',
+                  aspectRatio: s.aspectRatio === '9:16' ? '9:16' : '16:9',
+                }));
+              } else {
+                removeVideoFile();
+                setVideoSettings((s) => ({ ...s, duration: s.duration === 5 || s.duration === 10 ? s.duration : 5 }));
+              }
             }}
           />
         )}
@@ -1267,12 +1283,28 @@ export default function DashboardPage() {
                 settings={videoSettings}
                 onChange={setVideoSettings}
                 hasImage={videoModel === '1' && (attachments.length > 0 || referenceImageUrls.length > 0)}
+                referenceCount={
+                  videoModel === '1'
+                    ? referenceImageUrls.length + attachments.filter((a) => a.file.type.startsWith('image/')).length
+                    : 0
+                }
                 hasVideo={!!videoFile}
                 videoModel={videoModel}
                 onVideoModelChange={(m) => {
                   setVideoModel(m);
-                  if (m === '1') { removeStartImageFile(); removeEndImageFile(); }
-                  else { removeVideoFile(); setVideoSettings((s) => ({ ...s, duration: s.duration === 5 || s.duration === 10 ? s.duration : 5 })); }
+                  if (m === '1') {
+                    removeStartImageFile();
+                    removeEndImageFile();
+                    setVideoSettings((s) => ({
+                      ...s,
+                      duration: [4, 6, 8].includes(s.duration) ? s.duration : 8,
+                      resolution: s.resolution === '720p' || s.resolution === '1080p' ? s.resolution : '1080p',
+                      aspectRatio: s.aspectRatio === '9:16' ? '9:16' : '16:9',
+                    }));
+                  } else {
+                    removeVideoFile();
+                    setVideoSettings((s) => ({ ...s, duration: s.duration === 5 || s.duration === 10 ? s.duration : 5 }));
+                  }
                 }}
               />
             )}

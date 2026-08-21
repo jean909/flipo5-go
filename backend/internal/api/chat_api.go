@@ -308,25 +308,31 @@ func looksLikeImageURL(u string) bool {
 
 func (s *Server) enqueueRoutedVideo(w http.ResponseWriter, r *http.Request, userID uuid.UUID, threadID *uuid.UUID, prompt string, attachmentURLs, contentTypes []string, routeSource string) {
 	ctx := r.Context()
-	dur := queue.ParseVideoDurationSeconds(prompt, 5)
+	dur := queue.SnapVeoDuration(queue.ParseVideoDurationSeconds(prompt, 8))
 	input := map[string]interface{}{
-		"prompt":       prompt,
-		"duration":     dur,
-		"aspect_ratio": "16:9",
-		"resolution":   "720p",
-		"video_model":  "1",
-		"routed_from":  "chat",
+		"prompt":         prompt,
+		"duration":       dur,
+		"aspect_ratio":   "16:9",
+		"resolution":     "1080p",
+		"video_model":    "1",
+		"generate_audio": true,
+		"routed_from":    "chat",
 	}
 	imgs := imageURLsFromAttachments(attachmentURLs, contentTypes, s)
-	imageURL := ""
-	if len(imgs) > 0 {
-		imageURL = imgs[0]
+	if len(imgs) == 0 && threadID != nil {
+		if prev := s.lastImageURLInThread(ctx, *threadID, userID); prev != "" {
+			imgs = []string{prev}
+		}
 	}
-	if imageURL == "" && threadID != nil {
-		imageURL = s.lastImageURLInThread(ctx, *threadID, userID)
+	if len(imgs) > 3 {
+		imgs = imgs[:3]
 	}
-	if imageURL != "" {
-		input["image"] = imageURL
+	if len(imgs) >= 2 {
+		input["reference_images"] = imgs
+		input["duration"] = 8
+		input["aspect_ratio"] = "16:9"
+	} else if len(imgs) == 1 {
+		input["image"] = imgs[0]
 	}
 	jobID, err := s.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {

@@ -84,25 +84,31 @@ func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID,
 	if h.Asynq == nil {
 		return nil, ""
 	}
-	dur := ParseVideoDurationSeconds(prompt, 5)
+	dur := SnapVeoDuration(ParseVideoDurationSeconds(prompt, 8))
 	input := map[string]interface{}{
-		"prompt":       prompt,
-		"duration":     dur,
-		"aspect_ratio": "16:9",
-		"resolution":   "720p",
-		"video_model":  "1",
-		"routed_from":  "skill_header",
+		"prompt":         prompt,
+		"duration":       dur,
+		"aspect_ratio":   "16:9",
+		"resolution":     "1080p",
+		"video_model":    "1",
+		"generate_audio": true,
+		"routed_from":    "skill_header",
 	}
 	refs := attachmentImageURLs(jobInput, h)
-	imageURL := ""
-	if len(refs) > 0 {
-		imageURL = refs[0]
+	if len(refs) == 0 && threadID != nil {
+		if prev := h.lastImageURLInThread(ctx, *threadID, userID); prev != "" {
+			refs = []string{prev}
+		}
 	}
-	if imageURL == "" && threadID != nil {
-		imageURL = h.lastImageURLInThread(ctx, *threadID, userID)
+	if len(refs) > 3 {
+		refs = refs[:3]
 	}
-	if imageURL != "" {
-		input["image"] = imageURL
+	if len(refs) >= 2 {
+		input["reference_images"] = refs
+		input["duration"] = 8
+		input["aspect_ratio"] = "16:9"
+	} else if len(refs) == 1 {
+		input["image"] = refs[0]
 	}
 	videoJobID, err := h.DB.CreateJob(ctx, userID, "video", input, threadID)
 	if err != nil {
@@ -116,7 +122,7 @@ func (h *Handlers) enqueueSiblingVideo(ctx context.Context, chatJobID uuid.UUID,
 		return nil, ""
 	}
 	h.publishJobRunning(ctx, videoJobID, userID, "video")
-	log.Printf("skill_header spawned video job=%s from chat=%s image=%v duration=%d", videoJobID, chatJobID, imageURL != "", dur)
+	log.Printf("skill_header spawned video job=%s from chat=%s refs=%d duration=%d", videoJobID, chatJobID, len(refs), input["duration"])
 	return &videoJobID, "video"
 }
 

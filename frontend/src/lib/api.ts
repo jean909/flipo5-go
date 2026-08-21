@@ -633,14 +633,19 @@ export interface CreateVideoParams {
   threadId?: string;
   incognito?: boolean;
   image?: string;
+  lastFrame?: string;
+  /** Veo 3.1 R2V: 1–3 subject reference images */
+  referenceImages?: string[];
   video?: string;
   duration?: number;
   aspectRatio?: string;
-  resolution?: '720p' | '480p';
-  /** "1" = default (grok), "2" = Kling (start_image, end_image) */
+  resolution?: '720p' | '1080p';
+  /** "1" = Veo 3.1 (default), "2" = Kling (start_image, end_image) */
   videoModel?: '1' | '2';
   startImage?: string;
   endImage?: string;
+  generateAudio?: boolean;
+  negativePrompt?: string;
 }
 
 export async function createVideo(params: CreateVideoParams): Promise<{ job_id: string; thread_id?: string }> {
@@ -650,17 +655,20 @@ export async function createVideo(params: CreateVideoParams): Promise<{ job_id: 
     prompt: params.prompt,
     thread_id: params.threadId,
     incognito: params.incognito ?? false,
-    duration: params.duration ?? 5,
+    duration: params.duration ?? 8,
     aspect_ratio: params.aspectRatio ?? '16:9',
-    resolution: params.resolution ?? '720p',
+    resolution: params.resolution ?? '1080p',
     video_model: params.videoModel ?? '1',
   };
   if (params.videoModel === '2') {
     if (params.startImage) body.start_image = params.startImage;
     if (params.endImage) body.end_image = params.endImage;
   } else {
+    if (params.referenceImages?.length) body.reference_images = params.referenceImages.slice(0, 3);
     if (params.image) body.image = params.image;
-    if (params.video) body.video = params.video;
+    if (params.lastFrame) body.last_frame = params.lastFrame;
+    if (params.generateAudio !== undefined) body.generate_audio = params.generateAudio;
+    if (params.negativePrompt) body.negative_prompt = params.negativePrompt;
   }
   const res = await fetch(`${API_URL}/api/video`, {
     method: 'POST',
